@@ -3,7 +3,10 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-const MAX_RECENTS: usize = 20;
+/// History keeps a longer tail than the old plain "recent files" list did, now that the
+/// Library exists as the place for anything meant to stick around — History is just every
+/// document opened, unpromoted entries included.
+const MAX_RECENTS: usize = 50;
 
 fn data_dir() -> PathBuf {
     glib::user_data_dir().join("pereplyot")

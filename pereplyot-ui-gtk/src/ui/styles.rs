@@ -12,6 +12,14 @@ const GLOBAL_CSS: &str = "\
     .recent-row .subtitle { \
         opacity: 0.6; \
         font-size: 0.85em; \
+    } \
+    .library-cover-slot { \
+        background: alpha(@window_fg_color, 0.08); \
+        border-radius: 4px; \
+        box-shadow: 0 1px 3px alpha(black, 0.3); \
+    } \
+    flowboxchild:hover .library-cover-slot { \
+        background: alpha(@window_fg_color, 0.12); \
     }";
 
 pub fn load_global_css() {

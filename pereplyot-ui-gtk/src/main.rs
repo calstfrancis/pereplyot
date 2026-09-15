@@ -6,8 +6,10 @@
 mod about;
 mod changelog;
 mod config;
+mod library;
 mod reader_host;
 mod recents;
+mod thumbnail;
 mod ui;
 
 use std::cell::RefCell;

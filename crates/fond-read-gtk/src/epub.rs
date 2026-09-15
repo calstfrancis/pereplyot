@@ -1225,6 +1225,8 @@ pub fn show_epub_reader(
         let epub_undo = epub_undo.clone();
         let epub_redo = epub_redo.clone();
         let search_toggle = search_toggle.clone();
+        let prev = prev.clone();
+        let next = next.clone();
         key_controller.connect_key_pressed(move |_, keyval, _keycode, modifiers| {
             if keyval == gdk::Key::z && modifiers.contains(gdk::ModifierType::CONTROL_MASK) {
                 if modifiers.contains(gdk::ModifierType::SHIFT_MASK) {
@@ -1241,6 +1243,23 @@ pub fn show_epub_reader(
             if keyval == gdk::Key::Escape && search_toggle.is_active() {
                 search_toggle.set_active(false);
                 return glib::Propagation::Stop;
+            }
+            // Prev/next chapter — reuses the prev/next buttons' own handlers via
+            // `emit_clicked` rather than duplicating their chapter-boundary logic. Not
+            // guarded against a focused WebView consuming these first (unlike the plain
+            // GTK `Picture` the PDF reader's paged view uses, EPUB content renders inside
+            // WebKit, which may handle unmodified arrow keys itself for in-page scrolling)
+            // — needs a live check once this can actually be run.
+            match keyval {
+                gdk::Key::Left => {
+                    prev.emit_clicked();
+                    return glib::Propagation::Stop;
+                }
+                gdk::Key::Right => {
+                    next.emit_clicked();
+                    return glib::Propagation::Stop;
+                }
+                _ => {}
             }
             glib::Propagation::Proceed
         });

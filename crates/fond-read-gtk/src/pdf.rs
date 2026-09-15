@@ -1348,6 +1348,12 @@ pub fn show_pdf_reader(
     let zoom_in = gtk4::Button::from_icon_name("zoom-in-symbolic");
     zoom_in.add_css_class("flat");
     zoom_in.set_tooltip_text(Some("Zoom in"));
+    let zoom_fit_width = gtk4::Button::from_icon_name("view-fullscreen-symbolic");
+    zoom_fit_width.add_css_class("flat");
+    zoom_fit_width.set_tooltip_text(Some("Zoom to fit width"));
+    let zoom_fit_page = gtk4::Button::from_icon_name("zoom-fit-best-symbolic");
+    zoom_fit_page.add_css_class("flat");
+    zoom_fit_page.set_tooltip_text(Some("Zoom to fit page"));
 
     let note_button = gtk4::Button::with_label("Note…");
     note_button.set_tooltip_text(Some("Add a marginal note on the current page"));
@@ -1462,6 +1468,8 @@ pub fn show_pdf_reader(
     statusbar_spacer.set_hexpand(true);
     statusbar.append(&nav);
     statusbar.append(&statusbar_spacer);
+    statusbar.append(&zoom_fit_width);
+    statusbar.append(&zoom_fit_page);
     statusbar.append(&zoom_out);
     statusbar.append(&zoom_in);
     view.add_bottom_bar(&statusbar);
@@ -1698,6 +1706,12 @@ pub fn show_pdf_reader(
         let key_controller = gtk4::EventControllerKey::new();
         let undo = undo.clone();
         let redo = redo.clone();
+        let prev = prev.clone();
+        let next = next.clone();
+        let reader = reader.clone();
+        let render = render.clone();
+        let continuous_toggle = continuous_toggle.clone();
+        let continuous_scroll = continuous_scroll.clone();
         key_controller.connect_key_pressed(move |_, keyval, _keycode, modifiers| {
             if keyval == gdk::Key::z && modifiers.contains(gdk::ModifierType::CONTROL_MASK) {
                 if modifiers.contains(gdk::ModifierType::SHIFT_MASK) {
@@ -1706,6 +1720,39 @@ pub fn show_pdf_reader(
                     undo();
                 }
                 return glib::Propagation::Stop;
+            }
+            // Left/Right and Page_Up/Page_Down reuse the prev/next buttons' own click
+            // handlers (continuous-scroll-aware, two-page-spread-aware) via `emit_clicked`,
+            // rather than duplicating that logic here.
+            match keyval {
+                gdk::Key::Left | gdk::Key::Page_Up => {
+                    prev.emit_clicked();
+                    return glib::Propagation::Stop;
+                }
+                gdk::Key::Right | gdk::Key::Page_Down => {
+                    next.emit_clicked();
+                    return glib::Propagation::Stop;
+                }
+                gdk::Key::Home => {
+                    if continuous_toggle.is_active() {
+                        scroll_continuous_to_page(&reader, &continuous_scroll, 0);
+                    } else {
+                        reader.borrow_mut().page = 0;
+                        render();
+                    }
+                    return glib::Propagation::Stop;
+                }
+                gdk::Key::End => {
+                    let last = reader.borrow().count.saturating_sub(1);
+                    if continuous_toggle.is_active() {
+                        scroll_continuous_to_page(&reader, &continuous_scroll, last);
+                    } else {
+                        reader.borrow_mut().page = last;
+                        render();
+                    }
+                    return glib::Propagation::Stop;
+                }
+                _ => {}
             }
             glib::Propagation::Proceed
         });
@@ -2236,7 +2283,26 @@ pub fn show_pdf_reader(
             render();
         });
     }
-    {
+    // Every zoom-changing control (in/out, fit-width, fit-page) funnels through one
+    // debounced `request_zoom`, factored out of what used to be two near-identical
+    // zoom_in/zoom_out handlers. Two things this buys beyond de-duplication:
+    //
+    // - Debounce: rapid clicking coalesces into one render+continuous-rebuild ~150ms after
+    //   the last click, instead of one full cycle per click.
+    // - Deferred continuous rebuild: `rebuild_continuous_view_for_zoom` re-renders every
+    //   page in the document (spread across idle ticks — see `build_continuous_view`'s own
+    //   doc comment). Paying that cost on every zoom change even while continuous mode
+    //   isn't the visible view was pure wasted background work; now it only rebuilds
+    //   immediately when continuous mode is actually on-screen, and otherwise just clears
+    //   the stale state so the *next* toggle-to-continuous rebuilds fresh at the new zoom.
+    let pending_zoom: Rc<Cell<Option<f64>>> = Rc::new(Cell::new(None));
+    let zoom_debounce: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
+    let zoom_baseline = {
+        let reader = reader.clone();
+        let pending_zoom = pending_zoom.clone();
+        move || pending_zoom.get().unwrap_or_else(|| reader.borrow().zoom)
+    };
+    let request_zoom: Rc<dyn Fn(f64)> = {
         let host = host.clone();
         let reader = reader.clone();
         let render = render.clone();
@@ -2248,60 +2314,97 @@ pub fn show_pdf_reader(
         let redo_button = redo_button.clone();
         let rebuild_notes = rebuild_notes.clone();
         let dialog = reader_window.clone();
-        zoom_in.connect_clicked(move |_| {
-            {
-                let mut r = reader.borrow_mut();
-                r.zoom = (r.zoom * 1.25).min(4.0);
+        let pending_zoom = pending_zoom.clone();
+        let zoom_debounce = zoom_debounce.clone();
+        Rc::new(move |target: f64| {
+            pending_zoom.set(Some(target.clamp(0.35, 4.0)));
+            if let Some(id) = zoom_debounce.borrow_mut().take() {
+                id.remove();
             }
-            render();
-            rebuild_continuous_view_for_zoom(
-                &host,
-                &reader,
-                &pdf_hash,
-                &continuous_box,
-                &undo_button,
-                &redo_button,
-                &rebuild_notes,
-                &dialog,
-            );
-            if continuous_toggle.is_active() {
-                let page = reader.borrow().page;
-                scroll_continuous_to_page(&reader, &continuous_scroll, page);
-            }
+            let host = host.clone();
+            let reader = reader.clone();
+            let render = render.clone();
+            let pdf_hash = pdf_hash.clone();
+            let continuous_box = continuous_box.clone();
+            let continuous_toggle = continuous_toggle.clone();
+            let continuous_scroll = continuous_scroll.clone();
+            let undo_button = undo_button.clone();
+            let redo_button = redo_button.clone();
+            let rebuild_notes = rebuild_notes.clone();
+            let dialog = dialog.clone();
+            let pending_zoom = pending_zoom.clone();
+            let zoom_debounce_slot = zoom_debounce.clone();
+            let id = glib::timeout_add_local(std::time::Duration::from_millis(150), move || {
+                zoom_debounce_slot.borrow_mut().take();
+                let Some(new_zoom) = pending_zoom.take() else {
+                    return glib::ControlFlow::Break;
+                };
+                reader.borrow_mut().zoom = new_zoom;
+                render();
+                if continuous_toggle.is_active() {
+                    rebuild_continuous_view_for_zoom(
+                        &host,
+                        &reader,
+                        &pdf_hash,
+                        &continuous_box,
+                        &undo_button,
+                        &redo_button,
+                        &rebuild_notes,
+                        &dialog,
+                    );
+                    let page = reader.borrow().page;
+                    scroll_continuous_to_page(&reader, &continuous_scroll, page);
+                } else if !reader.borrow().continuous_pictures.is_empty() {
+                    while let Some(child) = continuous_box.first_child() {
+                        continuous_box.remove(&child);
+                    }
+                    let mut r = reader.borrow_mut();
+                    r.continuous_pictures.clear();
+                    r.continuous_offsets.clear();
+                    r.continuous_rendered.clear();
+                }
+                glib::ControlFlow::Break
+            });
+            *zoom_debounce.borrow_mut() = Some(id);
+        })
+    };
+    {
+        let request_zoom = request_zoom.clone();
+        let zoom_baseline = zoom_baseline.clone();
+        zoom_in.connect_clicked(move |_| request_zoom(zoom_baseline() * 1.25));
+    }
+    {
+        let request_zoom = request_zoom.clone();
+        let zoom_baseline = zoom_baseline.clone();
+        zoom_out.connect_clicked(move |_| request_zoom(zoom_baseline() / 1.25));
+    }
+    {
+        let request_zoom = request_zoom.clone();
+        let scroll = scroll.clone();
+        zoom_fit_width.connect_clicked(move |_| {
+            let viewport_width = scroll.width().max(1) as f64;
+            request_zoom(viewport_width / READER_BASE_WIDTH);
         });
     }
     {
-        let host = host.clone();
+        let request_zoom = request_zoom.clone();
         let reader = reader.clone();
-        let render = render.clone();
-        let pdf_hash = pdf_hash.to_string();
-        let continuous_box = continuous_box.clone();
-        let continuous_toggle = continuous_toggle.clone();
-        let continuous_scroll = continuous_scroll.clone();
-        let undo_button = undo_button.clone();
-        let redo_button = redo_button.clone();
-        let rebuild_notes = rebuild_notes.clone();
-        let dialog = reader_window.clone();
-        zoom_out.connect_clicked(move |_| {
-            {
-                let mut r = reader.borrow_mut();
-                r.zoom = (r.zoom / 1.25).max(0.35);
-            }
-            render();
-            rebuild_continuous_view_for_zoom(
-                &host,
-                &reader,
-                &pdf_hash,
-                &continuous_box,
-                &undo_button,
-                &redo_button,
-                &rebuild_notes,
-                &dialog,
-            );
-            if continuous_toggle.is_active() {
-                let page = reader.borrow().page;
-                scroll_continuous_to_page(&reader, &continuous_scroll, page);
-            }
+        let scroll = scroll.clone();
+        zoom_fit_page.connect_clicked(move |_| {
+            let viewport_width = scroll.width().max(1) as f64;
+            let viewport_height = scroll.height().max(1) as f64;
+            let page_pts = {
+                let r = reader.borrow();
+                fond_doc::page_size(r.pdfium, &r.bytes, r.page).unwrap_or((612.0, 792.0))
+            };
+            let fit_width_zoom = viewport_width / READER_BASE_WIDTH;
+            let aspect = if page_pts.0 > 0.0 {
+                page_pts.1 as f64 / page_pts.0 as f64
+            } else {
+                792.0 / 612.0
+            };
+            let fit_height_zoom = viewport_height / (READER_BASE_WIDTH * aspect);
+            request_zoom(fit_width_zoom.min(fit_height_zoom));
         });
     }
     // Tracks which page is "current" from scroll position alone — connected once, works

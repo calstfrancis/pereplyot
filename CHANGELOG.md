@@ -4,10 +4,23 @@
 
 First cut of Pereplyot as a standalone app: `fond-read-gtk` (the shared GTK4/libadwaita
 PDF/EPUB reader already used by Kartoteka and Sputnik) extracted into its own repository,
-wrapped in a small launcher — Open, drag-and-drop, recent files, a System/Light/Dark theme
-toggle, and an in-app changelog viewer. Annotations and reading progress are stored per
-document under `~/.local/share/pereplyot/`, keyed by content hash, so a document's sidecar
-stays portable between Pereplyot and the two embedding apps.
+wrapped in a small launcher — Open, drag-and-drop, a System/Light/Dark theme toggle, and an
+in-app changelog viewer. Annotations and reading progress are stored per document under
+`~/.local/share/pereplyot/`, keyed by content hash, so a document's sidecar stays portable
+between Pereplyot and the two embedding apps.
 
 Extracted from `github.com/calstfrancis/kartoteka` — see that repo's
 `docs/READER-EXTRACTION.md` for the boundary survey the crate itself came from.
+
+**Reader (`fond-read-gtk`, shared with Kartoteka and Sputnik once they bump their pin):**
+- PDF: zoom-to-fit-width and zoom-to-fit-page, next to the existing zoom in/out.
+- PDF and EPUB: keyboard page/chapter navigation — Left/Right (and, for PDF, Page Up/Page
+  Down, Home/End).
+- PDF: zoom changes (in/out/fit) are now debounced (~150ms), and no longer eagerly
+  re-render the entire document's continuous-scroll view when continuous mode isn't the
+  visible one — that rebuild is deferred until the next time it's actually switched to.
+
+**App:** replaced the single "Recent" list with two shelves — **Library** (a cover-grid of
+documents you've intentionally added; PDFs get a real page-1 thumbnail, EPUBs a placeholder
+icon for now — see the code's own note on why) and **History** (every document ever opened,
+auto-populated as before, now with an "Add to Library" action per row).

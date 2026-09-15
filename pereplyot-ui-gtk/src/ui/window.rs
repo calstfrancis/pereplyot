@@ -11,8 +11,10 @@ use libadwaita::prelude::*;
 use crate::about::show_about;
 use crate::changelog::show_changelog;
 use crate::config::Config;
+use crate::library::{Library, LibraryEntry};
 use crate::reader_host::{self, LocalReaderHost};
 use crate::recents::{DocKind, RecentEntry, Recents};
+use crate::thumbnail;
 use crate::ui::{menu, toast, Widgets};
 
 pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
@@ -37,41 +39,89 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
     menu_button.set_menu_model(Some(&menu::build()));
     header.pack_end(&menu_button);
 
-    let recents_box = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+    // Library: intentionally-added documents, cards in a plain FlowBox. Nothing lands here
+    // except via History's "Add to Library" action.
+    let library_flow = gtk4::FlowBox::new();
+    library_flow.set_valign(gtk4::Align::Start);
+    library_flow.set_selection_mode(gtk4::SelectionMode::None);
+    library_flow.set_homogeneous(true);
+    library_flow.set_row_spacing(12);
+    library_flow.set_column_spacing(12);
+    library_flow.set_margin_top(12);
+    library_flow.set_margin_bottom(12);
+    library_flow.set_margin_start(12);
+    library_flow.set_margin_end(12);
 
-    let scroller = gtk4::ScrolledWindow::new();
-    scroller.set_child(Some(&recents_box));
-    scroller.set_hexpand(true);
-    scroller.set_vexpand(true);
-    scroller.set_max_content_height(400);
-    scroller.set_propagate_natural_height(true);
+    let library_empty_hint = gtk4::Label::new(Some(
+        "Nothing in your library yet — open a document and add it here from History.",
+    ));
+    library_empty_hint.set_wrap(true);
+    library_empty_hint.set_justify(gtk4::Justification::Center);
+    library_empty_hint.add_css_class("dim-label");
+    library_empty_hint.set_margin_top(48);
+    library_empty_hint.set_margin_start(24);
+    library_empty_hint.set_margin_end(24);
 
-    let status = adw::StatusPage::builder()
-        .icon_name("document-open-symbolic")
-        .title("Open a PDF or EPUB")
-        .description("Drag a file onto this window, or use Open.")
-        .child(&scroller)
-        .vexpand(true)
-        .build();
+    let library_page = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    library_page.append(&library_empty_hint);
+    library_page.append(&library_flow);
+    let library_scroll = gtk4::ScrolledWindow::new();
+    library_scroll.set_child(Some(&library_page));
+    library_scroll.set_hexpand(true);
+    library_scroll.set_vexpand(true);
+
+    // History: every document ever opened, auto-populated — unchanged in role from the
+    // original "Recent" list, just renamed now that Library exists as the opt-in shelf.
+    let history_box = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+    history_box.set_margin_top(12);
+    history_box.set_margin_bottom(12);
+    history_box.set_margin_start(12);
+    history_box.set_margin_end(12);
+    let history_scroll = gtk4::ScrolledWindow::new();
+    history_scroll.set_child(Some(&history_box));
+    history_scroll.set_hexpand(true);
+    history_scroll.set_vexpand(true);
+
+    let view_stack = adw::ViewStack::new();
+    view_stack.add_titled_with_icon(
+        &library_scroll,
+        Some("library"),
+        "Library",
+        "view-grid-symbolic",
+    );
+    view_stack.add_titled_with_icon(
+        &history_scroll,
+        Some("history"),
+        "History",
+        "document-open-recent-symbolic",
+    );
+
+    let switcher = adw::ViewSwitcher::new();
+    switcher.set_stack(Some(&view_stack));
+    header.set_title_widget(Some(&switcher));
 
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
     let toasts = adw::ToastOverlay::new();
-    toasts.set_child(Some(&status));
+    toasts.set_child(Some(&view_stack));
     toolbar.set_content(Some(&toasts));
     window.set_content(Some(&toolbar));
 
     let widgets = Rc::new(Widgets {
         window,
         toasts,
-        recents_box,
+        history_box,
+        library_flow,
+        library_empty_hint,
         config: Rc::new(RefCell::new(config)),
         recents: RefCell::new(Recents::load()),
+        library: RefCell::new(Library::load()),
     });
 
     install_actions(app, &widgets);
     install_drop_target(&widgets);
-    rebuild_recents(&widgets);
+    rebuild_history(&widgets);
+    rebuild_library(&widgets);
 
     widgets
 }
@@ -243,7 +293,7 @@ pub fn open_path(widgets: &Rc<Widgets>, path: PathBuf) {
         kind,
         last_opened: chrono::Utc::now(),
     });
-    rebuild_recents(widgets);
+    rebuild_history(widgets);
 }
 
 fn sniff_title(kind: DocKind, path: &Path, bytes: &[u8]) -> Option<String> {
@@ -264,9 +314,9 @@ fn file_stem(path: &Path) -> Option<String> {
     path.file_stem().map(|s| s.to_string_lossy().to_string())
 }
 
-fn rebuild_recents(widgets: &Rc<Widgets>) {
-    while let Some(child) = widgets.recents_box.first_child() {
-        widgets.recents_box.remove(&child);
+fn rebuild_history(widgets: &Rc<Widgets>) {
+    while let Some(child) = widgets.history_box.first_child() {
+        widgets.history_box.remove(&child);
     }
 
     let entries: Vec<_> = widgets.recents.borrow().entries().to_vec();
@@ -274,16 +324,13 @@ fn rebuild_recents(widgets: &Rc<Widgets>) {
         return;
     }
 
-    let heading = gtk4::Label::new(Some("Recent"));
-    heading.add_css_class("heading");
-    heading.set_halign(gtk4::Align::Start);
-    heading.set_margin_bottom(4);
-    widgets.recents_box.append(&heading);
-
     for entry in entries {
-        let row = gtk4::Button::new();
-        row.add_css_class("flat");
+        let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
         row.add_css_class("recent-row");
+
+        let open_button = gtk4::Button::new();
+        open_button.add_css_class("flat");
+        open_button.set_hexpand(true);
 
         let inner = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
         let title = gtk4::Label::new(Some(&entry.title));
@@ -296,18 +343,151 @@ fn rebuild_recents(widgets: &Rc<Widgets>) {
         subtitle.set_ellipsize(gtk4::pango::EllipsizeMode::Middle);
         inner.append(&title);
         inner.append(&subtitle);
-        row.set_child(Some(&inner));
+        open_button.set_child(Some(&inner));
 
         let handler_widgets = widgets.clone();
         let path = entry.path.clone();
-        row.connect_clicked(move |_| {
+        open_button.connect_clicked(move |_| {
             if path.is_file() {
                 open_path(&handler_widgets, path.clone());
             } else {
                 toast(&handler_widgets, "File no longer exists at that location");
             }
         });
+        row.append(&open_button);
 
-        widgets.recents_box.append(&row);
+        let already_in_library = widgets.library.borrow().contains(&entry.hash);
+        let add_button = gtk4::Button::from_icon_name(if already_in_library {
+            "object-select-symbolic"
+        } else {
+            "list-add-symbolic"
+        });
+        add_button.add_css_class("flat");
+        add_button.set_valign(gtk4::Align::Center);
+        if already_in_library {
+            add_button.set_tooltip_text(Some("Already in Library"));
+            add_button.set_sensitive(false);
+        } else {
+            add_button.set_tooltip_text(Some("Add to Library"));
+            let handler_widgets = widgets.clone();
+            let entry = entry.clone();
+            add_button.connect_clicked(move |_| {
+                add_to_library(&handler_widgets, &entry);
+            });
+        }
+        row.append(&add_button);
+
+        widgets.history_box.append(&row);
     }
+}
+
+fn add_to_library(widgets: &Rc<Widgets>, entry: &RecentEntry) {
+    widgets.library.borrow_mut().add(LibraryEntry {
+        hash: entry.hash.clone(),
+        path: entry.path.clone(),
+        title: entry.title.clone(),
+        kind: entry.kind,
+        added_at: chrono::Utc::now(),
+    });
+    toast(
+        widgets,
+        &format!("Added \u{201c}{}\u{201d} to Library", entry.title),
+    );
+    rebuild_library(widgets);
+    rebuild_history(widgets);
+}
+
+fn rebuild_library(widgets: &Rc<Widgets>) {
+    while let Some(child) = widgets.library_flow.first_child() {
+        widgets.library_flow.remove(&child);
+    }
+
+    let entries: Vec<_> = widgets.library.borrow().entries().to_vec();
+    widgets.library_empty_hint.set_visible(entries.is_empty());
+
+    for entry in entries {
+        widgets
+            .library_flow
+            .insert(&build_library_card(widgets, &entry), -1);
+    }
+}
+
+fn build_library_card(widgets: &Rc<Widgets>, entry: &LibraryEntry) -> gtk4::Widget {
+    let card = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
+    card.set_width_request(120);
+
+    let cover_slot = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    cover_slot.add_css_class("library-cover-slot");
+    cover_slot.set_size_request(120, 160);
+    cover_slot.set_halign(gtk4::Align::Center);
+    cover_slot.set_valign(gtk4::Align::Center);
+
+    match thumbnail::render_thumbnail(entry.kind, &entry.path) {
+        Some(texture) => {
+            let picture = gtk4::Picture::for_paintable(&texture);
+            picture.set_content_fit(gtk4::ContentFit::Cover);
+            cover_slot.append(&picture);
+        }
+        None => {
+            let icon_name = match entry.kind {
+                DocKind::Pdf => "x-office-document-symbolic",
+                DocKind::Epub => "accessories-dictionary-symbolic",
+            };
+            let icon = gtk4::Image::from_icon_name(icon_name);
+            icon.set_pixel_size(48);
+            icon.add_css_class("dim-label");
+            cover_slot.append(&icon);
+        }
+    }
+    card.append(&cover_slot);
+
+    let title = gtk4::Label::new(Some(&entry.title));
+    title.set_wrap(true);
+    title.set_justify(gtk4::Justification::Center);
+    title.set_lines(2);
+    title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    title.set_max_width_chars(16);
+    card.append(&title);
+
+    let button = gtk4::Button::new();
+    button.add_css_class("flat");
+    button.set_child(Some(&card));
+    button.set_tooltip_text(Some("Right-click to remove from Library"));
+
+    let handler_widgets = widgets.clone();
+    let path = entry.path.clone();
+    button.connect_clicked(move |_| {
+        if path.is_file() {
+            open_path(&handler_widgets, path.clone());
+        } else {
+            toast(&handler_widgets, "File no longer exists at that location");
+        }
+    });
+
+    let click = gtk4::GestureClick::new();
+    click.set_button(gtk4::gdk::BUTTON_SECONDARY);
+    let handler_widgets = widgets.clone();
+    let hash = entry.hash.clone();
+    let parent_button = button.clone();
+    click.connect_pressed(move |_, _, _, _| {
+        let popover = gtk4::Popover::new();
+        let remove_button = gtk4::Button::with_label("Remove from Library");
+        remove_button.add_css_class("flat");
+        remove_button.add_css_class("destructive-action");
+        let handler_widgets = handler_widgets.clone();
+        let hash = hash.clone();
+        let popover_to_close = popover.clone();
+        remove_button.connect_clicked(move |_| {
+            handler_widgets.library.borrow_mut().remove(&hash);
+            rebuild_library(&handler_widgets);
+            rebuild_history(&handler_widgets);
+            popover_to_close.popdown();
+        });
+        popover.set_child(Some(&remove_button));
+        popover.set_parent(&parent_button);
+        popover.popup();
+    });
+    button.add_controller(click);
+
+    button.upcast()
 }
