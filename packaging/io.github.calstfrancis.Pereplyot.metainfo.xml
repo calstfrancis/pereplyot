@@ -48,6 +48,13 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.1.1" date="2026-09-15">
+      <description>
+        <p>0.1.1 "True Margin" — a duplicate "Reader" title, keyboard page navigation that
+        never actually fired, and a misplaced Notes sidebar toggle, all fixed; hamburger
+        menu and status bar now match the rest of the suite.</p>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-09-15">
       <description>
         <p>0.1.0 "Quiet Spine" — first release: a standalone PDF/EPUB reader built around

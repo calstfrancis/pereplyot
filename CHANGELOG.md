@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.1.1] "True Margin" — 2026-09-15
+
+Fixes found by actually using v0.1.0:
+
+- **The PDF reader showed "Reader" twice** — the shared reader window's own headerbar and
+  the PDF reader's own inner headerbar both fell back to the window's title, which is now
+  a fixed "Reader" shared across every open tab rather than per-document the way it used to
+  be. The inner header now shows the actual document title instead of falling back.
+- **Keyboard page/chapter navigation now actually works.** It was wired up in 0.1.0 but
+  never fired in practice — a focused button, dropdown, or (for EPUB) the page content
+  itself could consume Left/Right/Home/End before the shortcut ever saw them. Fixed by
+  intercepting those keys ahead of that, while still leaving Left/Right/Home/End alone
+  when the page-number or search field has focus, so typing there still moves the text
+  cursor normally.
+- **The Notes/annotations sidebar toggle moved to the right** of the header, next to
+  Contents/outline on the left — it had been sitting on the left in both readers despite
+  the code's own comment claiming otherwise.
+- **Hamburger menu and status bar now match the rest of the suite**: a hand-built popover
+  (Open, Theme, About) instead of a plain menu, and the usual bottom-right `v{VERSION}`
+  button that opens the changelog.
+
 ## [0.1.0] "Quiet Spine" — 2026-09-15
 
 First cut of Pereplyot as a standalone app: `fond-read-gtk` (the shared GTK4/libadwaita

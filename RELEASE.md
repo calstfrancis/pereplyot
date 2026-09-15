@@ -1,4 +1,4 @@
-# Pereplyot v0.1.0 "Quiet Spine"
+# Pereplyot v0.1.1 "True Margin"
 
 Install via Flatpak:
 
@@ -18,28 +18,24 @@ flatpak update io.github.calstfrancis.Pereplyot
 
 ### What's new
 
-**Pereplyot is a real app now.** It started life as `fond-read-gtk`, the PDF/EPUB reader
-widget shared by Kartoteka and Sputnik — this release pulls it into its own repository and
-wraps it in a small standalone launcher: open a file by picker, drag-and-drop, or a file
-manager's "Open With," and it remembers where you left off. No library or vault to set up
-first.
+**Fixes found by actually using v0.1.0.** The PDF reader was showing "Reader" twice at the
+top of the window — the shared reader window's own header and the PDF reader's own header
+both fell back to the same fixed title instead of one of them showing the document you
+actually opened. Fixed.
 
-**Two shelves: Library and History.** History is every document you've opened, kept
-automatically. Library is opt-in — a cover-grid of documents you've specifically chosen to
-keep, one click away via an "Add to Library" button on any History entry. PDFs get a real
-page-1 thumbnail; EPUB covers are a placeholder icon for now (that needs a small addition
-to a crate shared with Kartoteka, coming later).
+**Keyboard page and chapter navigation now actually works.** It shipped in 0.1.0 but never
+fired in practice — a focused button, dropdown, or the page content itself could eat
+Left/Right/Home/End before the shortcut ever saw them. Fixed, while still leaving those
+keys alone for their normal job (moving the text cursor) when the page-number or search
+field has focus.
 
-**Read faster, navigate by keyboard.** Zoom now has fit-to-width and fit-to-page presets
-alongside plain zoom in/out, and Left/Right (plus Page Up/Down and Home/End for PDFs) page
-and turn chapters without reaching for the mouse. Zoom changes are also smoother — they're
-debounced, and no longer silently re-render the entire document in the background if
-continuous-scroll view isn't even the one you're looking at.
+**The Notes/annotations sidebar toggle moved to the right** of the header, next to
+Contents/outline on the left, where it belongs.
 
-**Everything else the reader already does:** highlight, underline, strike, and freestanding
-notes, with export to Markdown; in-document search; continuous scroll and facing-pages view
-for PDFs; a Contents outline on the left and a Notes list on the right; tabs, so opening a
-second document doesn't open a second window.
+**The hamburger menu and status bar now match the rest of the reading app suite** — a
+proper popover menu and the usual bottom-right version button that opens the changelog.
+
+---
 
 ### Full changelog
 
