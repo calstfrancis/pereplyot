@@ -36,7 +36,6 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
     let menu_button = gtk4::MenuButton::new();
     menu_button.set_icon_name("open-menu-symbolic");
     menu_button.set_tooltip_text(Some("Main Menu"));
-    menu_button.set_menu_model(Some(&menu::build()));
     header.pack_end(&menu_button);
 
     // Library: intentionally-added documents, cards in a plain FlowBox. Nothing lands here
@@ -100,8 +99,25 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
     switcher.set_stack(Some(&view_stack));
     header.set_title_widget(Some(&switcher));
 
+    // Status bar (house style): blank on the left — Pereplyot has no per-window status
+    // message the way Kartoteka's "No library open"/entry count does — a version →
+    // changelog button on the right.
+    let statusbar = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+    statusbar.add_css_class("toolbar");
+    let statusbar_spacer = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+    statusbar_spacer.set_hexpand(true);
+    let version_button = gtk4::Button::builder()
+        .label(concat!("v", env!("CARGO_PKG_VERSION")))
+        .tooltip_text("View changelog")
+        .build();
+    version_button.add_css_class("flat");
+    version_button.add_css_class("caption");
+    statusbar.append(&statusbar_spacer);
+    statusbar.append(&version_button);
+
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
+    toolbar.add_bottom_bar(&statusbar);
     let toasts = adw::ToastOverlay::new();
     toasts.set_child(Some(&view_stack));
     toolbar.set_content(Some(&toasts));
@@ -117,6 +133,12 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
         recents: RefCell::new(Recents::load()),
         library: RefCell::new(Library::load()),
     });
+
+    {
+        let widgets = widgets.clone();
+        version_button.connect_clicked(move |_| show_changelog(&widgets.window));
+    }
+    menu_button.set_popover(Some(&menu::build(&widgets)));
 
     install_actions(app, &widgets);
     install_drop_target(&widgets);
@@ -157,13 +179,6 @@ fn install_actions(app: &adw::Application, widgets: &Rc<Widgets>) {
         });
     }
     window.add_action(&theme_action);
-
-    let changelog_action = gio::SimpleAction::new("changelog", None);
-    {
-        let widgets = widgets.clone();
-        changelog_action.connect_activate(move |_, _| show_changelog(&widgets.window));
-    }
-    window.add_action(&changelog_action);
 
     let about_action = gio::SimpleAction::new("about", None);
     {

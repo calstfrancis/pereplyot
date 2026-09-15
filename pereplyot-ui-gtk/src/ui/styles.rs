@@ -20,7 +20,9 @@ const GLOBAL_CSS: &str = "\
     } \
     flowboxchild:hover .library-cover-slot { \
         background: alpha(@window_fg_color, 0.12); \
-    }";
+    } \
+    .fond-toggle-active { background: transparent; } \
+    .fond-toggle-active label { font-weight: 700; color: @window_fg_color; }";
 
 pub fn load_global_css() {
     let css = gtk4::CssProvider::new();

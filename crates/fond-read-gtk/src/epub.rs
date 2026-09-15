@@ -617,10 +617,11 @@ pub fn show_epub_reader(
     popout_button.set_tooltip_text(Some("Open in a new window"));
 
     // pack_end order is the reverse of visual order (same gotcha CLAUDE.md notes for the
-    // hamburger menu) — Apply packed first so it ends up rightmost: Mode, Colour, Apply,
-    // Font size, Open in new window. Sidebar toggles, search, and undo/redo go at the
-    // header's start, per house style (undo/redo in the same relative position as the PDF
-    // reader's own pair).
+    // hamburger menu) — Notes packed first so it ends up rightmost: Mode, Colour, Apply,
+    // Font size, Open in new window, Notes. Contents/outline stays at the header's start
+    // (house style: outline left, notes/annotations right — matching the PDF reader's own
+    // fix for the same left/left bug), and search/undo/redo follow it.
+    header.pack_end(&notes_toggle);
     header.pack_end(&popout_button);
     header.pack_end(&apply_button);
     header.pack_end(&color_drop);
@@ -630,7 +631,6 @@ pub fn show_epub_reader(
     if let Some(sidebar_toggle) = &sidebar_toggle {
         header.pack_start(sidebar_toggle);
     }
-    header.pack_start(&notes_toggle);
     header.pack_start(&search_toggle);
     header.pack_start(&undo_button);
     header.pack_start(&redo_button);
@@ -1222,11 +1222,19 @@ pub fn show_epub_reader(
 
     {
         let key_controller = gtk4::EventControllerKey::new();
+        // Capture phase, not the default bubble — otherwise the WebView (which owns focus
+        // whenever the reader isn't showing chrome) and any focused header control can
+        // consume Left/Right for their own purposes (in-page scroll, focus navigation)
+        // before this ever sees them. Runs top-down, ahead of all of that. The search
+        // entry still needs normal Left/Right/cursor behavior while it has focus, so that's
+        // explicitly passed through below rather than intercepted.
+        key_controller.set_propagation_phase(gtk4::PropagationPhase::Capture);
         let epub_undo = epub_undo.clone();
         let epub_redo = epub_redo.clone();
         let search_toggle = search_toggle.clone();
         let prev = prev.clone();
         let next = next.clone();
+        let view_for_focus = view.clone();
         key_controller.connect_key_pressed(move |_, keyval, _keycode, modifiers| {
             if keyval == gdk::Key::z && modifiers.contains(gdk::ModifierType::CONTROL_MASK) {
                 if modifiers.contains(gdk::ModifierType::SHIFT_MASK) {
@@ -1244,12 +1252,15 @@ pub fn show_epub_reader(
                 search_toggle.set_active(false);
                 return glib::Propagation::Stop;
             }
+            let focus_in_text_entry = view_for_focus
+                .root()
+                .and_then(|root| root.focus())
+                .is_some_and(|w| w.is::<gtk4::Entry>() || w.is::<gtk4::Text>());
+            if focus_in_text_entry {
+                return glib::Propagation::Proceed;
+            }
             // Prev/next chapter — reuses the prev/next buttons' own handlers via
-            // `emit_clicked` rather than duplicating their chapter-boundary logic. Not
-            // guarded against a focused WebView consuming these first (unlike the plain
-            // GTK `Picture` the PDF reader's paged view uses, EPUB content renders inside
-            // WebKit, which may handle unmodified arrow keys itself for in-page scrolling)
-            // — needs a live check once this can actually be run.
+            // `emit_clicked` rather than duplicating their chapter-boundary logic.
             match keyval {
                 gdk::Key::Left => {
                     prev.emit_clicked();

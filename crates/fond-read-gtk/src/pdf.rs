@@ -1316,6 +1316,11 @@ pub fn show_pdf_reader(
     let view = adw::ToolbarView::new();
     let header = adw::HeaderBar::new();
     header.add_css_class("fond-chrome");
+    // Explicit title, not left to the default (the containing window's own title): the
+    // reader host window is shared across every open tab now, so its title can't speak
+    // for any one document — this used to show "Reader" twice (the tab host's own header
+    // falls back to the same window title, since it doesn't set a title widget either).
+    header.set_title_widget(Some(&adw::WindowTitle::new(title, "")));
 
     let prev = gtk4::Button::from_icon_name("go-previous-symbolic");
     prev.add_css_class("flat");
@@ -1437,12 +1442,15 @@ pub fn show_pdf_reader(
 
     // pack_end order is the reverse of visual order (last-packed ends up leftmost) — same
     // gotcha CLAUDE.md notes for the hamburger menu. Visual order here, left to right:
-    // Two-page, Continuous, mode picker, colour picker, Note, Page #, Open in new window. The
-    // Contents/Notes sidebar toggles and Undo/Redo live at the *start* of the headerbar
-    // instead (house style for the sidebar toggle; Undo/Redo follow it for the same
-    // "persistent chrome, not a per-mode control" reasoning). Page nav and zoom move to the
-    // bottom status bar (below) so the headerbar's title-widget slot stays free for the
-    // document's own name — a wide title plus this many controls didn't fit together.
+    // Two-page, Continuous, mode picker, colour picker, Note, Page #, Open in new window,
+    // Notes sidebar. The Contents/outline toggle and Undo/Redo live at the *start* of the
+    // headerbar instead (house style for the sidebar toggle: outline on the left; Notes/
+    // annotations mirror it on the right, rather than clustering both on the left — Undo/
+    // Redo follow Contents for the same "persistent chrome, not a per-mode control"
+    // reasoning). Page nav and zoom move to the bottom status bar (below) so the
+    // headerbar's title-widget slot stays free for the document's own name — a wide title
+    // plus this many controls didn't fit together.
+    header.pack_end(&notes_toggle);
     header.pack_end(&popout_button);
     header.pack_end(&page_num_button);
     header.pack_end(&note_button);
@@ -1453,7 +1461,6 @@ pub fn show_pdf_reader(
     if let Some(sidebar_toggle) = &sidebar_toggle {
         header.pack_start(sidebar_toggle);
     }
-    header.pack_start(&notes_toggle);
     header.pack_start(&undo_button);
     header.pack_start(&redo_button);
     view.add_top_bar(&header);
@@ -1704,6 +1711,17 @@ pub fn show_pdf_reader(
     }
     {
         let key_controller = gtk4::EventControllerKey::new();
+        // Bubble phase (the default) delivers a key press to whatever's focused first —
+        // and with a page-full of buttons/dropdowns/toggles to focus, GTK's own
+        // directional-navigation binds Left/Right/Home/End on most of them to move focus
+        // between widgets rather than letting the event bubble here at all, so page
+        // navigation silently did nothing unless the picture itself happened to hold
+        // focus. Capture phase runs top-down, before any child's own key bindings, so this
+        // intercepts navigation keys regardless of what currently has focus — matching
+        // what a reader's page-turn shortcuts should do. The one thing that must still work
+        // normally is editing `page_entry`/the search entry (Left/Right/Home/End move the
+        // text cursor there), so those are explicitly passed through below.
+        key_controller.set_propagation_phase(gtk4::PropagationPhase::Capture);
         let undo = undo.clone();
         let redo = redo.clone();
         let prev = prev.clone();
@@ -1712,6 +1730,7 @@ pub fn show_pdf_reader(
         let render = render.clone();
         let continuous_toggle = continuous_toggle.clone();
         let continuous_scroll = continuous_scroll.clone();
+        let view_for_focus = view.clone();
         key_controller.connect_key_pressed(move |_, keyval, _keycode, modifiers| {
             if keyval == gdk::Key::z && modifiers.contains(gdk::ModifierType::CONTROL_MASK) {
                 if modifiers.contains(gdk::ModifierType::SHIFT_MASK) {
@@ -1720,6 +1739,13 @@ pub fn show_pdf_reader(
                     undo();
                 }
                 return glib::Propagation::Stop;
+            }
+            let focus_in_text_entry = view_for_focus
+                .root()
+                .and_then(|root| root.focus())
+                .is_some_and(|w| w.is::<gtk4::Entry>() || w.is::<gtk4::Text>());
+            if focus_in_text_entry {
+                return glib::Propagation::Proceed;
             }
             // Left/Right and Page_Up/Page_Down reuse the prev/next buttons' own click
             // handlers (continuous-scroll-aware, two-page-spread-aware) via `emit_clicked`,
