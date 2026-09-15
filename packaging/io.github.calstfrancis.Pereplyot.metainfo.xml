@@ -48,6 +48,14 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.2.0" date="2026-09-15">
+      <description>
+        <p>0.2.0 "Shared Shelf" — History is now shared across every app that embeds the
+        reader: opening a document from Kartoteka or Sputnik shows up in Pereplyot's
+        History too. Also fixes Pereplyot sometimes failing to fully close when opened
+        purely to view one file from another app.</p>
+      </description>
+    </release>
     <release version="0.1.1" date="2026-09-15">
       <description>
         <p>0.1.1 "True Margin" — a duplicate "Reader" title, keyboard page navigation that

@@ -1,13 +1,14 @@
-//! The Library: documents intentionally kept, separate from History's auto-populated
-//! every-open list (`recents.rs`). Nothing lands here except via an explicit "Add to
-//! Library" from a History row.
+//! The Library: documents intentionally kept, separate from History's shared,
+//! cross-app-populated log (`fond_read_gtk::history`). Nothing lands here except via an
+//! explicit "Add to Library" from a History row — and, unlike History, this is
+//! Pereplyot-private, so it stays resolved through the normal sandbox-relative data dir.
 
 use std::fs;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::recents::DocKind;
+use fond_read_gtk::history::DocKind;
 
 fn data_dir() -> PathBuf {
     glib::user_data_dir().join("pereplyot")

@@ -16,6 +16,12 @@ finish-args:
   # document portal grants per-file without a blanket filesystem permission — narrower
   # than Kartoteka's manifest by design, not an oversight (root CLAUDE.md, packaging §4).
   - --talk-name=org.freedesktop.portal.Desktop
+  # The one exception: a real (non-XDG-portal) path for the reading-history log shared
+  # with Kartoteka/Sputnik (fond_read_gtk::history) — both hold --filesystem=home and
+  # write here as an ordinary path under $HOME, the same way they already share a
+  # Kartoteka library between their own sandboxes. Scoped to just this one directory
+  # rather than matching their blanket grant.
+  - --filesystem=~/.local/share/pereplyot:create
   # PDFium is bundled into /app/lib; point the app at it explicitly.
   - --env=PDFIUM_LIB_PATH=/app/lib
 

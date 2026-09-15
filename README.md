@@ -14,13 +14,14 @@ matches.
 
 ## Status
 
-**v0.1.0 "Quiet Spine", released 2026-09-15.** Opening a PDF or EPUB (via Open,
+**v0.2.0 "Shared Shelf", released 2026-09-15.** Opening a PDF or EPUB (via Open,
 drag-and-drop, or a file manager's "Open With"); a Library (cover-grid, opt-in) and History
-(every document opened, automatic) shelf; and the reader itself — highlighting/underline/
-strike/notes with export to Markdown, in-document search, continuous scroll and facing-pages
-view, zoom-to-fit-width/page, keyboard page and chapter navigation, a Contents outline and a
-Notes list, and tabs for reading more than one document at once. No Welcome window, no
-screenshot automation, and EPUB cover art (Library shows a placeholder icon for EPUBs) yet.
+(every document opened, automatic, **shared across Kartoteka and Sputnik too** — see below)
+shelf; and the reader itself — highlighting/underline/strike/notes with export to Markdown,
+in-document search, continuous scroll and facing-pages view, zoom-to-fit-width/page,
+keyboard page and chapter navigation, a Contents outline and a Notes list, and tabs for
+reading more than one document at once. No Welcome window, no screenshot automation, and
+EPUB cover art (Library shows a placeholder icon for EPUBs) yet.
 
 ## Building
 
@@ -40,6 +41,12 @@ see that repo's `docs/READER-EXTRACTION.md` for the boundary survey (the `Reader
 six methods, no citation keys, no vault) that made pulling it out into its own app possible.
 `fond-bib`/`fond-doc` (the document/annotation primitives `fond-read-gtk` itself depends on)
 stay in Kartoteka, MIT-licensed, consumed here as an ordinary git dependency.
+
+`fond_read_gtk::history` is a small shared reading-history log both apps also write to
+(alongside their own annotation storage, unaffected) whenever they open a document — so
+Pereplyot's History shelf reflects what was opened anywhere, not just through Pereplyot
+itself. See that module's own doc comment for why it resolves a real home-relative path
+rather than the usual sandbox-relative one, and the one flatpak permission that requires.
 
 ## License
 

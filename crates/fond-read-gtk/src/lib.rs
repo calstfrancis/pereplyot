@@ -22,6 +22,7 @@ use gtk4::Orientation;
 
 pub mod annotations;
 pub mod epub;
+pub mod history;
 pub mod pdf;
 pub mod reader_host;
 
@@ -79,6 +80,20 @@ thread_local! {
     /// of the synchronisation story.
     static OPEN_READERS: RefCell<HashMap<String, reader_host::ReaderTab>> =
         RefCell::new(HashMap::new());
+
+    /// Callbacks registered via [`on_all_readers_closed`].
+    static ON_ALL_CLOSED: RefCell<Vec<Rc<dyn Fn()>>> = RefCell::new(Vec::new());
+}
+
+/// Register a callback to run whenever the last open reader tab/window closes (across the
+/// shared default host and any popped-out ones). Meant for a host that has no persistent
+/// window of its own to fall back to once nothing is being read — Pereplyot's launcher, for
+/// one, which otherwise stays alive (invisibly, if it was never actually shown) purely
+/// because the `ApplicationWindow` GTK tracks for auto-quit is the launcher, not the reader.
+/// Kartoteka and Sputnik have no use for this — their own main window is always there
+/// regardless of any reader closing.
+pub fn on_all_readers_closed(cb: impl Fn() + 'static) {
+    ON_ALL_CLOSED.with(|c| c.borrow_mut().push(Rc::new(cb)));
 }
 
 /// The reader tab already open on `hash`, if there is one.
@@ -102,7 +117,18 @@ pub fn register_reader(hash: &str, tab: &reader_host::ReaderTab) {
 }
 
 pub fn unregister_window(hash: &str) {
-    OPEN_READERS.with(|r| r.borrow_mut().remove(hash));
+    let now_empty = OPEN_READERS.with(|r| {
+        let mut r = r.borrow_mut();
+        r.remove(hash);
+        r.is_empty()
+    });
+    if now_empty {
+        ON_ALL_CLOSED.with(|c| {
+            for cb in c.borrow().iter() {
+                cb();
+            }
+        });
+    }
 }
 
 /// A flat, left-aligned popover row. Deliberately a copy of `app_window`'s helper of the

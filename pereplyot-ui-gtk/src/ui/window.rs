@@ -8,12 +8,13 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
+use fond_read_gtk::history::{self, DocKind, HistoryEntry};
+
 use crate::about::show_about;
 use crate::changelog::show_changelog;
 use crate::config::Config;
 use crate::library::{Library, LibraryEntry};
 use crate::reader_host::{self, LocalReaderHost};
-use crate::recents::{DocKind, RecentEntry, Recents};
 use crate::thumbnail;
 use crate::ui::{menu, toast, Widgets};
 
@@ -130,7 +131,6 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
         library_flow,
         library_empty_hint,
         config: Rc::new(RefCell::new(config)),
-        recents: RefCell::new(Recents::load()),
         library: RefCell::new(Library::load()),
     });
 
@@ -301,13 +301,10 @@ pub fn open_path(widgets: &Rc<Widgets>, path: PathBuf) {
         }
     }
 
-    widgets.recents.borrow_mut().touch(RecentEntry {
-        hash,
-        path,
-        title,
-        kind,
-        last_opened: chrono::Utc::now(),
-    });
+    // Shared, cross-app history: Kartoteka and Sputnik record here too (each via this same
+    // `fond_read_gtk::history::record_open`, at their own reader-open call sites), so this
+    // shows what was opened anywhere, not just through Pereplyot itself.
+    history::record_open(kind, &hash, &path, &title);
     rebuild_history(widgets);
 }
 
@@ -334,7 +331,7 @@ fn rebuild_history(widgets: &Rc<Widgets>) {
         widgets.history_box.remove(&child);
     }
 
-    let entries: Vec<_> = widgets.recents.borrow().entries().to_vec();
+    let entries = history::load();
     if entries.is_empty() {
         return;
     }
@@ -396,7 +393,7 @@ fn rebuild_history(widgets: &Rc<Widgets>) {
     }
 }
 
-fn add_to_library(widgets: &Rc<Widgets>, entry: &RecentEntry) {
+fn add_to_library(widgets: &Rc<Widgets>, entry: &HistoryEntry) {
     widgets.library.borrow_mut().add(LibraryEntry {
         hash: entry.hash.clone(),
         path: entry.path.clone(),

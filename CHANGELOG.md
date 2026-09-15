@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.2.0] "Shared Shelf" — 2026-09-15
+
+- **History is now shared across every app that embeds the reader.** Opening a PDF or EPUB
+  from Kartoteka or Sputnik now shows up in Pereplyot's History shelf too, not just
+  documents opened through Pereplyot itself — `fond_read_gtk::history` is a new small
+  module in the shared reader crate that any host can call, writing to one real path under
+  `~/.local/share/pereplyot/` that Kartoteka and Sputnik (which already hold broad home
+  access, the same way they already share a Kartoteka library between their own sandboxes)
+  can reach directly, and that Pereplyot's own otherwise-minimal sandbox now grants a
+  narrow, single-directory exception for. One known gap: clicking a history entry that
+  another app recorded can still fail if Pereplyot was never granted access to that
+  specific file — it'll show a "couldn't read file" toast rather than opening.
+- **Fixed: Pereplyot could fail to fully close** when opened purely to view one file (from
+  Kartoteka, Sputnik, a file manager's "Open With," or anything else handing it a file
+  argument on a fresh launch). The empty Library/History launcher window was being shown
+  right alongside the reader in that case — invisible to the user most of the time, but
+  still the one window keeping the app alive, so closing the reader you actually came for
+  didn't quit the app. The launcher no longer appears on that first open, and now closes
+  itself (which lets the app quit normally) once nothing is left open to read.
+
 ## [0.1.1] "True Margin" — 2026-09-15
 
 Fixes found by actually using v0.1.0:

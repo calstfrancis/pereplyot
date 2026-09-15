@@ -9,14 +9,15 @@ use libadwaita as adw;
 
 use crate::config::Config;
 use crate::library::Library;
-use crate::recents::Recents;
 
 pub struct Widgets {
     pub window: adw::ApplicationWindow,
     pub toasts: adw::ToastOverlay,
     /// Vertical box of History rows — cleared and repopulated by `window::rebuild_history`
     /// after every successful open and every Library add/remove (an "already in Library"
-    /// row needs its add-button state refreshed too).
+    /// row needs its add-button state refreshed too). Rebuilt from
+    /// `fond_read_gtk::history::load()` each time, not a locally-held list — History is a
+    /// shared, cross-app log now, so this app has no authoritative in-memory copy of it.
     pub history_box: gtk4::Box,
     /// Cards for intentionally-added documents — cleared and repopulated by
     /// `window::rebuild_library` whenever Library membership changes.
@@ -24,7 +25,6 @@ pub struct Widgets {
     /// Shown only when the Library is empty; toggled by `window::rebuild_library`.
     pub library_empty_hint: gtk4::Label,
     pub config: Rc<RefCell<Config>>,
-    pub recents: RefCell<Recents>,
     pub library: RefCell<Library>,
 }
 

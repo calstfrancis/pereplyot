@@ -9,7 +9,7 @@ use std::path::Path;
 use gtk4::prelude::*;
 use gtk4::{gdk, glib};
 
-use crate::recents::DocKind;
+use fond_read_gtk::history::DocKind;
 
 const THUMBNAIL_WIDTH: u32 = 160;
 
