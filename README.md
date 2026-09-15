@@ -6,7 +6,7 @@ freestanding notes — built around `fond-read-gtk`, the same reader widget embe
 [Sputnik](https://github.com/calstfrancis/sputnik). "Pereplyot" (переплёт) is Russian for
 binding, in the bookbinding sense.
 
-Unlike those two apps, Pereplyot has no library or vault behind it — it just opens a file.
+Unlike those two apps, Pereplyot has no git-backed vault behind it — it just opens a file.
 Annotations and reading progress are stored locally, keyed by the file's content hash, under
 `~/.local/share/pereplyot/`. A document's annotation sidecar is byte-compatible with what
 Kartoteka and Sputnik write, so it's portable between all three as long as the file's hash
@@ -14,10 +14,13 @@ matches.
 
 ## Status
 
-Early — v0.1 covers opening a PDF or EPUB (via Open, drag-and-drop, or a file manager's
-"Open With"), a recent-files list, and the reader itself (highlighting, search, continuous
-scroll, annotation export to Markdown, resume position). No library/shelf view, no Welcome
-window, no screenshot automation yet.
+**v0.1.0 "Quiet Spine", released 2026-09-15.** Opening a PDF or EPUB (via Open,
+drag-and-drop, or a file manager's "Open With"); a Library (cover-grid, opt-in) and History
+(every document opened, automatic) shelf; and the reader itself — highlighting/underline/
+strike/notes with export to Markdown, in-document search, continuous scroll and facing-pages
+view, zoom-to-fit-width/page, keyboard page and chapter navigation, a Contents outline and a
+Notes list, and tabs for reading more than one document at once. No Welcome window, no
+screenshot automation, and EPUB cover art (Library shows a placeholder icon for EPUBs) yet.
 
 ## Building
 

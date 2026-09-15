@@ -11,16 +11,19 @@
     <p>
       Pereplyot (переплёт — Russian for "binding") is a standalone PDF and EPUB reader:
       highlight, underline, strike, and leave freestanding notes, with full-text search,
-      continuous scroll, and resumed reading position. No library, no vault — just open a
+      continuous scroll, and resumed reading position. No vault to set up — just open a
       file.
     </p>
     <p>Features:</p>
     <ul>
       <li>Open a PDF or EPUB by file picker, drag-and-drop, or "Open With".</li>
       <li>Highlights, underlines, strikes, and notes, with export to Markdown.</li>
-      <li>In-document search, continuous scroll, and facing-pages view for PDFs.</li>
-      <li>Reading position and annotations remembered per document, no library required.</li>
-      <li>A recent-files list to jump back into what you were reading.</li>
+      <li>In-document search, continuous scroll, facing-pages view, and zoom-to-fit for
+      PDFs.</li>
+      <li>Keyboard page and chapter navigation.</li>
+      <li>Reading position and annotations remembered per document automatically.</li>
+      <li>A Library shelf for documents you keep, separate from History's record of
+      everything you've opened.</li>
     </ul>
   </description>
 
@@ -45,5 +48,12 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.1.0" date="2026-09-15">
+      <description>
+        <p>0.1.0 "Quiet Spine" — first release: a standalone PDF/EPUB reader built around
+        the same reader widget Kartoteka and Sputnik embed, with a Library/History shelf,
+        zoom-to-fit, and keyboard page navigation.</p>
+      </description>
+    </release>
   </releases>
 </component>

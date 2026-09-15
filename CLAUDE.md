@@ -56,4 +56,7 @@ Kartoteka's own `docs/READER-EXTRACTION.md` for the `ReaderHost` boundary this a
 ## Not yet built (fast-follows, not oversights)
 
 Welcome/What's New window, command palette, `capture-screenshots.sh`, a real app icon (the
-current `packaging/pereplyot.svg` is a placeholder), CI publish secrets.
+current `packaging/pereplyot.svg` is a placeholder), CI publish secrets, real EPUB cover
+thumbnails in the Library (needs a new `fond-doc` function — see `src/thumbnail.rs` — which
+needs a Kartoteka release to reach Pereplyot's pinned tag; EPUBs show a placeholder icon
+until then).

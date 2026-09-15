@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.1.0-dev1] — unreleased
+## [0.1.0] "Quiet Spine" — 2026-09-15
 
 First cut of Pereplyot as a standalone app: `fond-read-gtk` (the shared GTK4/libadwaita
 PDF/EPUB reader already used by Kartoteka and Sputnik) extracted into its own repository,
