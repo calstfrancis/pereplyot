@@ -1,0 +1,10 @@
+# Build output
+/target
+
+# flatpak-builder working dirs — large, regenerable, never committed
+/.flatpak-builder
+/build-flatpak
+
+# Editor swap files
+*.kate-swp
+*~

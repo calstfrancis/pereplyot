@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Pereplyot
+GenericName=PDF and EPUB Reader
+Comment=Standalone PDF and EPUB reader with annotations
+Exec=pereplyot %f
+Icon=io.github.calstfrancis.Pereplyot
+Terminal=false
+Type=Application
+Categories=Office;Viewer;
+Keywords=pdf;epub;reader;annotation;highlight;
+MimeType=application/pdf;application/epub+zip;
+StartupNotify=true

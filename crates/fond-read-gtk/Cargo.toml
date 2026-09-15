@@ -1,0 +1,23 @@
+[package]
+name = "fond-read-gtk"
+version = "0.1.0"
+description = "GTK4/libadwaita PDF and EPUB readers with annotation support — shared Fond crate"
+# Unlike the fond-bib/fond-doc crates it depends on, this crate is proprietary: it is the
+# reader UI itself. Extracted from Kartoteka 2026-09-09 so Sputnik (and now Pereplyot, the
+# standalone app built around it) could share it without a second copy ever being written.
+license = "LicenseRef-Proprietary"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+fond-bib = { workspace = true }
+fond-doc = { workspace = true }
+gtk4 = { version = "0.11", features = ["v4_10"] }
+libadwaita = { version = "0.9", features = ["v1_4"] }
+glib = "0.22"
+webkit6 = "0.6"
+# The EPUB reader serialises its highlight payload into the WebKit view as JSON.
+serde = { workspace = true }
+serde_json = { workspace = true }

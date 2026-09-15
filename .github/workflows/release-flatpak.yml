@@ -1,0 +1,182 @@
+name: Release flatpak
+
+# Triggers on the same tag pattern the release process uses, plus a manual dispatch for
+# testing this workflow itself without cutting a real version tag. Mirrors Kartoteka's
+# release-flatpak.yml (kartoteka/.github/workflows/release-flatpak.yml) — same shape,
+# adapted for Pereplyot's manifest/app-id and its single-job (Linux-only) CI check.
+# Requires three repo secrets that only Cal can set up (see RELEASE-CI-SETUP.md):
+#   FLATPAK_GPG_PRIVATE_KEY — armored export of the signing key
+#   FLATPAK_GPG_PASSPHRASE  — the signing key's passphrase
+#   FLATPAK_REPO_TOKEN      — a token with push access to calstfrancis/flatpak
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (must match pereplyot-ui-gtk/Cargo.toml, e.g. 0.1.0)"
+        required: true
+
+jobs:
+  publish-flatpak:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require CI to have passed for this commit
+        if: github.event_name != 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          SHA="${{ github.sha }}"
+          # publish-flatpak.sh pushes main and the tag back to back, and ci.yml triggers off
+          # the main push — so ci.yml is often still running (conclusion "") when this step
+          # first checks, not actually failed. Poll instead of checking once: up to 60
+          # attempts, 15s apart (15 minutes).
+          JOB="build & test"
+          CONCLUSION=""
+          for attempt in $(seq 1 60); do
+            CONCLUSION=$(gh api "repos/${{ github.repository }}/commits/$SHA/check-runs" \
+              --jq ".check_runs[] | select(.name == \"$JOB\") | .conclusion")
+            if [[ -n "$CONCLUSION" ]]; then
+              break
+            fi
+            echo "ci.yml '$JOB' for $SHA hasn't finished yet (attempt $attempt/60) — waiting..."
+            sleep 15
+          done
+          if [[ "$CONCLUSION" != "success" ]]; then
+            echo "ERROR: ci.yml's '$JOB' job for commit $SHA is '$CONCLUSION', not 'success' — refusing to publish."
+            exit 1
+          fi
+          echo "ci.yml '$JOB' for $SHA: $CONCLUSION"
+
+      # Mirrors publish-flatpak.sh's own sanity check.
+      - name: Verify version matches pereplyot-ui-gtk/Cargo.toml
+        run: |
+          set -euo pipefail
+          VERSION="${{ github.event.inputs.version || '' }}"
+          if [[ -z "$VERSION" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          CARGO_VERSION=$(grep '^version' pereplyot-ui-gtk/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          if [[ "$CARGO_VERSION" != "$VERSION" ]]; then
+            echo "ERROR: pereplyot-ui-gtk/Cargo.toml says version is '$CARGO_VERSION', but this run is for '$VERSION'."
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Install flatpak and flatpak-builder
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          NEEDRESTART_MODE: a
+        run: |
+          sudo grep -rlE 'dl\.google\.com' /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null \
+            | xargs -r sudo rm -f
+          APT_OPTS="-o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20"
+          sudo apt-get update $APT_OPTS
+          sudo apt-get install -y $APT_OPTS flatpak flatpak-builder
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+
+      - name: Determine runtime/extension versions
+        # See Kartoteka's identical step for how the GNOME Platform/Sdk 50 <-> Freedesktop
+        # SDK 25.08 mapping was confirmed — not derivable from the manifest itself.
+        run: |
+          RUNTIME_VERSION=$(grep '^runtime-version' packaging/io.github.calstfrancis.Pereplyot.yml | sed "s/runtime-version: *'\(.*\)'/\1/")
+          echo "RUNTIME_VERSION=$RUNTIME_VERSION" >> "$GITHUB_ENV"
+          echo "RUST_EXTENSION_BRANCH=25.08" >> "$GITHUB_ENV"
+
+      - name: Cache flatpak user installation
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/flatpak
+          key: flatpak-gnome${{ env.RUNTIME_VERSION }}-rust${{ env.RUST_EXTENSION_BRANCH }}-v1
+
+      - name: Install runtime, SDK, and rust-stable extension
+        run: |
+          REFS=(
+            "org.gnome.Platform//$RUNTIME_VERSION"
+            "org.gnome.Sdk//$RUNTIME_VERSION"
+            "org.freedesktop.Sdk.Extension.rust-stable//$RUST_EXTENSION_BRANCH"
+          )
+          for attempt in 1 2 3; do
+            if flatpak install --user -y flathub "${REFS[@]}"; then
+              exit 0
+            fi
+            echo "flatpak install attempt $attempt failed, retrying in 15s…"
+            sleep 15
+          done
+          echo "Retrying once more with --no-static-deltas…"
+          flatpak install --user -y --no-static-deltas flathub "${REFS[@]}"
+
+      - name: Import GPG signing key
+        run: |
+          echo "${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}" | gpg --batch --import
+
+      - name: Preset GPG passphrase into the agent
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.gnupg
+          echo "allow-preset-passphrase" >> ~/.gnupg/gpg-agent.conf
+          gpgconf --kill gpg-agent
+          gpgconf --launch gpg-agent
+          KEYGRIP=$(gpg --with-colons --with-keygrip --list-secret-keys \
+            A2918A9B43B199ADF9879F934AC9D5173DE4BC41 | awk -F: '/^grp/ {print $10; exit}')
+          PRESET_BIN=""
+          for candidate in "$(command -v gpg-preset-passphrase 2>/dev/null || true)" \
+            /usr/lib/gnupg/gpg-preset-passphrase /usr/lib/gnupg2/gpg-preset-passphrase; do
+            if [[ -x "$candidate" ]]; then
+              PRESET_BIN="$candidate"
+              break
+            fi
+          done
+          if [[ -z "$PRESET_BIN" ]]; then
+            echo "ERROR: gpg-preset-passphrase not found anywhere expected." >&2
+            exit 1
+          fi
+          echo "${{ secrets.FLATPAK_GPG_PASSPHRASE }}" | "$PRESET_BIN" --preset "$KEYGRIP"
+
+      - name: Build flatpak
+        run: |
+          flatpak-builder --force-clean --user --install build-flatpak \
+            packaging/io.github.calstfrancis.Pereplyot.yml
+
+      - name: Clone public flatpak repo
+        run: |
+          git clone "https://x-access-token:${{ secrets.FLATPAK_REPO_TOKEN }}@github.com/calstfrancis/flatpak" /tmp/flatpak-checkout
+
+      - name: Export build into the repo
+        run: |
+          flatpak build-export \
+            --gpg-sign=A2918A9B43B199ADF9879F934AC9D5173DE4BC41 \
+            /tmp/flatpak-checkout \
+            build-flatpak \
+            master
+
+      - name: Regenerate OSTree summary
+        run: |
+          flatpak build-update-repo \
+            --gpg-sign=A2918A9B43B199ADF9879F934AC9D5173DE4BC41 \
+            /tmp/flatpak-checkout
+
+      - name: Verify the commit actually got signed
+        run: |
+          set -euo pipefail
+          APP_ID="io.github.calstfrancis.Pereplyot"
+          COMMIT="$(cat "/tmp/flatpak-checkout/refs/heads/app/$APP_ID/x86_64/master")"
+          if [[ ! -f "/tmp/flatpak-checkout/objects/${COMMIT:0:2}/${COMMIT:2}.commitmeta" ]]; then
+            echo "ERROR: commit $COMMIT for $APP_ID carries no GPG signature."
+            exit 1
+          fi
+          echo "Signature verified for $APP_ID"
+
+      - name: Push flatpak repo
+        run: |
+          cd /tmp/flatpak-checkout
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Pereplyot $VERSION"
+          git push origin main

@@ -1,0 +1,18 @@
+Pereplyot — Proprietary License
+
+Copyright (c) 2026 Cal St Francis. All rights reserved.
+
+This license applies to the application crate in this repository, `pereplyot-ui-gtk`,
+and to `crates/fond-read-gtk`, the reader widget it is built around.
+
+The source code of these crates is made available for reference only. No permission
+is granted to use, copy, modify, merge, publish, distribute, sublicense, or sell
+copies of these crates or any derivative works, in whole or in part, without the
+prior written permission of the copyright holder.
+
+`fond-read-gtk` is also consumed, under the same terms, by Kartoteka
+(`github.com/calstfrancis/kartoteka`) and Sputnik (`github.com/calstfrancis/sputnik`).
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT.

@@ -1,0 +1,57 @@
+app-id: io.github.calstfrancis.Pereplyot
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: pereplyot
+
+finish-args:
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  # No --filesystem=home: Pereplyot has no library directory of its own. Every file it
+  # touches comes through the portal file dialog or a drag-and-drop, both of which the
+  # document portal grants per-file without a blanket filesystem permission — narrower
+  # than Kartoteka's manifest by design, not an oversight (root CLAUDE.md, packaging §4).
+  - --talk-name=org.freedesktop.portal.Desktop
+  # PDFium is bundled into /app/lib; point the app at it explicitly.
+  - --env=PDFIUM_LIB_PATH=/app/lib
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/pereplyot/cargo
+    CARGO_NET_OFFLINE: 'true'
+
+modules:
+  - name: pereplyot
+    buildsystem: simple
+    sources:
+      - type: git
+        url: https://github.com/calstfrancis/pereplyot.git
+        branch: main
+      # Vendored cargo dependencies. Regenerate with flatpak-cargo-generator whenever
+      # Cargo.lock changes (root CLAUDE.md's vendored-dependency rule).
+      - cargo-sources.json
+      # PDFium native library (BSD-3-Clause), same pinned build Kartoteka bundles.
+      - type: archive
+        url: https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F7961/pdfium-linux-x64.tgz
+        sha256: 019665c8877d46fe65f625f80fd714ab07aac68554b0636acf2a2adf9288adb2
+        dest: pdfium
+        strip-components: 0
+      - type: file
+        path: io.github.calstfrancis.Pereplyot.metainfo.xml
+    build-commands:
+      - mkdir -p cargo
+      - printf '[source.vendored-sources]\ndirectory = "/run/build/pereplyot/cargo/vendor"\n\n[source.crates-io]\nreplace-with = "vendored-sources"\n' > cargo/config.toml
+      - cargo --offline build --release -p pereplyot-ui-gtk
+      - install -Dm755 target/release/pereplyot /app/bin/pereplyot
+      - strip /app/bin/pereplyot
+      # Bundle PDFium (BSD-3).
+      - install -Dm755 pdfium/lib/libpdfium.so /app/lib/libpdfium.so
+      # Desktop entry, icon, AppStream metainfo.
+      - install -Dm644 packaging/io.github.calstfrancis.Pereplyot.desktop /app/share/applications/io.github.calstfrancis.Pereplyot.desktop
+      - install -Dm644 packaging/pereplyot.svg /app/share/icons/hicolor/scalable/apps/io.github.calstfrancis.Pereplyot.svg
+      - install -Dm644 io.github.calstfrancis.Pereplyot.metainfo.xml /app/share/metainfo/io.github.calstfrancis.Pereplyot.metainfo.xml
