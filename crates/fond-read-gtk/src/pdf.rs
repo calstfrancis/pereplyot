@@ -3076,7 +3076,13 @@ pub fn show_pdf_reader(
         let continuous_scroll = continuous_scroll.clone();
         let dialog = reader_window.clone();
         thumbnails_button.connect_clicked(move |_| {
-            show_thumbnail_grid(&reader, &render, &continuous_toggle, &continuous_scroll, &dialog);
+            show_thumbnail_grid(
+                &reader,
+                &render,
+                &continuous_toggle,
+                &continuous_scroll,
+                &dialog,
+            );
         });
     }
     {
@@ -3433,7 +3439,11 @@ fn export_notes_markdown(
         md.push_str("## Notes & highlights\n\n");
         for a in &all {
             let page_num = a.page.unwrap_or(1);
-            md.push_str(&format!("### p. {} — {:?}\n\n", label_for(page_num), a.kind));
+            md.push_str(&format!(
+                "### p. {} — {:?}\n\n",
+                label_for(page_num),
+                a.kind
+            ));
             if let Some(snippet) = &a.snippet {
                 for line in snippet.lines() {
                     md.push_str(&format!("> {line}\n"));
@@ -3451,16 +3461,20 @@ fn export_notes_markdown(
         .initial_name(format!("{title} — notes.md"))
         .build();
     let host = host.clone();
-    file_dialog.save(Some(reader_window), gtk4::gio::Cancellable::NONE, move |result| {
-        if let Ok(file) = result {
-            if let Some(path) = file.path() {
-                match std::fs::write(&path, &md) {
-                    Ok(()) => host.notify("Exported notes & highlights"),
-                    Err(e) => host.notify(&format!("Couldn't export: {e}")),
+    file_dialog.save(
+        Some(reader_window),
+        gtk4::gio::Cancellable::NONE,
+        move |result| {
+            if let Ok(file) = result {
+                if let Some(path) = file.path() {
+                    match std::fs::write(&path, &md) {
+                        Ok(()) => host.notify("Exported notes & highlights"),
+                        Err(e) => host.notify(&format!("Couldn't export: {e}")),
+                    }
                 }
             }
-        }
-    });
+        },
+    );
 }
 
 /// A small modal that anchors the reader's *current* physical page to its own printed page

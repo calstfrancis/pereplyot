@@ -13,7 +13,9 @@ use gtk4::{gdk, gio, glib, Orientation};
 use libadwaita as adw;
 use webkit6::prelude::*;
 
-use super::pdf::{update_bookmark_button, COLOR_PRESETS, EPUB_MARK_KIND_OPTIONS, UNDO_HISTORY_LIMIT};
+use super::pdf::{
+    update_bookmark_button, COLOR_PRESETS, EPUB_MARK_KIND_OPTIONS, UNDO_HISTORY_LIMIT,
+};
 use crate::RebuildCell;
 use crate::{popover_button, popover_separator, ReaderHost};
 
@@ -486,7 +488,10 @@ pub fn show_epub_reader(
     nav.append(&next);
     nav.append(&bookmark_button);
     header.set_title_widget(Some(&nav));
-    update_bookmark_button(&bookmark_button, reader.borrow().bookmarks.contains(&start_index));
+    update_bookmark_button(
+        &bookmark_button,
+        reader.borrow().bookmarks.contains(&start_index),
+    );
 
     let web_view = webkit6::WebView::new();
     web_view.set_vexpand(true);
@@ -862,7 +867,10 @@ pub fn show_epub_reader(
                         let bookmark_button = bookmark_button.clone();
                         let rebuild_notes_cell = rebuild_notes_cell_inner.clone();
                         remove_button.connect_clicked(move |_| {
-                            reader.borrow_mut().bookmarks.retain(|&c| c != chapter_index);
+                            reader
+                                .borrow_mut()
+                                .bookmarks
+                                .retain(|&c| c != chapter_index);
                             let saved: Vec<u32> = reader
                                 .borrow()
                                 .bookmarks
@@ -1070,7 +1078,12 @@ pub fn show_epub_reader(
                     true
                 }
             };
-            let saved: Vec<u32> = reader.borrow().bookmarks.iter().map(|&c| c as u32).collect();
+            let saved: Vec<u32> = reader
+                .borrow()
+                .bookmarks
+                .iter()
+                .map(|&c| c as u32)
+                .collect();
             host.save_bookmarks(&saved);
             update_bookmark_button(btn, now_bookmarked);
             rebuild_notes();
@@ -1831,14 +1844,20 @@ fn apply_epub_style(view: &webkit6::WebView, theme: u32, font: u32) {
     ucm.remove_all_style_sheets();
 
     let theme_css = match theme {
-        1 => "html, body { background: #f4ecd8 !important; color: #5b4636 !important; } \
-              a, a:visited { color: #8a6d3b !important; }",
-        2 => "html, body { background: #1e1e1e !important; color: #dddddd !important; } \
-              a, a:visited { color: #8ab4f8 !important; }",
+        1 => {
+            "html, body { background: #f4ecd8 !important; color: #5b4636 !important; } \
+              a, a:visited { color: #8a6d3b !important; }"
+        }
+        2 => {
+            "html, body { background: #1e1e1e !important; color: #dddddd !important; } \
+              a, a:visited { color: #8ab4f8 !important; }"
+        }
         _ => "",
     };
     let font_css = match font {
-        1 => "body, p, div, span, li { font-family: Georgia, 'Times New Roman', serif !important; }",
+        1 => {
+            "body, p, div, span, li { font-family: Georgia, 'Times New Roman', serif !important; }"
+        }
         2 => "body, p, div, span, li { font-family: -webkit-system-font, sans-serif !important; }",
         _ => "",
     };
