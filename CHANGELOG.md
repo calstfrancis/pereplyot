@@ -1,6 +1,6 @@
 # Changelog
 
-## dev — Kartoteka/Sputnik can launch Pereplyot to open a document directly into their own vault
+## [0.4.0] "Shared Binding" — 2026-09-22
 
 - **New CLI modes**, for Kartoteka and Sputnik to launch this binary instead of embedding
   the reader crate in-process (`fond-read-gtk` pinned copies were going stale — see the
