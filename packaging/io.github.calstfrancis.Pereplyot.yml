@@ -11,17 +11,15 @@ finish-args:
   - --socket=fallback-x11
   - --socket=wayland
   - --device=dri
-  # No --filesystem=home: Pereplyot has no library directory of its own. Every file it
-  # touches comes through the portal file dialog or a drag-and-drop, both of which the
-  # document portal grants per-file without a blanket filesystem permission — narrower
-  # than Kartoteka's manifest by design, not an oversight (root CLAUDE.md, packaging §4).
   - --talk-name=org.freedesktop.portal.Desktop
-  # The one exception: a real (non-XDG-portal) path for the reading-history log shared
-  # with Kartoteka/Sputnik (fond_read_gtk::history) — both hold --filesystem=home and
-  # write here as an ordinary path under $HOME, the same way they already share a
-  # Kartoteka library between their own sandboxes. Scoped to just this one directory
-  # rather than matching their blanket grant.
-  - --filesystem=~/.local/share/pereplyot:create
+  # Broadened from a scoped ~/.local/share/pereplyot:create grant (2026-09-22): Kartoteka
+  # and Sputnik now launch this binary directly to open a document on their own behalf
+  # (--vault=<root> --key=<key>, or --annotations-file=<path>), writing straight into
+  # their vault/material store instead of Pereplyot's own local one — see
+  # pereplyot/README.md's "Relationship to Kartoteka and Sputnik". A vault can live
+  # anywhere under $HOME, so this can no longer stay scoped to Pereplyot's own directory;
+  # matches what Kartoteka's and Sputnik's own manifests already grant themselves.
+  - --filesystem=home
   # PDFium is bundled into /app/lib; point the app at it explicitly.
   - --env=PDFIUM_LIB_PATH=/app/lib
 

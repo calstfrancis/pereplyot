@@ -1,5 +1,29 @@
 # Changelog
 
+## dev — Kartoteka/Sputnik can launch Pereplyot to open a document directly into their own vault
+
+- **New CLI modes**, for Kartoteka and Sputnik to launch this binary instead of embedding
+  the reader crate in-process (`fond-read-gtk` pinned copies were going stale — see the
+  v0.3.0 entry below's own context): `pereplyot --vault=<root> --key=<key> <file>` routes
+  annotations/progress/page-numbering straight into that vault's `notes/<key>.md` /
+  `annots/<key>.json`, exactly like Kartoteka's own `KartotekaReaderHost` does today, via a
+  new `VaultReaderHost` built on the `fond-bib` crate Pereplyot already depends on.
+  `pereplyot --annotations-file=<path> [--progress-file=<path>] <file>` does the plain-file
+  equivalent for Sputnik's non-vault-linked course materials. A bare `pereplyot <file>` is
+  unchanged. Required switching `main.rs` from `HANDLES_OPEN` to `HANDLES_COMMAND_LINE` with
+  its own small argv parser.
+- **Fixed (`fond-read-gtk`): closing a reader via its window's own close button never saved
+  reading progress or unregistered the open reader** — only an explicit tab-close (its own
+  close button, or a keyboard shortcut) ever fired `TabView`'s `close-page` signal, which is
+  the only thing `on_tab_closed`'s hooks were wired to. A stale doc comment claimed the
+  window-close path already cascaded into it; it didn't. Found verifying the vault handoff
+  above actually round-trips resume position, not just annotations. Fixes it for every app
+  embedding this crate, not just Pereplyot.
+- **`--filesystem=home`** replaces Pereplyot's previous narrow
+  `~/.local/share/pereplyot:create` sandbox grant — a vault/material store the CLI modes
+  above write into can live anywhere under the user's home, the same reason Kartoteka's and
+  Sputnik's own manifests already grant this.
+
 ## [0.3.0] "Folded Corner" — 2026-09-22
 
 - **Fixed: the Contents/outline sidebar toggle was completely absent, not just disabled,**

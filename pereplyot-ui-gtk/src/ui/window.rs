@@ -15,7 +15,7 @@ use crate::about::show_about;
 use crate::changelog::show_changelog;
 use crate::config::Config;
 use crate::library::{Library, LibraryEntry};
-use crate::reader_host::{self, LocalReaderHost};
+use crate::reader_host;
 use crate::thumbnail;
 use crate::ui::{menu, toast, Widgets};
 
@@ -310,8 +310,21 @@ fn show_open_dialog(widgets: &Rc<Widgets>) {
 
 /// Detect the file type, hash it, resolve a title, and hand it to the shared PDF/EPUB
 /// reader with a fresh [`LocalReaderHost`] — the one path every entry point (the Open
-/// button, drag-and-drop, and a CLI/"Open With" file argument) funnels through.
+/// button, drag-and-drop, and a plain CLI/"Open With" file argument) funnels through.
 pub fn open_path(widgets: &Rc<Widgets>, path: PathBuf) {
+    open_path_with_host(widgets, path, None);
+}
+
+/// [`open_path`], but for a document Pereplyot was launched to open on another app's
+/// behalf — Kartoteka, or Sputnik — with `override_` set to route its annotations/progress
+/// into that app's own vault/material storage instead of Pereplyot's local one. See
+/// `reader_host::HostOverride`. Used by `main.rs`'s `--vault=`/`--annotations-file=`
+/// command-line handling; `open_path` above is just this with `override_: None`.
+pub fn open_path_with_host(
+    widgets: &Rc<Widgets>,
+    path: PathBuf,
+    override_: Option<reader_host::HostOverride>,
+) {
     if !path.is_file() {
         toast(widgets, "Not a file");
         return;
@@ -337,12 +350,26 @@ pub fn open_path(widgets: &Rc<Widgets>, path: PathBuf) {
     let title = sniff_title(kind, &path, &bytes)
         .unwrap_or_else(|| file_stem(&path).unwrap_or_else(|| "Untitled".to_string()));
 
-    let host = LocalReaderHost::for_document(widgets, &hash);
+    // Resolve the saved reading position before the host exists — same reason
+    // `LocalReaderHost`'s own case reads `reader_host::saved_progress` up front rather than
+    // through the `ReaderHost` trait, which has no "load progress" method (only `save_`):
+    // `show_pdf_reader`/`show_epub_reader` need a starting page *before* they can call
+    // anything on the host at all.
+    let saved_progress = match &override_ {
+        None => reader_host::saved_progress(&hash),
+        Some(o) => reader_host::saved_progress_for_override(o),
+    };
+
+    let host = match reader_host::build_host(widgets, &hash, override_) {
+        Ok(host) => host,
+        Err(e) => {
+            toast(widgets, &format!("Couldn't open: {e}"));
+            return;
+        }
+    };
     match kind {
         DocKind::Pdf => {
-            let start_page = reader_host::saved_progress(&hash)
-                .map(|p| p.page)
-                .unwrap_or(1);
+            let start_page = saved_progress.map(|p| p.page).unwrap_or(1);
             fond_read_gtk::pdf::show_pdf_reader(
                 &host,
                 &widgets.window,
@@ -353,7 +380,6 @@ pub fn open_path(widgets: &Rc<Widgets>, path: PathBuf) {
             );
         }
         DocKind::Epub => {
-            let start_progress = reader_host::saved_progress(&hash);
             fond_read_gtk::epub::show_epub_reader(
                 &host,
                 &widgets.window,
@@ -361,7 +387,7 @@ pub fn open_path(widgets: &Rc<Widgets>, path: PathBuf) {
                 &path,
                 &title,
                 None,
-                start_progress,
+                saved_progress,
             );
         }
     }

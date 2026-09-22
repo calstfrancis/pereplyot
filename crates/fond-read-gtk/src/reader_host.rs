@@ -204,15 +204,41 @@ fn new_tab_view(parent: &adw::ApplicationWindow) -> (adw::Window, adw::TabView) 
     // If this is (or was) the shared default host, forget it on close so the next reader
     // opened builds a fresh one rather than reusing a window that's going away. A no-op for
     // a popped-out window, which was never stored here.
-    host.connect_close_request(move |window| {
-        MAIN_HOST.with(|cell| {
-            let mut slot = cell.borrow_mut();
-            if slot.as_ref().map(|(h, _)| h == window).unwrap_or(false) {
-                *slot = None;
+    {
+        let tab_view_for_close = tab_view.clone();
+        host.connect_close_request(move |window| {
+            MAIN_HOST.with(|cell| {
+                let mut slot = cell.borrow_mut();
+                if slot.as_ref().map(|(h, _)| h == window).unwrap_or(false) {
+                    *slot = None;
+                }
+            });
+            // Closing the *window* (its own close button, or the app quitting) never fires
+            // `TabView`'s `close-page` signal — that only runs for an explicit tab-close
+            // (its own close button, `ReaderTab::close`, or a keyboard shortcut). Without
+            // this, `on_tab_closed`'s hooks (save reading progress, unregister the open
+            // reader) silently never ran for the single most common way anyone actually
+            // closes a reader. Found 2026-09-22 verifying progress round-trips correctly
+            // through a `HostOverride` — this doc comment on `on_tab_closed` claimed the
+            // cascade already happened here; it didn't.
+            let n = tab_view_for_close.n_pages();
+            for i in 0..n {
+                let Some(page) = tab_view_for_close
+                    .pages()
+                    .item(i as u32)
+                    .and_downcast::<adw::TabPage>()
+                else {
+                    continue;
+                };
+                unsafe {
+                    if let Some(on_close) = page.data::<Rc<dyn Fn()>>(ON_CLOSE_DATA_KEY) {
+                        (on_close.as_ref())();
+                    }
+                }
             }
+            glib::Propagation::Proceed
         });
-        glib::Propagation::Proceed
-    });
+    }
 
     (host, tab_view)
 }
@@ -250,11 +276,13 @@ pub fn open_reader_tab(
 }
 
 /// Run `on_close` once, when this tab is closed for good — its own tab-close button,
-/// keyboard shortcut, or its host window closing and cascading through its pages. Runs as
-/// the close is confirmed, before anything is torn down, so it's safe to touch the tab's own
-/// still-live widgets from `on_close` (e.g. reading a WebView's scroll position) — the same
-/// timing a plain top-level reader window's `close-request` gave each reader before tabs
-/// existed. See `new_tab_view`'s `close-page` handler for how this is actually invoked.
+/// keyboard shortcut, or its host window closing (`new_tab_view`'s `close-request` handler
+/// runs every open page's hook directly, since `TabView`'s own `close-page` signal doesn't
+/// fire for a whole-window close). Runs as the close is confirmed, before anything is torn
+/// down, so it's safe to touch the tab's own still-live widgets from `on_close` (e.g.
+/// reading a WebView's scroll position) — the same timing a plain top-level reader window's
+/// `close-request` gave each reader before tabs existed. See `new_tab_view`'s
+/// `close-page`/`close-request` handlers for how this is actually invoked.
 pub fn on_tab_closed(tab: &ReaderTab, on_close: impl Fn() + 'static) {
     let boxed: Rc<dyn Fn()> = Rc::new(on_close);
     unsafe {
