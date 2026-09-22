@@ -72,6 +72,23 @@ struct ReaderState {
     /// `UNDO_HISTORY_LIMIT` so a long session doesn't grow this unbounded.
     undo_stack: Vec<fond_bib::AnnotationSidecar>,
     redo_stack: Vec<fond_bib::AnnotationSidecar>,
+    /// Clockwise display rotation in degrees (0/90/180/270) — view-only, single-page mode
+    /// only (see `rotate_button`'s wiring): the render pipeline blends annotations in the
+    /// PDF's own unrotated coordinate space and only rotates the final pixel buffer for
+    /// display, so a rotated page's drag-to-annotate/right-click coordinate math would be
+    /// wrong; those are disabled while this is non-zero rather than taught to un-rotate a
+    /// click first. Reset to 0 whenever Continuous or Two-page mode is entered, since
+    /// neither one's layout math (continuous page offsets computed from the *unrotated*
+    /// page size; two-page's facing-page box) accounts for a rotated page either.
+    rotation: u16,
+    /// Colours inverted for display (a night-reading mode for scanned/white-background
+    /// PDFs, whose pixels don't respond to the app's own dark theme) — applied to the same
+    /// final pixel buffer `rotation` is, in both paged and continuous mode alike.
+    invert_colors: bool,
+    /// Bookmarked pages, 1-based (`Annotation.page` numbering) — loaded once at open,
+    /// rewritten to the host on every add/remove, same lifecycle as `annotations`. Kept
+    /// sorted so the Notes sidebar's "Bookmarks" section lists them in page order.
+    bookmarks: Vec<u32>,
 }
 
 /// How many undo steps a PDF reader session keeps before dropping the oldest.
@@ -302,6 +319,62 @@ fn cursor_for_select_mode(select_mode: bool) -> Option<gdk::Cursor> {
         .flatten()
 }
 
+/// Rotate an RGBA buffer clockwise by 0/90/180/270 degrees, returning the rotated buffer and
+/// its (width, height) — swapped for 90/270. `degrees` outside that set is treated as 0.
+fn rotate_rgba(rgba: &[u8], width: u32, height: u32, degrees: u16) -> (Vec<u8>, u32, u32) {
+    let w = width as usize;
+    let h = height as usize;
+    match degrees % 360 {
+        90 => {
+            let (nw, nh) = (h, w);
+            let mut out = vec![0u8; rgba.len()];
+            for y in 0..h {
+                for x in 0..w {
+                    let src = (y * w + x) * 4;
+                    let dst = (x * nw + (h - 1 - y)) * 4;
+                    out[dst..dst + 4].copy_from_slice(&rgba[src..src + 4]);
+                }
+            }
+            (out, nw as u32, nh as u32)
+        }
+        180 => {
+            let mut out = vec![0u8; rgba.len()];
+            for y in 0..h {
+                for x in 0..w {
+                    let src = (y * w + x) * 4;
+                    let dst = ((h - 1 - y) * w + (w - 1 - x)) * 4;
+                    out[dst..dst + 4].copy_from_slice(&rgba[src..src + 4]);
+                }
+            }
+            (out, width, height)
+        }
+        270 => {
+            let (nw, nh) = (h, w);
+            let mut out = vec![0u8; rgba.len()];
+            for y in 0..h {
+                for x in 0..w {
+                    let src = (y * w + x) * 4;
+                    let dst = ((w - 1 - x) * nw + y) * 4;
+                    out[dst..dst + 4].copy_from_slice(&rgba[src..src + 4]);
+                }
+            }
+            (out, nw as u32, nh as u32)
+        }
+        _ => (rgba.to_vec(), width, height),
+    }
+}
+
+/// Invert an RGBA buffer's colours in place, leaving alpha untouched — a night-reading mode
+/// for scanned/white-background pages, which stay bright regardless of the app's own theme
+/// since they're just pixels, not something CSS/`adw::StyleManager` can recolour.
+fn invert_rgba(rgba: &mut [u8]) {
+    for px in rgba.chunks_exact_mut(4) {
+        px[0] = 255 - px[0];
+        px[1] = 255 - px[1];
+        px[2] = 255 - px[2];
+    }
+}
+
 /// Render `page` (0-based) to a ready-to-display texture, with this entry's saved
 /// annotations — and, if `page` has the current search match, that match's highlight too —
 /// blended in. Shared by both the page-by-page view and continuous-scroll mode so the two
@@ -373,15 +446,23 @@ fn render_pdf_page_texture(
         }
     }
 
-    let data = glib::Bytes::from(&rp.rgba);
+    if r.invert_colors {
+        invert_rgba(&mut rp.rgba);
+    }
+    let (data, out_w, out_h) = if r.rotation != 0 {
+        let (rotated, w, h) = rotate_rgba(&rp.rgba, rp.width, rp.height, r.rotation);
+        (glib::Bytes::from(&rotated), w, h)
+    } else {
+        (glib::Bytes::from(&rp.rgba), rp.width, rp.height)
+    };
     let texture = gdk::MemoryTexture::new(
-        rp.width as i32,
-        rp.height as i32,
+        out_w as i32,
+        out_h as i32,
         gdk::MemoryFormat::R8g8b8a8,
         &data,
-        (rp.width * 4) as usize,
+        (out_w * 4) as usize,
     );
-    Some((texture.upcast(), rp.width, rp.height, page_pts))
+    Some((texture.upcast(), out_w, out_h, page_pts))
 }
 
 /// Convert a drag gesture's start/end (widget-local pixel coordinates on `page`'s own
@@ -859,6 +940,7 @@ fn build_continuous_view(
     reader: &Rc<RefCell<ReaderState>>,
     pdf_hash: &str,
     continuous_box: &gtk4::Box,
+    continuous_scroll: &gtk4::ScrolledWindow,
     undo_button: &gtk4::Button,
     redo_button: &gtk4::Button,
     rebuild_notes: &Rc<dyn Fn()>,
@@ -1034,6 +1116,42 @@ fn build_continuous_view(
             picture.add_controller(click);
         }
 
+        // Click-to-turn zones — same 20/60/20 split and same-widget coexistence-with-drag
+        // reasoning as the paged view's own (see that block's comment); "previous"/"next"
+        // here means scrolling to the adjacent page, since there are no prev/next buttons
+        // to reuse inside this per-page loop.
+        {
+            let press_pos: Rc<Cell<Option<(f64, f64)>>> = Rc::new(Cell::new(None));
+            let click_nav = gtk4::GestureClick::new();
+            click_nav.set_button(gdk::BUTTON_PRIMARY);
+            {
+                let press_pos = press_pos.clone();
+                click_nav.connect_pressed(move |_, _, x, y| press_pos.set(Some((x, y))));
+            }
+            {
+                let this_picture = picture.clone();
+                let reader = reader.clone();
+                let continuous_scroll = continuous_scroll.clone();
+                click_nav.connect_released(move |_, _, x, y| {
+                    let Some((sx, sy)) = press_pos.take() else {
+                        return;
+                    };
+                    if (x - sx).abs() > MIN_DRAG_PX || (y - sy).abs() > MIN_DRAG_PX {
+                        return;
+                    }
+                    let w = this_picture.width().max(1) as f64;
+                    if x < w * 0.2 {
+                        let target = page.saturating_sub(1);
+                        scroll_continuous_to_page(&reader, &continuous_scroll, target);
+                    } else if x > w * 0.8 {
+                        let target = (page + 1).min(count.saturating_sub(1));
+                        scroll_continuous_to_page(&reader, &continuous_scroll, target);
+                    }
+                });
+            }
+            picture.add_controller(click_nav);
+        }
+
         continuous_box.append(&page_overlay);
         pictures.push(picture);
     }
@@ -1089,6 +1207,7 @@ fn rebuild_continuous_view_for_zoom(
     reader: &Rc<RefCell<ReaderState>>,
     pdf_hash: &str,
     continuous_box: &gtk4::Box,
+    continuous_scroll: &gtk4::ScrolledWindow,
     undo_button: &gtk4::Button,
     redo_button: &gtk4::Button,
     rebuild_notes: &Rc<dyn Fn()>,
@@ -1111,6 +1230,7 @@ fn rebuild_continuous_view_for_zoom(
         reader,
         pdf_hash,
         continuous_box,
+        continuous_scroll,
         undo_button,
         redo_button,
         rebuild_notes,
@@ -1168,20 +1288,37 @@ fn continuous_page_at(offsets: &[f64], y: f64) -> u16 {
     i.saturating_sub(1).min(count.saturating_sub(1)) as u16
 }
 
+/// Reflect whether the current page is bookmarked on the toggle button's icon/tooltip.
+pub(crate) fn update_bookmark_button(button: &gtk4::Button, bookmarked: bool) {
+    button.set_icon_name(if bookmarked {
+        "starred-symbolic"
+    } else {
+        "non-starred-symbolic"
+    });
+    button.set_tooltip_text(Some(if bookmarked {
+        "Remove bookmark (B)"
+    } else {
+        "Bookmark this page (B)"
+    }));
+}
+
 /// Refresh the page-number entry/label/prev-next sensitivity for `page` (0-based) — shared
 /// by the paged view's `render()` and continuous mode's scroll-position tracker, so the two
 /// can't disagree about how the current page is displayed. Shows the document's own printed
 /// label when the PDF defines one (`page_labels[page]`), falling back to the raw 1-based
 /// file position otherwise — identical to the pre-`/PageLabels`-aware behaviour for the
 /// common case of a PDF with no custom numbering.
+#[allow(clippy::too_many_arguments)]
 fn update_page_display(
     page_entry: &gtk4::Entry,
     page_of_label: &gtk4::Label,
     prev: &gtk4::Button,
     next: &gtk4::Button,
+    bookmark_button: &gtk4::Button,
     page: u16,
     count: u16,
     page_labels: &[Option<String>],
+    bookmarks: &[u32],
 ) {
     let raw = (page + 1).to_string();
     let label = page_labels
@@ -1189,7 +1326,14 @@ fn update_page_display(
         .and_then(|l| l.clone())
         .unwrap_or_else(|| raw.clone());
     page_entry.set_text(&label);
-    page_of_label.set_text(&format!("of {count}"));
+    // Reading-progress indicator: the raw file position already says "how far in", but the
+    // percentage reads at a glance without doing the division yourself.
+    let percent = if count > 0 {
+        ((page as u32 + 1) * 100 / count as u32).min(100)
+    } else {
+        0
+    };
+    page_of_label.set_text(&format!("of {count} · {percent}%"));
     // The tooltip always gives the raw file position too — a PDF's `/PageLabels` isn't
     // required to be unique or even present on every page, but the raw number is the one
     // every internal API here (`Annotation.page`, `PdfSearchMatch.page`, `Contents` targets)
@@ -1197,6 +1341,7 @@ fn update_page_display(
     page_entry.set_tooltip_text(Some(&format!("Page {raw} of {count} in the file")));
     prev.set_sensitive(page > 0);
     next.set_sensitive(page + 1 < count);
+    update_bookmark_button(bookmark_button, bookmarks.contains(&(page as u32 + 1)));
 }
 
 /// Resolve typed text in the page-number entry to a 0-based page index: an exact match
@@ -1287,6 +1432,8 @@ pub fn show_pdf_reader(
     };
 
     let annotations = host.load_annotations();
+    let mut bookmarks = host.load_bookmarks();
+    bookmarks.sort_unstable();
 
     let start_page = start_page
         .saturating_sub(1)
@@ -1311,6 +1458,9 @@ pub fn show_pdf_reader(
         page_labels,
         undo_stack: Vec::new(),
         redo_stack: Vec::new(),
+        rotation: 0,
+        invert_colors: false,
+        bookmarks,
     }));
 
     let view = adw::ToolbarView::new();
@@ -1339,6 +1489,15 @@ pub fn show_pdf_reader(
     gtk4::prelude::EntryExt::set_alignment(&page_entry, 0.5);
     let page_of_label = gtk4::Label::new(None);
     page_of_label.add_css_class("dim-label");
+    // A lightweight "come back to this" marker, distinct from an annotation — see
+    // `ReaderState::bookmarks`. Lives beside page nav (not in the header) since it acts on
+    // "the current page", the same thing page nav already shows.
+    let bookmark_button = gtk4::Button::new();
+    bookmark_button.add_css_class("flat");
+    update_bookmark_button(
+        &bookmark_button,
+        reader.borrow().bookmarks.contains(&(start_page as u32 + 1)),
+    );
     // Page nav lives in the bottom status bar (below), not the headerbar's title-widget slot
     // — that slot is left to the default window title (the document's own name) instead.
     let nav = gtk4::Box::new(Orientation::Horizontal, 6);
@@ -1346,6 +1505,7 @@ pub fn show_pdf_reader(
     nav.append(&page_entry);
     nav.append(&page_of_label);
     nav.append(&next);
+    nav.append(&bookmark_button);
 
     let zoom_out = gtk4::Button::from_icon_name("zoom-out-symbolic");
     zoom_out.add_css_class("flat");
@@ -1359,6 +1519,17 @@ pub fn show_pdf_reader(
     let zoom_fit_page = gtk4::Button::from_icon_name("zoom-fit-best-symbolic");
     zoom_fit_page.add_css_class("flat");
     zoom_fit_page.set_tooltip_text(Some("Zoom to fit page"));
+
+    // View-only rotation — see `ReaderState::rotation`'s doc comment for why this is
+    // single-page-mode only (disabled below whenever Continuous or Two-page is active).
+    let rotate_button = gtk4::Button::from_icon_name("object-rotate-right-symbolic");
+    rotate_button.add_css_class("flat");
+    rotate_button.set_tooltip_text(Some("Rotate page 90°"));
+
+    let invert_button = gtk4::ToggleButton::new();
+    invert_button.set_icon_name("weather-clear-night-symbolic");
+    invert_button.add_css_class("flat");
+    invert_button.set_tooltip_text(Some("Invert colours (for reading at night)"));
 
     let note_button = gtk4::Button::with_label("Note…");
     note_button.set_tooltip_text(Some("Add a marginal note on the current page"));
@@ -1390,16 +1561,20 @@ pub fn show_pdf_reader(
     let color_drop = gtk4::DropDown::from_strings(&color_labels);
     color_drop.set_tooltip_text(Some("Highlight colour"));
 
-    // Only present when the PDF actually has an outline — most don't. Toggles a persistent
-    // sidebar (built below, after `render`/`reader` exist) rather than a popover, per
-    // CLAUDE.md's house sidebar style: toggle at the *start* of the headerbar, content as a
-    // collapsible Paned start-child.
-    let sidebar_toggle = (!outline_entries.is_empty()).then(|| {
-        let button = gtk4::ToggleButton::new();
-        button.set_icon_name("sidebar-show-symbolic");
-        button.set_tooltip_text(Some("Show the table of contents"));
-        button
-    });
+    // Always shown, even when the PDF has no outline (most don't) — disabled with an
+    // explanatory tooltip rather than omitted entirely, so the feature stays discoverable
+    // instead of looking like it doesn't exist (a permanently-hidden button was mistaken
+    // for a removed one). Toggles a persistent sidebar (built below, after `render`/
+    // `reader` exist) rather than a popover, per CLAUDE.md's house sidebar style: toggle at
+    // the *start* of the headerbar, content as a collapsible Paned start-child.
+    let sidebar_toggle = gtk4::ToggleButton::new();
+    sidebar_toggle.set_icon_name("sidebar-show-symbolic");
+    if outline_entries.is_empty() {
+        sidebar_toggle.set_sensitive(false);
+        sidebar_toggle.set_tooltip_text(Some("This PDF has no table of contents"));
+    } else {
+        sidebar_toggle.set_tooltip_text(Some("Show the table of contents"));
+    }
 
     // Whole-document notes/highlights list, in a persistent sidebar (built below, alongside
     // Contents) rather than the old per-page "This page" dropdown — readable prose, not just
@@ -1440,27 +1615,35 @@ pub fn show_pdf_reader(
     popout_button.add_css_class("flat");
     popout_button.set_tooltip_text(Some("Open in a new window"));
 
+    let thumbnails_button = gtk4::Button::from_icon_name("view-grid-symbolic");
+    thumbnails_button.add_css_class("flat");
+    thumbnails_button.set_tooltip_text(Some("Page thumbnails…"));
+
+    let export_button = gtk4::Button::from_icon_name("document-save-symbolic");
+    export_button.add_css_class("flat");
+    export_button.set_tooltip_text(Some("Export notes & highlights…"));
+
     // pack_end order is the reverse of visual order (last-packed ends up leftmost) — same
     // gotcha CLAUDE.md notes for the hamburger menu. Visual order here, left to right:
-    // Two-page, Continuous, mode picker, colour picker, Note, Page #, Open in new window,
-    // Notes sidebar. The Contents/outline toggle and Undo/Redo live at the *start* of the
-    // headerbar instead (house style for the sidebar toggle: outline on the left; Notes/
-    // annotations mirror it on the right, rather than clustering both on the left — Undo/
-    // Redo follow Contents for the same "persistent chrome, not a per-mode control"
-    // reasoning). Page nav and zoom move to the bottom status bar (below) so the
-    // headerbar's title-widget slot stays free for the document's own name — a wide title
-    // plus this many controls didn't fit together.
+    // Two-page, Continuous, mode picker, colour picker, Note, Page #, Thumbnails, Export,
+    // Open in new window, Notes sidebar. The Contents/outline toggle and Undo/Redo live at
+    // the *start* of the headerbar instead (house style for the sidebar toggle: outline on
+    // the left; Notes/annotations mirror it on the right, rather than clustering both on
+    // the left — Undo/Redo follow Contents for the same "persistent chrome, not a per-mode
+    // control" reasoning). Page nav, rotate/invert, and zoom move to the bottom status bar
+    // (below) so the headerbar's title-widget slot stays free for the document's own name —
+    // a wide title plus this many controls didn't fit together.
     header.pack_end(&notes_toggle);
     header.pack_end(&popout_button);
+    header.pack_end(&export_button);
+    header.pack_end(&thumbnails_button);
     header.pack_end(&page_num_button);
     header.pack_end(&note_button);
     header.pack_end(&color_drop);
     header.pack_end(&mode_drop);
     header.pack_end(&continuous_toggle);
     header.pack_end(&two_page_toggle);
-    if let Some(sidebar_toggle) = &sidebar_toggle {
-        header.pack_start(sidebar_toggle);
-    }
+    header.pack_start(&sidebar_toggle);
     header.pack_start(&undo_button);
     header.pack_start(&redo_button);
     view.add_top_bar(&header);
@@ -1475,6 +1658,8 @@ pub fn show_pdf_reader(
     statusbar_spacer.set_hexpand(true);
     statusbar.append(&nav);
     statusbar.append(&statusbar_spacer);
+    statusbar.append(&rotate_button);
+    statusbar.append(&invert_button);
     statusbar.append(&zoom_fit_width);
     statusbar.append(&zoom_fit_page);
     statusbar.append(&zoom_out);
@@ -1577,6 +1762,7 @@ pub fn show_pdf_reader(
         let page_of_label = page_of_label.clone();
         let prev = prev.clone();
         let next = next.clone();
+        let bookmark_button = bookmark_button.clone();
         Rc::new(move || {
             let mut r = reader.borrow_mut();
             match render_pdf_page_texture(&r, r.page) {
@@ -1611,9 +1797,11 @@ pub fn show_pdf_reader(
                 &page_of_label,
                 &prev,
                 &next,
+                &bookmark_button,
                 r.page,
                 r.count,
                 &r.page_labels,
+                &r.bookmarks,
             );
         })
     };
@@ -1731,6 +1919,7 @@ pub fn show_pdf_reader(
         let continuous_toggle = continuous_toggle.clone();
         let continuous_scroll = continuous_scroll.clone();
         let view_for_focus = view.clone();
+        let bookmark_button = bookmark_button.clone();
         key_controller.connect_key_pressed(move |_, keyval, _keycode, modifiers| {
             if keyval == gdk::Key::z && modifiers.contains(gdk::ModifierType::CONTROL_MASK) {
                 if modifiers.contains(gdk::ModifierType::SHIFT_MASK) {
@@ -1747,16 +1936,21 @@ pub fn show_pdf_reader(
             if focus_in_text_entry {
                 return glib::Propagation::Proceed;
             }
-            // Left/Right and Page_Up/Page_Down reuse the prev/next buttons' own click
-            // handlers (continuous-scroll-aware, two-page-spread-aware) via `emit_clicked`,
-            // rather than duplicating that logic here.
+            // Left/Right, Up/Down, Space/Backspace, and Page_Up/Page_Down reuse the
+            // prev/next buttons' own click handlers (continuous-scroll-aware,
+            // two-page-spread-aware) via `emit_clicked`, rather than duplicating that logic
+            // here. Space/Backspace match the common reader convention (Preview, Acrobat).
             match keyval {
-                gdk::Key::Left | gdk::Key::Page_Up => {
+                gdk::Key::Left | gdk::Key::Up | gdk::Key::Page_Up | gdk::Key::BackSpace => {
                     prev.emit_clicked();
                     return glib::Propagation::Stop;
                 }
-                gdk::Key::Right | gdk::Key::Page_Down => {
+                gdk::Key::Right | gdk::Key::Down | gdk::Key::Page_Down | gdk::Key::space => {
                     next.emit_clicked();
+                    return glib::Propagation::Stop;
+                }
+                gdk::Key::b | gdk::Key::B => {
+                    bookmark_button.emit_clicked();
                     return glib::Propagation::Stop;
                 }
                 gdk::Key::Home => {
@@ -1790,7 +1984,7 @@ pub fn show_pdf_reader(
     // Stack, since only one is useful to see at a time; the two toggles are mutually
     // exclusive (activating one deactivates the other) but each can still be clicked again
     // to close the sidebar entirely, unlike a strict radio-group.
-    let contents_scroll = sidebar_toggle.as_ref().map(|_| {
+    let contents_scroll = {
         let rows = gtk4::Box::new(Orientation::Vertical, 2);
         rows.set_margin_top(6);
         rows.set_margin_bottom(6);
@@ -1828,7 +2022,7 @@ pub fn show_pdf_reader(
         scroll.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
         scroll.set_child(Some(&rows));
         scroll
-    });
+    };
 
     // Notes/highlights list: every annotation in the document, readable prose rather than
     // just on-page markers, sorted by page. Rebuilt fresh (`rebuild_notes`, below) whenever
@@ -1854,11 +2048,13 @@ pub fn show_pdf_reader(
         let continuous_scroll = continuous_scroll.clone();
         let undo_button = undo_button.clone();
         let redo_button = redo_button.clone();
+        let bookmark_button = bookmark_button.clone();
         let rebuild_notes_cell_inner = rebuild_notes_cell.clone();
         let builder = move || {
             while let Some(child) = notes_rows.first_child() {
                 notes_rows.remove(&child);
             }
+            let bookmarks = reader.borrow().bookmarks.clone();
             let mut all: Vec<fond_bib::Annotation> = reader
                 .borrow()
                 .annotations
@@ -1868,12 +2064,78 @@ pub fn show_pdf_reader(
                 .cloned()
                 .collect();
             all.sort_by(|a, b| (a.page, &a.created).cmp(&(b.page, &b.created)));
-            if all.is_empty() {
-                let label = gtk4::Label::new(Some("No notes or highlights yet"));
+            if all.is_empty() && bookmarks.is_empty() {
+                let label = gtk4::Label::new(Some("No bookmarks, notes, or highlights yet"));
                 label.add_css_class("dim-label");
                 label.set_margin_top(6);
                 label.set_margin_bottom(6);
                 notes_rows.append(&label);
+                return;
+            }
+            if !bookmarks.is_empty() {
+                let heading = gtk4::Label::new(Some("Bookmarks"));
+                heading.add_css_class("dim-label");
+                heading.add_css_class("caption-heading");
+                heading.set_xalign(0.0);
+                notes_rows.append(&heading);
+                for &page_num in &bookmarks {
+                    let printed = reader
+                        .borrow()
+                        .page_labels
+                        .get((page_num as usize).saturating_sub(1))
+                        .and_then(|l| l.clone());
+                    let page_label = printed.unwrap_or_else(|| page_num.to_string());
+                    let row = gtk4::Box::new(Orientation::Horizontal, 6);
+                    let label = gtk4::Label::new(Some(&format!("p.{page_label}")));
+                    label.set_xalign(0.0);
+                    label.set_hexpand(true);
+                    row.append(&label);
+                    let remove_button = gtk4::Button::from_icon_name("user-trash-symbolic");
+                    remove_button.add_css_class("flat");
+                    remove_button.set_tooltip_text(Some("Remove bookmark"));
+                    row.append(&remove_button);
+                    {
+                        let jump = gtk4::GestureClick::new();
+                        let reader = reader.clone();
+                        let render = render.clone();
+                        let continuous_toggle = continuous_toggle.clone();
+                        let continuous_scroll = continuous_scroll.clone();
+                        jump.connect_released(move |_gesture, _n, _x, _y| {
+                            let target = (page_num.saturating_sub(1))
+                                .min(reader.borrow().count.saturating_sub(1) as u32)
+                                as u16;
+                            if continuous_toggle.is_active() {
+                                scroll_continuous_to_page(&reader, &continuous_scroll, target);
+                            } else {
+                                reader.borrow_mut().page = target;
+                                render();
+                            }
+                        });
+                        label.add_controller(jump);
+                    }
+                    {
+                        let host = host.clone();
+                        let reader = reader.clone();
+                        let bookmark_button = bookmark_button.clone();
+                        let rebuild_notes_cell = rebuild_notes_cell_inner.clone();
+                        remove_button.connect_clicked(move |_| {
+                            reader.borrow_mut().bookmarks.retain(|&p| p != page_num);
+                            host.save_bookmarks(&reader.borrow().bookmarks);
+                            let current = reader.borrow().page as u32 + 1;
+                            update_bookmark_button(
+                                &bookmark_button,
+                                reader.borrow().bookmarks.contains(&current),
+                            );
+                            if let Some(f) = rebuild_notes_cell.borrow().as_ref() {
+                                f();
+                            }
+                        });
+                    }
+                    notes_rows.append(&row);
+                }
+                notes_rows.append(&popover_separator());
+            }
+            if all.is_empty() {
                 return;
             }
             let last = all.len().saturating_sub(1);
@@ -2048,9 +2310,7 @@ pub fn show_pdf_reader(
     // sidebar so it can stay open alongside Contents instead of the two forcing a choice
     // between them. Width is user-adjustable via each Paned handle; start at a reasonable
     // default but let it be dragged down to a slim strip.
-    if let Some(contents_scroll) = &contents_scroll {
-        contents_scroll.set_size_request(60, -1);
-    }
+    contents_scroll.set_size_request(60, -1);
     notes_scroll.set_size_request(60, -1);
 
     // Notes sidebar: its own Paned wrapping `content`, so it sits on the right of the
@@ -2080,12 +2340,12 @@ pub fn show_pdf_reader(
     paned.set_position(220);
     view.set_content(Some(&paned));
 
-    if let Some(sidebar_toggle) = &sidebar_toggle {
+    {
         let paned = paned.clone();
         let contents_scroll = contents_scroll.clone();
         sidebar_toggle.connect_toggled(move |btn| {
             if btn.is_active() {
-                paned.set_start_child(contents_scroll.as_ref());
+                paned.set_start_child(Some(&contents_scroll));
             } else {
                 paned.set_start_child(gtk4::Widget::NONE);
             }
@@ -2155,6 +2415,15 @@ pub fn show_pdf_reader(
                 if offset_x.abs() < MIN_DRAG_PX && offset_y.abs() < MIN_DRAG_PX {
                     return;
                 }
+                if reader.borrow().rotation != 0 {
+                    // See `ReaderState::rotation`'s doc comment — the coordinate math below
+                    // assumes an unrotated page, and the rotate control is meant to be
+                    // disabled outside single-page mode anyway, so this should be
+                    // unreachable via the UI; guarded regardless since a stray drag
+                    // finishing mid-toggle is cheap to rule out.
+                    host.notify("Rotate back to 0° to annotate or select text");
+                    return;
+                }
                 let Some((start_x, start_y)) = gesture.start_point() else {
                     return;
                 };
@@ -2219,6 +2488,10 @@ pub fn show_pdf_reader(
         let rebuild_notes = rebuild_notes.clone();
         let dialog_for_menu = reader_window.clone();
         click.connect_pressed(move |_gesture, _n, x, y| {
+            if reader.borrow().rotation != 0 {
+                host.notify("Rotate back to 0° to edit annotations");
+                return;
+            }
             let (page, render_w, render_h, page_w_pts, page_h_pts) = {
                 let r = reader.borrow();
                 (
@@ -2260,6 +2533,44 @@ pub fn show_pdf_reader(
             );
         });
         picture.add_controller(click);
+    }
+
+    // Click-to-turn zones: a plain (non-dragging) click in the leftmost/rightmost 20% of the
+    // page turns to the previous/next page — the middle 60% is left alone so a normal
+    // highlight drag or text click isn't at risk of being misread as page navigation.
+    // Coexists with the drag-to-annotate `GestureDrag` above (both see the same primary-
+    // button sequence, un-grouped, which is the standard GTK4 way for a click and a drag
+    // gesture to share one widget) — a real drag past `MIN_DRAG_PX` already makes this
+    // handler's own displacement check a no-op, the same threshold the drag handler itself
+    // uses to decide whether anything was actually drawn.
+    {
+        let press_pos: Rc<Cell<Option<(f64, f64)>>> = Rc::new(Cell::new(None));
+        let click_nav = gtk4::GestureClick::new();
+        click_nav.set_button(gdk::BUTTON_PRIMARY);
+        {
+            let press_pos = press_pos.clone();
+            click_nav.connect_pressed(move |_, _, x, y| press_pos.set(Some((x, y))));
+        }
+        {
+            let picture_for_nav = picture.clone();
+            let prev = prev.clone();
+            let next = next.clone();
+            click_nav.connect_released(move |_, _, x, y| {
+                let Some((sx, sy)) = press_pos.take() else {
+                    return;
+                };
+                if (x - sx).abs() > MIN_DRAG_PX || (y - sy).abs() > MIN_DRAG_PX {
+                    return;
+                }
+                let w = picture_for_nav.width().max(1) as f64;
+                if x < w * 0.2 {
+                    prev.emit_clicked();
+                } else if x > w * 0.8 {
+                    next.emit_clicked();
+                }
+            });
+        }
+        picture.add_controller(click_nav);
     }
 
     {
@@ -2373,6 +2684,7 @@ pub fn show_pdf_reader(
                         &reader,
                         &pdf_hash,
                         &continuous_box,
+                        &continuous_scroll,
                         &undo_button,
                         &redo_button,
                         &rebuild_notes,
@@ -2433,6 +2745,70 @@ pub fn show_pdf_reader(
             request_zoom(fit_width_zoom.min(fit_height_zoom));
         });
     }
+    {
+        let reader = reader.clone();
+        let render = render.clone();
+        rotate_button.connect_clicked(move |_| {
+            {
+                let mut r = reader.borrow_mut();
+                r.rotation = (r.rotation + 90) % 360;
+            }
+            render();
+        });
+    }
+    {
+        let reader = reader.clone();
+        let render = render.clone();
+        invert_button.connect_toggled(move |btn| {
+            reader.borrow_mut().invert_colors = btn.is_active();
+            render();
+            // `render()` alone only updates the paged view's (possibly hidden) Picture —
+            // Continuous mode has its own per-page Pictures with their own last-rendered
+            // textures, so they need their own refresh or an inverted toggle would silently
+            // do nothing while Continuous (the default mode) is what's actually on screen.
+            let page_count = reader.borrow().continuous_pictures.len() as u16;
+            for page in 0..page_count {
+                render_continuous_page(&reader, page);
+            }
+        });
+    }
+    {
+        // Rotation is view-only and only meaningful in single-page mode — see
+        // `ReaderState::rotation`'s doc comment. Disabled (rather than just made a no-op)
+        // whenever Continuous or Two-page is active, so the limitation is visible instead
+        // of a click silently doing nothing; any existing non-zero rotation is cleared on
+        // the way in, since neither mode's own layout math accounts for it.
+        let reader = reader.clone();
+        let render = render.clone();
+        let rotate_button = rotate_button.clone();
+        let two_page_toggle_for_rotate = two_page_toggle.clone();
+        continuous_toggle.connect_toggled(move |btn| {
+            if btn.is_active() {
+                reader.borrow_mut().rotation = 0;
+                rotate_button.set_sensitive(false);
+                rotate_button.set_tooltip_text(Some("Switch to single-page view to rotate"));
+            } else if !two_page_toggle_for_rotate.is_active() {
+                rotate_button.set_sensitive(true);
+                rotate_button.set_tooltip_text(Some("Rotate page 90°"));
+            }
+            render();
+        });
+    }
+    {
+        let reader = reader.clone();
+        let rotate_button = rotate_button.clone();
+        let continuous_toggle_for_rotate = continuous_toggle.clone();
+        two_page_toggle.connect_toggled(move |btn| {
+            if btn.is_active() {
+                reader.borrow_mut().rotation = 0;
+                rotate_button.set_sensitive(false);
+                rotate_button.set_tooltip_text(Some("Switch to single-page view to rotate"));
+            } else if !continuous_toggle_for_rotate.is_active() {
+                rotate_button.set_sensitive(true);
+                rotate_button.set_tooltip_text(Some("Rotate page 90°"));
+            }
+        });
+    }
     // Tracks which page is "current" from scroll position alone — connected once, works
     // regardless of whether continuous mode has been built yet (an empty `continuous_offsets`
     // just makes `continuous_page_at` a no-op returning 0). Keeps `r.page`/the page label/
@@ -2445,6 +2821,7 @@ pub fn show_pdf_reader(
         let page_of_label = page_of_label.clone();
         let prev = prev.clone();
         let next = next.clone();
+        let bookmark_button = bookmark_button.clone();
         continuous_scroll
             .vadjustment()
             .connect_value_changed(move |adj| {
@@ -2459,9 +2836,11 @@ pub fn show_pdf_reader(
                     &page_of_label,
                     &prev,
                     &next,
+                    &bookmark_button,
                     page,
                     r.count,
                     &r.page_labels,
+                    &r.bookmarks,
                 );
             });
     }
@@ -2486,6 +2865,7 @@ pub fn show_pdf_reader(
                     &reader,
                     &pdf_hash,
                     &continuous_box,
+                    &continuous_scroll,
                     &undo_button,
                     &redo_button,
                     &rebuild_notes,
@@ -2529,6 +2909,7 @@ pub fn show_pdf_reader(
         let page_of_label = page_of_label.clone();
         let prev = prev.clone();
         let next = next.clone();
+        let bookmark_button = bookmark_button.clone();
         let continuous_toggle = continuous_toggle.clone();
         let continuous_scroll = continuous_scroll.clone();
         page_entry.clone().connect_activate(move |entry| {
@@ -2555,14 +2936,17 @@ pub fn show_pdf_reader(
                         (r.page, r.count)
                     };
                     let labels = reader.borrow().page_labels.clone();
+                    let bookmarks = reader.borrow().bookmarks.clone();
                     update_page_display(
                         &page_entry,
                         &page_of_label,
                         &prev,
                         &next,
+                        &bookmark_button,
                         page,
                         count,
                         &labels,
+                        &bookmarks,
                     );
                 }
             }
@@ -2635,10 +3019,33 @@ pub fn show_pdf_reader(
     {
         let host = host.clone();
         let reader = reader.clone();
+        let rebuild_notes = rebuild_notes.clone();
+        bookmark_button.connect_clicked(move |btn| {
+            let page_num = reader.borrow().page as u32 + 1;
+            let now_bookmarked = {
+                let mut r = reader.borrow_mut();
+                if let Some(pos) = r.bookmarks.iter().position(|&p| p == page_num) {
+                    r.bookmarks.remove(pos);
+                    false
+                } else {
+                    r.bookmarks.push(page_num);
+                    r.bookmarks.sort_unstable();
+                    true
+                }
+            };
+            host.save_bookmarks(&reader.borrow().bookmarks);
+            update_bookmark_button(btn, now_bookmarked);
+            rebuild_notes();
+        });
+    }
+    {
+        let host = host.clone();
+        let reader = reader.clone();
         let page_entry = page_entry.clone();
         let page_of_label = page_of_label.clone();
         let prev = prev.clone();
         let next = next.clone();
+        let bookmark_button = bookmark_button.clone();
         let dialog = reader_window.clone();
         page_num_button.connect_clicked(move |_| {
             show_page_number_dialog(
@@ -2648,6 +3055,7 @@ pub fn show_pdf_reader(
                 &page_of_label,
                 &prev,
                 &next,
+                &bookmark_button,
                 &dialog,
             );
         });
@@ -2659,6 +3067,25 @@ pub fn show_pdf_reader(
         popout_button.connect_clicked(move |_| {
             let new_tab = reader_tab.pop_out(&window);
             crate::register_reader(&pdf_hash, &new_tab);
+        });
+    }
+    {
+        let reader = reader.clone();
+        let render = render.clone();
+        let continuous_toggle = continuous_toggle.clone();
+        let continuous_scroll = continuous_scroll.clone();
+        let dialog = reader_window.clone();
+        thumbnails_button.connect_clicked(move |_| {
+            show_thumbnail_grid(&reader, &render, &continuous_toggle, &continuous_scroll, &dialog);
+        });
+    }
+    {
+        let host = host.clone();
+        let reader = reader.clone();
+        let title = title.to_string();
+        let dialog = reader_window.clone();
+        export_button.connect_clicked(move |_| {
+            export_notes_markdown(&host, &reader, &title, &dialog);
         });
     }
     // Search: run on Enter (not per-keystroke — PDFium re-searches every page each time, not
@@ -2833,6 +3260,209 @@ pub fn show_pdf_reader(
     reader_tab.present();
 }
 
+/// Thumbnail width for the page-overview grid — deliberately much smaller than the reader's
+/// own `READER_BASE_WIDTH`, since this is a jump-to-page aid, not a reading surface.
+const THUMBNAIL_GRID_WIDTH: u32 = 140;
+
+/// A non-modal window listing every page as a small thumbnail in a grid, for jumping around
+/// a long document visually instead of by number — Okular/Acrobat's "page overview" mode.
+/// Thumbnails are plain unannotated renders (no highlight/search blending — this is for
+/// navigation, not a miniature reading view) and are rasterized lazily, nearest-to-current-
+/// page first, one per idle tick — same spreading idiom as continuous mode's own
+/// `schedule_continuous_render`, so opening this on a long document doesn't block the UI.
+fn show_thumbnail_grid(
+    reader: &Rc<RefCell<ReaderState>>,
+    render: &Rc<impl Fn() + 'static>,
+    continuous_toggle: &gtk4::ToggleButton,
+    continuous_scroll: &gtk4::ScrolledWindow,
+    reader_window: &adw::Window,
+) {
+    let (count, current_page) = {
+        let r = reader.borrow();
+        (r.count, r.page)
+    };
+
+    let dialog = adw::Window::new();
+    dialog.set_title(Some("Page thumbnails"));
+    dialog.set_transient_for(Some(reader_window));
+    dialog.set_default_size(560, 640);
+
+    let header = adw::HeaderBar::new();
+    header.add_css_class("fond-chrome");
+    let view = adw::ToolbarView::new();
+    view.add_top_bar(&header);
+
+    let flow = gtk4::FlowBox::new();
+    flow.set_valign(gtk4::Align::Start);
+    flow.set_selection_mode(gtk4::SelectionMode::None);
+    flow.set_homogeneous(true);
+    flow.set_row_spacing(10);
+    flow.set_column_spacing(10);
+    flow.set_margin_top(12);
+    flow.set_margin_bottom(12);
+    flow.set_margin_start(12);
+    flow.set_margin_end(12);
+
+    let mut pictures = Vec::with_capacity(count as usize);
+    for page in 0..count {
+        let picture = gtk4::Picture::new();
+        picture.set_size_request(96, 128);
+        picture.set_content_fit(gtk4::ContentFit::Contain);
+
+        let card = gtk4::Box::new(Orientation::Vertical, 4);
+        card.append(&picture);
+        let label = gtk4::Label::new(Some(&(page + 1).to_string()));
+        label.add_css_class("caption");
+        label.add_css_class("dim-label");
+        card.append(&label);
+
+        let button = gtk4::Button::new();
+        button.add_css_class("flat");
+        button.set_child(Some(&card));
+        if page == current_page {
+            button.add_css_class("suggested-action");
+        }
+
+        {
+            let reader = reader.clone();
+            let render = render.clone();
+            let continuous_toggle = continuous_toggle.clone();
+            let continuous_scroll = continuous_scroll.clone();
+            let dialog_for_close = dialog.clone();
+            button.connect_clicked(move |_| {
+                if continuous_toggle.is_active() {
+                    scroll_continuous_to_page(&reader, &continuous_scroll, page);
+                } else {
+                    reader.borrow_mut().page = page;
+                    render();
+                }
+                dialog_for_close.close();
+            });
+        }
+
+        flow.insert(&button, -1);
+        pictures.push(picture);
+    }
+
+    let scroll = gtk4::ScrolledWindow::new();
+    scroll.set_child(Some(&flow));
+    scroll.set_vexpand(true);
+    view.set_content(Some(&scroll));
+    dialog.set_content(Some(&view));
+    dialog.present();
+
+    let mut order: Vec<u16> = (0..count).collect();
+    order.sort_by_key(|&p| (p as i32 - current_page as i32).unsigned_abs());
+    schedule_thumbnail_render(reader.clone(), pictures, order, 0);
+}
+
+/// One tick of `show_thumbnail_grid`'s lazy rasterization — see that function's doc comment.
+fn schedule_thumbnail_render(
+    reader: Rc<RefCell<ReaderState>>,
+    pictures: Vec<gtk4::Picture>,
+    order: Vec<u16>,
+    idx: usize,
+) {
+    let Some(&page) = order.get(idx) else {
+        return;
+    };
+    if let Some(picture) = pictures.get(page as usize) {
+        let r = reader.borrow();
+        if let Ok(rp) = fond_doc::render_page(r.pdfium, &r.bytes, page, THUMBNAIL_GRID_WIDTH) {
+            let data = glib::Bytes::from(&rp.rgba);
+            let texture = gdk::MemoryTexture::new(
+                rp.width as i32,
+                rp.height as i32,
+                gdk::MemoryFormat::R8g8b8a8,
+                &data,
+                (rp.width * 4) as usize,
+            );
+            picture.set_paintable(Some(&texture));
+        }
+    }
+    glib::idle_add_local_once(move || {
+        schedule_thumbnail_render(reader, pictures, order, idx + 1);
+    });
+}
+
+/// Write every bookmark and annotation to a Markdown file the user picks — a portable export
+/// independent of the sidecar's own JSON format, for pulling notes into some other document.
+/// Bookmarks list first (they carry no text of their own beyond a page number), then
+/// annotations in page order, each with its kind, quoted snippet (if the annotation carries
+/// one — a drawn highlight/underline/strikeout does, a blank "Note…" doesn't), and note text.
+fn export_notes_markdown(
+    host: &Rc<dyn ReaderHost>,
+    reader: &Rc<RefCell<ReaderState>>,
+    title: &str,
+    reader_window: &adw::Window,
+) {
+    let (bookmarks, mut all, page_labels) = {
+        let r = reader.borrow();
+        let all: Vec<fond_bib::Annotation> = r
+            .annotations
+            .annotations
+            .iter()
+            .filter(|a| a.page.is_some())
+            .cloned()
+            .collect();
+        (r.bookmarks.clone(), all, r.page_labels.clone())
+    };
+    all.sort_by(|a, b| (a.page, &a.created).cmp(&(b.page, &b.created)));
+
+    if all.is_empty() && bookmarks.is_empty() {
+        host.notify("Nothing to export yet");
+        return;
+    }
+
+    let label_for = |page_num: u32| -> String {
+        page_labels
+            .get((page_num as usize).saturating_sub(1))
+            .and_then(|l| l.clone())
+            .unwrap_or_else(|| page_num.to_string())
+    };
+
+    let mut md = format!("# {title}\n\n");
+    if !bookmarks.is_empty() {
+        md.push_str("## Bookmarks\n\n");
+        for &page_num in &bookmarks {
+            md.push_str(&format!("- p. {}\n", label_for(page_num)));
+        }
+        md.push('\n');
+    }
+    if !all.is_empty() {
+        md.push_str("## Notes & highlights\n\n");
+        for a in &all {
+            let page_num = a.page.unwrap_or(1);
+            md.push_str(&format!("### p. {} — {:?}\n\n", label_for(page_num), a.kind));
+            if let Some(snippet) = &a.snippet {
+                for line in snippet.lines() {
+                    md.push_str(&format!("> {line}\n"));
+                }
+                md.push('\n');
+            }
+            if let Some(note) = &a.note {
+                md.push_str(&format!("{note}\n\n"));
+            }
+        }
+    }
+
+    let file_dialog = gtk4::FileDialog::builder()
+        .title("Export notes & highlights")
+        .initial_name(format!("{title} — notes.md"))
+        .build();
+    let host = host.clone();
+    file_dialog.save(Some(reader_window), gtk4::gio::Cancellable::NONE, move |result| {
+        if let Ok(file) = result {
+            if let Some(path) = file.path() {
+                match std::fs::write(&path, &md) {
+                    Ok(()) => host.notify("Exported notes & highlights"),
+                    Err(e) => host.notify(&format!("Couldn't export: {e}")),
+                }
+            }
+        }
+    });
+}
+
 /// A small modal that anchors the reader's *current* physical page to its own printed page
 /// number — the manual counterpart to the automatic `/PageLabels` read in `show_pdf_reader`,
 /// for a PDF that declares no page labels of its own (see `fond_bib::PageLabelOverride`).
@@ -2848,6 +3478,7 @@ fn show_page_number_dialog(
     page_of_label: &gtk4::Label,
     prev: &gtk4::Button,
     next: &gtk4::Button,
+    bookmark_button: &gtk4::Button,
     reader_window: &adw::Window,
 ) {
     let (page, count) = {
@@ -2909,6 +3540,7 @@ fn show_page_number_dialog(
         let page_of_label = page_of_label.clone();
         let prev = prev.clone();
         let next = next.clone();
+        let bookmark_button = bookmark_button.clone();
         set_button.connect_clicked(move |_| {
             let text = entry.text().trim().to_string();
             let override_value = if text.is_empty() {
@@ -2930,14 +3562,17 @@ fn show_page_number_dialog(
 
             let new_labels = override_value.map(|ov| ov.apply(count)).unwrap_or_default();
             reader.borrow_mut().page_labels = new_labels.clone();
+            let bookmarks = reader.borrow().bookmarks.clone();
             update_page_display(
                 &page_entry,
                 &page_of_label,
                 &prev,
                 &next,
+                &bookmark_button,
                 page,
                 count,
                 &new_labels,
+                &bookmarks,
             );
             host.notify(if override_value.is_some() {
                 "Page numbering set"

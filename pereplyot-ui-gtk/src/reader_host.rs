@@ -6,8 +6,9 @@
 //! - `annotations/<hash>.json` — the [`fond_bib::AnnotationSidecar`], byte-compatible with
 //!   what Kartoteka/Sputnik write, so a sidecar is portable between all three as long as
 //!   the file's blob hash matches.
-//! - `meta/<hash>.json` — `{ progress, page_label_override }`, the two fields Kartoteka
-//!   keeps on a note's frontmatter instead — a bare local file has no note to piggyback on.
+//! - `meta/<hash>.json` — `{ progress, page_label_override, bookmarks }`, the fields
+//!   Kartoteka keeps on a note's frontmatter instead — a bare local file has no note to
+//!   piggyback on.
 
 use std::fs;
 use std::path::PathBuf;
@@ -28,6 +29,8 @@ struct LocalMeta {
     progress: Option<fond_bib::Progress>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     page_label_override: Option<fond_bib::PageLabelOverride>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    bookmarks: Vec<u32>,
 }
 
 impl LocalMeta {
@@ -111,6 +114,16 @@ impl ReaderHost for LocalReaderHost {
 
     fn notify(&self, message: &str) {
         toast(&self.widgets, message);
+    }
+
+    fn load_bookmarks(&self) -> Vec<u32> {
+        LocalMeta::load(&self.hash).bookmarks
+    }
+
+    fn save_bookmarks(&self, pages: &[u32]) {
+        let mut meta = LocalMeta::load(&self.hash);
+        meta.bookmarks = pages.to_vec();
+        meta.save(&self.hash);
     }
 }
 

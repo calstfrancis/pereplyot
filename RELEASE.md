@@ -1,4 +1,4 @@
-# Pereplyot v0.2.0 "Shared Shelf"
+# Pereplyot v0.3.0 "Folded Corner"
 
 Install via Flatpak:
 
@@ -18,19 +18,30 @@ flatpak update io.github.calstfrancis.Pereplyot
 
 ### What's new
 
-**History is now shared across every app that embeds the reader.** Open a PDF or EPUB from
-Kartoteka or Sputnik and it now shows up in Pereplyot's own History shelf too — not just
-documents opened through Pereplyot itself. (Kartoteka and Sputnik need their own small
-update to actually record into it, released alongside this one.) One honest gap: clicking
-a history entry another app recorded can still fail if Pereplyot was never granted access
-to that specific file — you'll get a "couldn't read file" toast rather than it opening.
+**Bookmarks.** A star toggle beside page/chapter navigation marks the current page (PDF) or
+chapter (EPUB) — a lightweight "come back to this" marker, distinct from a highlight or
+note. They show in the Notes sidebar above your annotations, and the 'B' key toggles the
+current one from anywhere.
 
-**Fixed: Pereplyot could fail to fully close.** When opened purely to view one file —
-handed off from Kartoteka, Sputnik, or a file manager's "Open With" — an empty Library/
-History launcher window was quietly opening right alongside the reader. Closing the reader
-you actually came for didn't quit the app, because that invisible launcher was still there.
-It no longer appears in that case, and the app now closes itself once nothing's left open
-to read.
+**More ways to read a PDF.** Rotate a sideways-scanned page 90° at a time (single-page mode
+only); invert colours for reading scanned/white-background pages at night; click the left or
+right edge of the page (no dragging) to turn it; jump around a long document from a
+page-thumbnail grid; and Up/Down/Space/Backspace now turn pages too, alongside the existing
+Left/Right/Page Up/Page Down.
+
+**EPUB reading themes.** A Light/Sepia/Dark theme and a Default/Serif/Sans-serif font choice
+for the page itself — independent of the app's own theme, since an EPUB's content doesn't
+follow `adw::StyleManager` the way the rest of the UI does.
+
+**Export notes & highlights to Markdown**, for both PDF and EPUB — every bookmark and
+annotation, in document order, to a file you choose.
+
+**Fullscreen and maximize buttons** on both the launcher and reader windows, F11 for
+fullscreen, and a reading-progress percentage next to the page/chapter count.
+
+**Fixed:** the Contents/outline sidebar toggle was completely absent (not just disabled) for
+any document with no embedded outline or table of contents — most of them. It's now always
+there, greyed out with an explanation when the document genuinely has none.
 
 ---
 

@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.3.0] "Folded Corner" — 2026-09-22
+
+- **Fixed: the Contents/outline sidebar toggle was completely absent, not just disabled,**
+  for any PDF with no embedded bookmarks or EPUB with no table of contents — which is most
+  of them. There was no way to tell the feature existed at all for such a document. The
+  toggle now always shows in the reader's headerbar; it's greyed out with a "This PDF/EPUB
+  has no table of contents" tooltip when the document genuinely has none, and clickable as
+  before when it does. Shared fix in `fond-read-gtk`, so it applies to Kartoteka's and
+  Sputnik's embedded readers too.
+- **Fullscreen and maximize buttons**, plus an F11 shortcut for fullscreen, added to the
+  launcher window and to the shared reader window's headerbar.
+- **The reader window now shows its own version/changelog button**, bottom right of a new
+  status bar, matching the launcher window's — previously only the launcher had one, so
+  a document opened straight into its own window (no launcher visible) had no way to check
+  the version or read the changelog. `fond-read-gtk` gained a `reader_host::set_host_footer`
+  hook so only Pereplyot opts into this (Kartoteka and Sputnik already show their own
+  version/changelog on their own main window).
+- **Bookmarks.** A star toggle beside page/chapter navigation marks the current page (PDF)
+  or chapter (EPUB) as a bookmark — a lightweight "come back to this" marker, distinct from
+  a highlight or note. Bookmarks show in the Notes sidebar above your annotations, and the
+  'B' key toggles the current page/chapter's bookmark from anywhere.
+- **PDF: page navigation via Up/Down and Space/Backspace**, matching the existing
+  Left/Right/Page Up/Page Down behavior — Space/Backspace follow the common reader
+  convention (Preview, Acrobat).
+- **PDF: click-to-turn page zones.** Clicking (without dragging) in the leftmost or
+  rightmost 20% of the page turns to the previous/next page, in both paged and continuous
+  view.
+- **PDF: rotate page**, a view-only 90°-at-a-time rotation for sideways-scanned documents —
+  single-page mode only (Continuous/Two-page reset it and disable the control, since
+  neither one's layout accounts for a rotated page).
+- **PDF: invert colours**, a night-reading mode for scanned/white-background pages, which
+  don't otherwise respond to the app's own Light/Dark theme since they're rendered pixels,
+  not themed UI.
+- **PDF: a reading-progress percentage** next to the page count, and **a page-thumbnail
+  grid** ("Page thumbnails…" in the headerbar) for jumping around a long document visually.
+- **EPUB: a reading theme (Light/Sepia/Dark) and font-family choice (Default/Serif/
+  Sans-serif)**, independent of the app's own theme — a WebView's page content doesn't
+  inherit `adw::StyleManager`, and reading typography is a preference people often want
+  separate from their OS theme (Sepia being the obvious example neither Light nor Dark
+  covers).
+- **EPUB: a reading-progress percentage** next to the chapter count.
+- **Export notes & highlights to Markdown**, for both PDF and EPUB — bookmarks and every
+  highlight/underline/strikeout/note, in document order, to a file you choose.
+
 ## [0.2.0] "Shared Shelf" — 2026-09-15
 
 - **History is now shared across every app that embeds the reader.** Opening a PDF or EPUB

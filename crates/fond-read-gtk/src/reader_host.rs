@@ -15,6 +15,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
@@ -29,6 +30,23 @@ thread_local! {
     // the window directly) — so the *next* "Read" after every reader was closed starts a
     // fresh window rather than trying to resurrect a dead one.
     static MAIN_HOST: RefCell<Option<(adw::Window, adw::TabView)>> = const { RefCell::new(None) };
+    // Optional bottom-right status-bar widget an embedding app can ask every reader host
+    // window (the shared one and any popped-out ones) to carry — see `set_host_footer`.
+    static HOST_FOOTER: RefCell<Option<Rc<dyn Fn() -> gtk4::Widget>>> = const { RefCell::new(None) };
+}
+
+/// Reserve a widget to show at the bottom right of every reader host window's status bar —
+/// built fresh per window via `factory`, since the same widget can't live in two windows at
+/// once (the shared host and any windows popped out via [`ReaderTab::pop_out`] each need
+/// their own instance). This crate is shared across Pereplyot, Kartoteka, and Sputnik, and
+/// only Pereplyot wants this (its version/changelog button — Kartoteka and Sputnik already
+/// show their own on their own main window instead, and this crate has no way to build an
+/// app-specific `CARGO_PKG_VERSION`/`CHANGELOG.md` button itself), so the slot defaults to
+/// unset and the status bar simply isn't shown at all unless an app opts in. Call this once,
+/// before opening the first reader tab — the host window is built lazily on first use and
+/// its bottom bar isn't rebuilt afterward.
+pub fn set_host_footer(factory: impl Fn() -> gtk4::Widget + 'static) {
+    HOST_FOOTER.with(|cell| *cell.borrow_mut() = Some(Rc::new(factory)));
 }
 
 /// A handle to one reader's tab: parent window for its own nested dialogs/popovers, and a
@@ -69,6 +87,21 @@ impl ReaderTab {
     }
 }
 
+/// Flip the host window between fullscreen and normal, swapping the header button's icon
+/// and tooltip to match — `adw::Window` (like `gtk4::Window`) tracks fullscreen state itself
+/// via `is_fullscreen`, so this just reads it back rather than keeping a separate bool.
+fn toggle_fullscreen(host: &adw::Window, button: &gtk4::Button) {
+    if host.is_fullscreen() {
+        host.unfullscreen();
+        button.set_icon_name("view-fullscreen-symbolic");
+        button.set_tooltip_text(Some("Fullscreen (F11)"));
+    } else {
+        host.fullscreen();
+        button.set_icon_name("view-restore-symbolic");
+        button.set_tooltip_text(Some("Leave fullscreen (F11)"));
+    }
+}
+
 /// Build a reader host window: an `adw::Window` with a header bar, a tab bar, and an
 /// `adw::TabView` filling the rest — used both for the shared default window and for every
 /// popped-out one, so both look and behave identically.
@@ -85,8 +118,54 @@ fn new_tab_view(parent: &adw::ApplicationWindow) -> (adw::Window, adw::TabView) 
     let toolbar = adw::ToolbarView::new();
     let header = adw::HeaderBar::new();
     header.add_css_class("fond-chrome");
+
+    let maximize_button = gtk4::Button::from_icon_name("window-maximize-symbolic");
+    maximize_button.add_css_class("flat");
+    maximize_button.set_tooltip_text(Some("Maximize window"));
+    {
+        let host = host.clone();
+        maximize_button.connect_clicked(move |_| host.maximize());
+    }
+    header.pack_end(&maximize_button);
+
+    let fullscreen_button = gtk4::Button::from_icon_name("view-fullscreen-symbolic");
+    fullscreen_button.add_css_class("flat");
+    fullscreen_button.set_tooltip_text(Some("Fullscreen (F11)"));
+    {
+        let host = host.clone();
+        let button = fullscreen_button.clone();
+        fullscreen_button.connect_clicked(move |_| toggle_fullscreen(&host, &button));
+    }
+    header.pack_end(&fullscreen_button);
+
+    {
+        let host_for_key = host.clone();
+        let button = fullscreen_button.clone();
+        let key_controller = gtk4::EventControllerKey::new();
+        key_controller.connect_key_pressed(move |_, keyval, _keycode, _modifiers| {
+            if keyval == gtk4::gdk::Key::F11 {
+                toggle_fullscreen(&host_for_key, &button);
+                return glib::Propagation::Stop;
+            }
+            glib::Propagation::Proceed
+        });
+        host.add_controller(key_controller);
+    }
+
     toolbar.add_top_bar(&header);
     toolbar.add_top_bar(&tab_bar);
+
+    if let Some(footer_widget) = HOST_FOOTER.with(|cell| cell.borrow().as_ref().map(|f| f())) {
+        let statusbar = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+        statusbar.add_css_class("toolbar");
+        statusbar.add_css_class("fond-chrome");
+        let spacer = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        spacer.set_hexpand(true);
+        statusbar.append(&spacer);
+        statusbar.append(&footer_widget);
+        toolbar.add_bottom_bar(&statusbar);
+    }
+
     toolbar.set_content(Some(&tab_view));
     host.set_content(Some(&toolbar));
 

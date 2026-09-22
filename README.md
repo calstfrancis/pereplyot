@@ -14,14 +14,16 @@ matches.
 
 ## Status
 
-**v0.2.0 "Shared Shelf", released 2026-09-15.** Opening a PDF or EPUB (via Open,
+**v0.3.0 "Folded Corner", released 2026-09-22.** Opening a PDF or EPUB (via Open,
 drag-and-drop, or a file manager's "Open With"); a Library (cover-grid, opt-in) and History
 (every document opened, automatic, **shared across Kartoteka and Sputnik too** — see below)
 shelf; and the reader itself — highlighting/underline/strike/notes with export to Markdown,
-in-document search, continuous scroll and facing-pages view, zoom-to-fit-width/page,
-keyboard page and chapter navigation, a Contents outline and a Notes list, and tabs for
-reading more than one document at once. No Welcome window, no screenshot automation, and
-EPUB cover art (Library shows a placeholder icon for EPUBs) yet.
+bookmarks, in-document search, continuous scroll and facing-pages view, zoom-to-fit-width/
+page, rotate and invert-colours for PDF, reading themes (Light/Sepia/Dark) and font choice
+for EPUB, a page-thumbnail grid, click-to-turn page zones, keyboard/mouse page and chapter
+navigation, a Contents outline and a Notes list, and tabs for reading more than one document
+at once. No Welcome window, no screenshot automation, and EPUB cover art (Library shows a
+placeholder icon for EPUBs) yet.
 
 ## Building
 

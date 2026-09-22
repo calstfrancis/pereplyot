@@ -13,7 +13,7 @@ use gtk4::{gdk, gio, glib, Orientation};
 use libadwaita as adw;
 use webkit6::prelude::*;
 
-use super::pdf::{COLOR_PRESETS, EPUB_MARK_KIND_OPTIONS, UNDO_HISTORY_LIMIT};
+use super::pdf::{update_bookmark_button, COLOR_PRESETS, EPUB_MARK_KIND_OPTIONS, UNDO_HISTORY_LIMIT};
 use crate::RebuildCell;
 use crate::{popover_button, popover_separator, ReaderHost};
 
@@ -40,6 +40,10 @@ struct EpubReaderState {
     /// chapters already sitting in `cache_dir` (no re-opening the EPUB zip needed). `None`
     /// until then; cheap to keep in memory afterward for the life of this reader window.
     chapter_texts: Option<Vec<String>>,
+    /// Bookmarked chapters (`spine` index) — see the PDF reader's `ReaderState::bookmarks`
+    /// for the same idea applied to pages. Loaded once at open, rewritten on every add/
+    /// remove, same lifecycle as `annotations`.
+    bookmarks: Vec<usize>,
 }
 
 /// Return this reader's per-chapter plain-text search index, building and caching it on
@@ -446,6 +450,13 @@ pub fn show_epub_reader(
         .flatten()
         .and_then(|p| p.chapter_percent);
 
+    let mut bookmarks: Vec<usize> = host
+        .load_bookmarks()
+        .into_iter()
+        .map(|p| p as usize)
+        .collect();
+    bookmarks.sort_unstable();
+
     let reader = Rc::new(RefCell::new(EpubReaderState {
         cache_dir,
         spine: book.spine,
@@ -454,6 +465,7 @@ pub fn show_epub_reader(
         undo_stack: Vec::new(),
         redo_stack: Vec::new(),
         chapter_texts: None,
+        bookmarks,
     }));
 
     let view = adw::ToolbarView::new();
@@ -466,11 +478,15 @@ pub fn show_epub_reader(
     next.set_tooltip_text(Some("Next chapter"));
     let chapter_label = gtk4::Label::new(None);
     chapter_label.add_css_class("dim-label");
+    let bookmark_button = gtk4::Button::new();
+    bookmark_button.add_css_class("flat");
     let nav = gtk4::Box::new(Orientation::Horizontal, 6);
     nav.append(&prev);
     nav.append(&chapter_label);
     nav.append(&next);
+    nav.append(&bookmark_button);
     header.set_title_widget(Some(&nav));
+    update_bookmark_button(&bookmark_button, reader.borrow().bookmarks.contains(&start_index));
 
     let web_view = webkit6::WebView::new();
     web_view.set_vexpand(true);
@@ -546,17 +562,22 @@ pub fn show_epub_reader(
     content.append(&search_revealer);
     content.append(&web_view);
 
-    // Sidebar toggles (Contents, if the EPUB has a TOC; Notes always) — persistent Paned
-    // sidebar, not popovers, matching the PDF reader's own house sidebar style (see
-    // `show_pdf_reader`'s `sidebar_toggle`/`notes_toggle` pair, and CLAUDE.md's UI
-    // standard). `Apply`/mode/colour stay at the end of the header, same relative position
-    // "Highlight" used to occupy.
-    let sidebar_toggle = (!book.toc.is_empty()).then(|| {
-        let button = gtk4::ToggleButton::new();
-        button.set_icon_name("sidebar-show-symbolic");
-        button.set_tooltip_text(Some("Show the table of contents"));
-        button
-    });
+    // Sidebar toggles (Contents; Notes) — persistent Paned sidebar, not popovers, matching
+    // the PDF reader's own house sidebar style (see `show_pdf_reader`'s
+    // `sidebar_toggle`/`notes_toggle` pair, and CLAUDE.md's UI standard). `Apply`/mode/
+    // colour stay at the end of the header, same relative position "Highlight" used to
+    // occupy. Contents is always shown, even when the EPUB has no TOC — disabled with an
+    // explanatory tooltip rather than omitted entirely, matching the PDF reader's own fix
+    // for the same discoverability problem (a permanently-hidden button was mistaken for a
+    // removed one).
+    let sidebar_toggle = gtk4::ToggleButton::new();
+    sidebar_toggle.set_icon_name("sidebar-show-symbolic");
+    if book.toc.is_empty() {
+        sidebar_toggle.set_sensitive(false);
+        sidebar_toggle.set_tooltip_text(Some("This EPUB has no table of contents"));
+    } else {
+        sidebar_toggle.set_tooltip_text(Some("Show the table of contents"));
+    }
     let notes_toggle = gtk4::ToggleButton::new();
     notes_toggle.set_icon_name("view-list-symbolic");
     notes_toggle.set_tooltip_text(Some("Show notes and highlights"));
@@ -609,6 +630,44 @@ pub fn show_epub_reader(
         });
     }
 
+    // Reading theme and font family — independent of the app's own System/Light/Dark
+    // toggle, since a WebView's page content doesn't inherit `adw::StyleManager` and people
+    // have real preferences about reading typography that don't always track their OS theme
+    // (paper-toned "sepia" being the obvious example neither Light nor Dark covers). Applied
+    // via a `WebKitUserStyleSheet` at `UserStyleLevel::User` — the highest-priority stylesheet
+    // WebKit has, so it overrides the EPUB's own CSS without needing `!important` fragility —
+    // registered once on the view's `UserContentManager` and left in place across chapter
+    // navigation, rather than re-injected via JS on every `load-changed`.
+    let theme_labels = ["Light", "Sepia", "Dark"];
+    let theme_drop = gtk4::DropDown::from_strings(&theme_labels);
+    theme_drop.set_tooltip_text(Some("Reading theme"));
+    let font_labels = ["Default font", "Serif", "Sans-serif"];
+    let font_drop = gtk4::DropDown::from_strings(&font_labels);
+    font_drop.set_tooltip_text(Some("Font family"));
+    {
+        let apply_style: Rc<dyn Fn()> = {
+            let web_view = web_view.clone();
+            let theme_drop = theme_drop.clone();
+            let font_drop = font_drop.clone();
+            Rc::new(move || {
+                apply_epub_style(&web_view, theme_drop.selected(), font_drop.selected())
+            })
+        };
+        {
+            let apply_style = apply_style.clone();
+            theme_drop.connect_selected_notify(move |_| apply_style());
+        }
+        {
+            let apply_style = apply_style.clone();
+            font_drop.connect_selected_notify(move |_| apply_style());
+        }
+        apply_style();
+    }
+
+    let export_button = gtk4::Button::from_icon_name("document-save-symbolic");
+    export_button.add_css_class("flat");
+    export_button.set_tooltip_text(Some("Export notes & highlights…"));
+
     // Moves this tab out of the shared "Reader" window into its own standalone one — the
     // only way to detach a tab (see `reader_host`'s module doc for why there's no drag-out-
     // of-the-bar gesture too).
@@ -628,16 +687,18 @@ pub fn show_epub_reader(
     header.pack_end(&mode_drop);
     header.pack_end(&zoom_in_button);
     header.pack_end(&zoom_out_button);
-    if let Some(sidebar_toggle) = &sidebar_toggle {
-        header.pack_start(sidebar_toggle);
-    }
+    header.pack_end(&export_button);
+    header.pack_end(&font_drop);
+    header.pack_end(&theme_drop);
+    header.pack_start(&sidebar_toggle);
     header.pack_start(&search_toggle);
     header.pack_start(&undo_button);
     header.pack_start(&redo_button);
     view.add_top_bar(&header);
 
-    // Contents sidebar (only built if the EPUB has a TOC).
-    let contents_scroll = sidebar_toggle.as_ref().map(|_| {
+    // Contents sidebar — always built, even for an EPUB with no TOC (an empty, unreachable
+    // panel behind a disabled toggle, per the doc comment above).
+    let contents_scroll = {
         let rows = gtk4::Box::new(Orientation::Vertical, 2);
         rows.set_margin_top(6);
         rows.set_margin_bottom(6);
@@ -655,9 +716,18 @@ pub fn show_epub_reader(
                 let prev = prev.clone();
                 let next = next.clone();
                 let chapter_label = chapter_label.clone();
+                let bookmark_button = bookmark_button.clone();
                 let target = entry.target.clone();
                 row.connect_clicked(move |_| {
-                    epub_go_to(&reader, &view, &prev, &next, &chapter_label, &target);
+                    epub_go_to(
+                        &reader,
+                        &view,
+                        &prev,
+                        &next,
+                        &chapter_label,
+                        &bookmark_button,
+                        &target,
+                    );
                 });
             }
             rows.append(&row);
@@ -669,7 +739,7 @@ pub fn show_epub_reader(
         scroll.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
         scroll.set_child(Some(&rows));
         scroll
-    });
+    };
 
     // Notes/highlights sidebar: every annotation on this EPUB, in reading order, readable
     // prose rather than just an in-text mark — same pattern as the PDF reader's own notes
@@ -710,6 +780,7 @@ pub fn show_epub_reader(
         let prev = prev.clone();
         let next = next.clone();
         let chapter_label = chapter_label.clone();
+        let bookmark_button = bookmark_button.clone();
         let pending_scroll = pending_scroll.clone();
         let rebuild_notes_cell_inner = rebuild_notes_cell.clone();
         let builder = move || {
@@ -733,12 +804,87 @@ pub fn show_epub_reader(
                     .unwrap_or(usize::MAX);
                 (spine_pos, a.created.clone())
             });
-            if all.is_empty() {
-                let label = gtk4::Label::new(Some("No notes or highlights yet"));
+            let bookmarks = reader.borrow().bookmarks.clone();
+            if all.is_empty() && bookmarks.is_empty() {
+                let label = gtk4::Label::new(Some("No bookmarks, notes, or highlights yet"));
                 label.add_css_class("dim-label");
                 label.set_margin_top(6);
                 label.set_margin_bottom(6);
                 notes_rows.append(&label);
+                return;
+            }
+            if !bookmarks.is_empty() {
+                let heading = gtk4::Label::new(Some("Bookmarks"));
+                heading.add_css_class("dim-label");
+                heading.add_css_class("caption-heading");
+                heading.set_xalign(0.0);
+                notes_rows.append(&heading);
+                for &chapter_index in &bookmarks {
+                    let row = gtk4::Box::new(Orientation::Horizontal, 6);
+                    let label = gtk4::Label::new(Some(&format!("Chapter {}", chapter_index + 1)));
+                    label.set_xalign(0.0);
+                    label.set_hexpand(true);
+                    row.append(&label);
+                    let remove_button = gtk4::Button::from_icon_name("user-trash-symbolic");
+                    remove_button.add_css_class("flat");
+                    remove_button.set_tooltip_text(Some("Remove bookmark"));
+                    row.append(&remove_button);
+                    {
+                        let jump = gtk4::GestureClick::new();
+                        let reader = reader.clone();
+                        let view = view.clone();
+                        let prev = prev.clone();
+                        let next = next.clone();
+                        let chapter_label = chapter_label.clone();
+                        let bookmark_button = bookmark_button.clone();
+                        jump.connect_released(move |_gesture, _n, _x, _y| {
+                            let target = reader
+                                .borrow()
+                                .spine
+                                .get(chapter_index)
+                                .cloned()
+                                .unwrap_or_default();
+                            epub_go_to(
+                                &reader,
+                                &view,
+                                &prev,
+                                &next,
+                                &chapter_label,
+                                &bookmark_button,
+                                &target,
+                            );
+                        });
+                        label.add_controller(jump);
+                    }
+                    {
+                        let host = host.clone();
+                        let reader = reader.clone();
+                        let bookmark_button = bookmark_button.clone();
+                        let rebuild_notes_cell = rebuild_notes_cell_inner.clone();
+                        remove_button.connect_clicked(move |_| {
+                            reader.borrow_mut().bookmarks.retain(|&c| c != chapter_index);
+                            let saved: Vec<u32> = reader
+                                .borrow()
+                                .bookmarks
+                                .iter()
+                                .map(|&c| c as u32)
+                                .collect();
+                            host.save_bookmarks(&saved);
+                            let current = reader.borrow().index;
+                            update_bookmark_button(
+                                &bookmark_button,
+                                reader.borrow().bookmarks.contains(&current),
+                            );
+                            if let Some(f) = rebuild_notes_cell.borrow().as_ref() {
+                                f();
+                            }
+                        });
+                    }
+                    notes_rows.append(&row);
+                }
+                notes_rows.append(&popover_separator());
+            }
+            if all.is_empty() {
                 return;
             }
             let last = all.len().saturating_sub(1);
@@ -782,12 +928,21 @@ pub fn show_epub_reader(
                     let prev = prev.clone();
                     let next = next.clone();
                     let chapter_label = chapter_label.clone();
+                    let bookmark_button = bookmark_button.clone();
                     let pending_scroll = pending_scroll.clone();
                     let id = annotation.id.clone();
                     let chapter = chapter.clone();
                     jump.connect_released(move |_gesture, _n, _x, _y| {
                         *pending_scroll.borrow_mut() = Some(id.clone());
-                        epub_go_to(&reader, &view, &prev, &next, &chapter_label, &chapter);
+                        epub_go_to(
+                            &reader,
+                            &view,
+                            &prev,
+                            &next,
+                            &chapter_label,
+                            &bookmark_button,
+                            &chapter,
+                        );
                     });
                     header_label.add_controller(jump);
                 }
@@ -898,13 +1053,34 @@ pub fn show_epub_reader(
             }
         })
     };
+    {
+        let host = host.clone();
+        let reader = reader.clone();
+        let rebuild_notes = rebuild_notes.clone();
+        bookmark_button.connect_clicked(move |btn| {
+            let chapter_index = reader.borrow().index;
+            let now_bookmarked = {
+                let mut r = reader.borrow_mut();
+                if let Some(pos) = r.bookmarks.iter().position(|&c| c == chapter_index) {
+                    r.bookmarks.remove(pos);
+                    false
+                } else {
+                    r.bookmarks.push(chapter_index);
+                    r.bookmarks.sort_unstable();
+                    true
+                }
+            };
+            let saved: Vec<u32> = reader.borrow().bookmarks.iter().map(|&c| c as u32).collect();
+            host.save_bookmarks(&saved);
+            update_bookmark_button(btn, now_bookmarked);
+            rebuild_notes();
+        });
+    }
 
     // Contents (left) and Notes (right) are now two independent sidebars rather than a
     // shared Stack behind one toggle slot — see `show_pdf_reader`'s matching sidebars for
     // the full rationale (both can be open at once instead of sharing one toggle slot).
-    if let Some(contents_scroll) = &contents_scroll {
-        contents_scroll.set_size_request(60, -1);
-    }
+    contents_scroll.set_size_request(60, -1);
     notes_scroll.set_size_request(60, -1);
 
     let notes_paned = gtk4::Paned::new(Orientation::Horizontal);
@@ -927,6 +1103,7 @@ pub fn show_epub_reader(
     paned.set_position(220);
     view.set_content(Some(&paned));
     let reader_tab = crate::reader_host::open_reader_tab(window, title, &view);
+    let reader_window = reader_tab.host_window.clone();
     crate::register_reader(hash, &reader_tab);
 
     {
@@ -936,6 +1113,15 @@ pub fn show_epub_reader(
         popout_button.connect_clicked(move |_| {
             let new_tab = reader_tab.pop_out(&window);
             crate::register_reader(&hash, &new_tab);
+        });
+    }
+    {
+        let host = host.clone();
+        let reader = reader.clone();
+        let title = title.to_string();
+        let dialog = reader_window.clone();
+        export_button.connect_clicked(move |_| {
+            export_notes_markdown(&host, &reader, &title, &dialog);
         });
     }
 
@@ -1088,6 +1274,7 @@ pub fn show_epub_reader(
         let prev = prev.clone();
         let next = next.clone();
         let chapter_label = chapter_label.clone();
+        let bookmark_button = bookmark_button.clone();
         let pending_search = pending_search.clone();
         search_bar_entry.connect_search_changed(move |entry| {
             let text = entry.text();
@@ -1146,6 +1333,7 @@ pub fn show_epub_reader(
                     let prev = prev.clone();
                     let next = next.clone();
                     let chapter_label = chapter_label.clone();
+                    let bookmark_button = bookmark_button.clone();
                     let pending_search = pending_search.clone();
                     let query = text.to_string();
                     let chapter_idx = m.chapter;
@@ -1156,7 +1344,15 @@ pub fn show_epub_reader(
                         };
                         let Some(target) = target else { return };
                         *pending_search.borrow_mut() = Some(query.clone());
-                        epub_go_to(&reader, &view, &prev, &next, &chapter_label, &target);
+                        epub_go_to(
+                            &reader,
+                            &view,
+                            &prev,
+                            &next,
+                            &chapter_label,
+                            &bookmark_button,
+                            &target,
+                        );
                     });
                     row.add_controller(click);
                     results_list.append(&row);
@@ -1234,6 +1430,7 @@ pub fn show_epub_reader(
         let search_toggle = search_toggle.clone();
         let prev = prev.clone();
         let next = next.clone();
+        let bookmark_button = bookmark_button.clone();
         let view_for_focus = view.clone();
         key_controller.connect_key_pressed(move |_, keyval, _keycode, modifiers| {
             if keyval == gdk::Key::z && modifiers.contains(gdk::ModifierType::CONTROL_MASK) {
@@ -1270,6 +1467,10 @@ pub fn show_epub_reader(
                     next.emit_clicked();
                     return glib::Propagation::Stop;
                 }
+                gdk::Key::b | gdk::Key::B => {
+                    bookmark_button.emit_clicked();
+                    return glib::Propagation::Stop;
+                }
                 _ => {}
             }
             glib::Propagation::Proceed
@@ -1277,12 +1478,12 @@ pub fn show_epub_reader(
         view.add_controller(key_controller);
     }
 
-    if let Some(sidebar_toggle) = &sidebar_toggle {
+    {
         let paned = paned.clone();
         let contents_scroll = contents_scroll.clone();
         sidebar_toggle.connect_toggled(move |btn| {
             if btn.is_active() {
-                paned.set_start_child(contents_scroll.as_ref());
+                paned.set_start_child(Some(&contents_scroll));
             } else {
                 paned.set_start_child(gtk4::Widget::NONE);
             }
@@ -1344,7 +1545,15 @@ pub fn show_epub_reader(
     // this same navigation path for consistency, but chapter 0 has to start somewhere).
     let first_chapter = reader.borrow().spine.get(start_index).cloned();
     if let Some(first) = first_chapter {
-        epub_go_to(&reader, &web_view, &prev, &next, &chapter_label, &first);
+        epub_go_to(
+            &reader,
+            &web_view,
+            &prev,
+            &next,
+            &chapter_label,
+            &bookmark_button,
+            &first,
+        );
     }
 
     {
@@ -1353,6 +1562,7 @@ pub fn show_epub_reader(
         let prev_for_handler = prev.clone();
         let next = next.clone();
         let chapter_label = chapter_label.clone();
+        let bookmark_button = bookmark_button.clone();
         prev.connect_clicked(move |_| {
             let target = {
                 let r = reader.borrow();
@@ -1365,6 +1575,7 @@ pub fn show_epub_reader(
                     &prev_for_handler,
                     &next,
                     &chapter_label,
+                    &bookmark_button,
                     &target,
                 );
             }
@@ -1376,6 +1587,7 @@ pub fn show_epub_reader(
         let prev = prev.clone();
         let next_for_handler = next.clone();
         let chapter_label = chapter_label.clone();
+        let bookmark_button = bookmark_button.clone();
         next.connect_clicked(move |_| {
             let target = {
                 let r = reader.borrow();
@@ -1388,6 +1600,7 @@ pub fn show_epub_reader(
                     &prev,
                     &next_for_handler,
                     &chapter_label,
+                    &bookmark_button,
                     &target,
                 );
             }
@@ -1525,12 +1738,131 @@ pub fn show_epub_reader(
 /// spine entry, so the chapter label and prev/next sensitivity stay correct whether the jump
 /// came from a TOC entry, the prev/next buttons, or the initial chapter-0 load — all three
 /// funnel through here rather than duplicating the URI-building and label/button refresh.
+#[allow(clippy::too_many_arguments)]
+/// Write every bookmark and annotation to a Markdown file the user picks — same shape and
+/// purpose as the PDF reader's `export_notes_markdown`, adapted to chapters instead of pages.
+fn export_notes_markdown(
+    host: &Rc<dyn ReaderHost>,
+    reader: &Rc<RefCell<EpubReaderState>>,
+    title: &str,
+    reader_window: &adw::Window,
+) {
+    let (bookmarks, mut all, spine) = {
+        let r = reader.borrow();
+        let all: Vec<fond_bib::Annotation> = r
+            .annotations
+            .annotations
+            .iter()
+            .filter(|a| a.chapter.is_some())
+            .cloned()
+            .collect();
+        (r.bookmarks.clone(), all, r.spine.clone())
+    };
+    all.sort_by_key(|a| {
+        let spine_pos = a
+            .chapter
+            .as_deref()
+            .and_then(|c| spine.iter().position(|p| p == c))
+            .unwrap_or(usize::MAX);
+        (spine_pos, a.created.clone())
+    });
+
+    if all.is_empty() && bookmarks.is_empty() {
+        host.notify("Nothing to export yet");
+        return;
+    }
+
+    let mut md = format!("# {title}\n\n");
+    if !bookmarks.is_empty() {
+        md.push_str("## Bookmarks\n\n");
+        for &chapter_index in &bookmarks {
+            md.push_str(&format!("- Chapter {}\n", chapter_index + 1));
+        }
+        md.push('\n');
+    }
+    if !all.is_empty() {
+        md.push_str("## Notes & highlights\n\n");
+        for a in &all {
+            let chapter_num = a
+                .chapter
+                .as_deref()
+                .and_then(|c| spine.iter().position(|p| p == c))
+                .map(|i| i + 1)
+                .unwrap_or(0);
+            md.push_str(&format!("### Chapter {chapter_num} — {:?}\n\n", a.kind));
+            if let Some(snippet) = &a.snippet {
+                for line in snippet.lines() {
+                    md.push_str(&format!("> {line}\n"));
+                }
+                md.push('\n');
+            }
+            if let Some(note) = &a.note {
+                md.push_str(&format!("{note}\n\n"));
+            }
+        }
+    }
+
+    let file_dialog = gtk4::FileDialog::builder()
+        .title("Export notes & highlights")
+        .initial_name(format!("{title} — notes.md"))
+        .build();
+    let host = host.clone();
+    file_dialog.save(Some(reader_window), gio::Cancellable::NONE, move |result| {
+        if let Ok(file) = result {
+            if let Some(path) = file.path() {
+                match std::fs::write(&path, &md) {
+                    Ok(()) => host.notify("Exported notes & highlights"),
+                    Err(e) => host.notify(&format!("Couldn't export: {e}")),
+                }
+            }
+        }
+    });
+}
+
+/// Replace the reading-theme/font stylesheet registered on `view`'s `UserContentManager`
+/// with one built from the theme/font dropdowns' current selections — see the call site's
+/// doc comment for why this goes through a `WebKitUserStyleSheet` rather than a JS injection
+/// per chapter load. `theme`/`font` are the dropdowns' `selected()` indices, matching
+/// `theme_labels`/`font_labels`'s declared order.
+fn apply_epub_style(view: &webkit6::WebView, theme: u32, font: u32) {
+    let Some(ucm) = webkit6::prelude::WebViewExt::user_content_manager(view) else {
+        return;
+    };
+    ucm.remove_all_style_sheets();
+
+    let theme_css = match theme {
+        1 => "html, body { background: #f4ecd8 !important; color: #5b4636 !important; } \
+              a, a:visited { color: #8a6d3b !important; }",
+        2 => "html, body { background: #1e1e1e !important; color: #dddddd !important; } \
+              a, a:visited { color: #8ab4f8 !important; }",
+        _ => "",
+    };
+    let font_css = match font {
+        1 => "body, p, div, span, li { font-family: Georgia, 'Times New Roman', serif !important; }",
+        2 => "body, p, div, span, li { font-family: -webkit-system-font, sans-serif !important; }",
+        _ => "",
+    };
+    let css = format!("{theme_css}\n{font_css}");
+    if css.trim().is_empty() {
+        return;
+    }
+    let sheet = webkit6::UserStyleSheet::new(
+        &css,
+        webkit6::UserContentInjectedFrames::TopFrame,
+        webkit6::UserStyleLevel::User,
+        &[],
+        &[],
+    );
+    ucm.add_style_sheet(&sheet);
+}
+
 fn epub_go_to(
     state: &Rc<RefCell<EpubReaderState>>,
     view: &webkit6::WebView,
     prev: &gtk4::Button,
     next: &gtk4::Button,
     chapter_label: &gtk4::Label,
+    bookmark_button: &gtk4::Button,
     target: &str,
 ) {
     let (path, fragment) = target
@@ -1553,7 +1885,17 @@ fn epub_go_to(
     view.load_uri(&uri);
 
     let r = state.borrow();
-    chapter_label.set_text(&format!("Chapter {} of {}", r.index + 1, r.spine.len()));
+    let percent = if !r.spine.is_empty() {
+        ((r.index + 1) * 100 / r.spine.len()).min(100)
+    } else {
+        0
+    };
+    chapter_label.set_text(&format!(
+        "Chapter {} of {} · {percent}%",
+        r.index + 1,
+        r.spine.len()
+    ));
     prev.set_sensitive(r.index > 0);
     next.set_sensitive(r.index + 1 < r.spine.len());
+    update_bookmark_button(bookmark_button, r.bookmarks.contains(&r.index));
 }

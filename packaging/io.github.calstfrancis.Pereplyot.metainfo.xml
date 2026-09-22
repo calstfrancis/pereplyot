@@ -17,10 +17,13 @@
     <p>Features:</p>
     <ul>
       <li>Open a PDF or EPUB by file picker, drag-and-drop, or "Open With".</li>
-      <li>Highlights, underlines, strikes, and notes, with export to Markdown.</li>
+      <li>Highlights, underlines, strikes, notes, and bookmarks, with export to Markdown.</li>
       <li>In-document search, continuous scroll, facing-pages view, and zoom-to-fit for
       PDFs.</li>
-      <li>Keyboard page and chapter navigation.</li>
+      <li>Rotate and invert-colours (night reading) for PDF; Light/Sepia/Dark reading
+      themes and font choice for EPUB.</li>
+      <li>A page-thumbnail grid, click-to-turn page zones, and keyboard/mouse page and
+      chapter navigation.</li>
       <li>Reading position and annotations remembered per document automatically.</li>
       <li>A Library shelf for documents you keep, separate from History's record of
       everything you've opened.</li>
@@ -48,6 +51,16 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.3.0" date="2026-09-22">
+      <description>
+        <p>0.3.0 "Folded Corner" — bookmarks, PDF rotate and invert-colours (night reading),
+        a page-thumbnail grid and click-to-turn page zones, EPUB reading themes (Light/
+        Sepia/Dark) and font choice, reading-progress percentages, and Markdown export of
+        notes and highlights. Also adds fullscreen/maximize buttons, a version/changelog
+        button on the reader window itself, and fixes the Contents toggle disappearing for
+        documents with no outline/table of contents.</p>
+      </description>
+    </release>
     <release version="0.2.0" date="2026-09-15">
       <description>
         <p>0.2.0 "Shared Shelf" — History is now shared across every app that embeds the

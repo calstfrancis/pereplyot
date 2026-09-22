@@ -63,6 +63,21 @@ pub trait ReaderHost {
 
     /// Show a transient confirmation or error, however the host shows those.
     fn notify(&self, message: &str);
+
+    /// Bookmarked pages (PDF, 1-based `Annotation.page` numbering) or chapters (EPUB,
+    /// 0-based spine index) — a lightweight "come back to this" marker, distinct from an
+    /// annotation. Defaulted to a no-op pair rather than added as a required method: this
+    /// trait has three implementors across three repos (Pereplyot, Kartoteka, Sputnik), and
+    /// only Pereplyot has bookmarks wired up to real storage so far — the others simply get
+    /// an always-empty list and a save that does nothing, which is exactly the pre-bookmarks
+    /// behavior they already had, until each one opts in with its own persistence.
+    fn load_bookmarks(&self) -> Vec<u32> {
+        Vec::new()
+    }
+
+    /// Persist the full bookmark list. Called on every add/remove, same as
+    /// [`Self::save_annotations`] — the reader holds the authoritative in-memory copy.
+    fn save_bookmarks(&self, _pages: &[u32]) {}
 }
 
 thread_local! {

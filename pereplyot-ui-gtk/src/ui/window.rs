@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use gio::prelude::*;
+use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
@@ -28,6 +29,24 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
 
     app.style_manager().set_color_scheme(config.color_scheme());
 
+    // The shared reader host window (`fond-read-gtk`, also embedded in Kartoteka/Sputnik)
+    // has no version of its own to show — only Pereplyot's makes sense here, so this app
+    // opts in with its own button rather than the crate building one itself.
+    fond_read_gtk::reader_host::set_host_footer(|| {
+        let button = gtk4::Button::builder()
+            .label(concat!("v", env!("CARGO_PKG_VERSION")))
+            .tooltip_text("View changelog")
+            .build();
+        button.add_css_class("flat");
+        button.add_css_class("caption");
+        button.connect_clicked(|btn| {
+            if let Some(window) = btn.root().and_then(|r| r.downcast::<gtk4::Window>().ok()) {
+                show_changelog(&window);
+            }
+        });
+        button.upcast()
+    });
+
     let header = adw::HeaderBar::new();
     let open_button = gtk4::Button::from_icon_name("document-open-symbolic");
     open_button.set_tooltip_text(Some("Open a PDF or EPUB"));
@@ -38,6 +57,37 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
     menu_button.set_icon_name("open-menu-symbolic");
     menu_button.set_tooltip_text(Some("Main Menu"));
     header.pack_end(&menu_button);
+
+    let maximize_button = gtk4::Button::from_icon_name("window-maximize-symbolic");
+    maximize_button.set_tooltip_text(Some("Maximize window"));
+    {
+        let window = window.clone();
+        maximize_button.connect_clicked(move |_| window.maximize());
+    }
+    header.pack_end(&maximize_button);
+
+    let fullscreen_button = gtk4::Button::from_icon_name("view-fullscreen-symbolic");
+    fullscreen_button.set_tooltip_text(Some("Fullscreen (F11)"));
+    {
+        let window = window.clone();
+        let button = fullscreen_button.clone();
+        fullscreen_button.connect_clicked(move |_| toggle_fullscreen(&window, &button));
+    }
+    header.pack_end(&fullscreen_button);
+
+    {
+        let window_for_key = window.clone();
+        let button = fullscreen_button.clone();
+        let key_controller = gtk4::EventControllerKey::new();
+        key_controller.connect_key_pressed(move |_, keyval, _keycode, _modifiers| {
+            if keyval == gtk4::gdk::Key::F11 {
+                toggle_fullscreen(&window_for_key, &button);
+                return glib::Propagation::Stop;
+            }
+            glib::Propagation::Proceed
+        });
+        window.add_controller(key_controller);
+    }
 
     // Library: intentionally-added documents, cards in a plain FlowBox. Nothing lands here
     // except via History's "Add to Library" action.
@@ -146,6 +196,21 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
     rebuild_library(&widgets);
 
     widgets
+}
+
+/// Flip the window between fullscreen and normal, swapping the header button's icon and
+/// tooltip to match — `adw::ApplicationWindow` tracks fullscreen state itself via
+/// `is_fullscreen`, so this just reads it back rather than keeping a separate bool.
+fn toggle_fullscreen(window: &adw::ApplicationWindow, button: &gtk4::Button) {
+    if window.is_fullscreen() {
+        window.unfullscreen();
+        button.set_icon_name("view-fullscreen-symbolic");
+        button.set_tooltip_text(Some("Fullscreen (F11)"));
+    } else {
+        window.fullscreen();
+        button.set_icon_name("view-restore-symbolic");
+        button.set_tooltip_text(Some("Leave fullscreen (F11)"));
+    }
 }
 
 fn install_actions(app: &adw::Application, widgets: &Rc<Widgets>) {
