@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.5.0] "Turned Leaf" — 2026-09-23
+
+- **Page thumbnails moved into the Contents sidebar**, as a second tab alongside Outline —
+  a linked "Outline" / "Thumbnails" switcher above the sidebar's list, sharing the same
+  panel Outline already used instead of a separate popup window. Thumbnails still rasterize
+  lazily (one page per idle tick, nearest-to-current-page first) and only once the tab is
+  actually shown. A PDF with no outline now opens the sidebar to Thumbnails by default
+  instead of disabling the sidebar toggle entirely, since thumbnails are always available
+  even when there's nothing to show in Outline.
+- **Fixed: reopening a document didn't actually resume at the last-read page.** The page
+  counter correctly showed the saved page (e.g. "6 of 10"), but the visible content was
+  always page 1 — continuous scroll mode (the default) tried to scroll to the saved page in
+  the same call that built the page list, before GTK had laid out the new content, so the
+  scroll silently clamped back to the top. Fixed by deferring that scroll to the next idle
+  cycle, after layout has actually happened.
+
 ## [0.4.1] "Slim Gutter" — 2026-09-23
 
 - **Reader chrome consolidated to reclaim reading space.** Both readers used to show two

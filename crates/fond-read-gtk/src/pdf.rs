@@ -1562,12 +1562,11 @@ pub fn show_pdf_reader(
     let color_drop = gtk4::DropDown::from_strings(&color_labels);
     color_drop.set_tooltip_text(Some("Highlight colour"));
 
-    // Always shown, even when the PDF has no outline (most don't) — disabled with an
-    // explanatory tooltip rather than omitted entirely, so the feature stays discoverable
-    // instead of looking like it doesn't exist (a permanently-hidden button was mistaken
-    // for a removed one). Toggles a persistent sidebar (built below, after `render`/
-    // `reader` exist) rather than a popover, per CLAUDE.md's house sidebar style: toggle at
-    // the *start* of the headerbar, content as a collapsible Paned start-child.
+    // Always enabled — Thumbnails is always available even for a PDF with no outline
+    // (unlike before this toggle covered Contents alone and was disabled without one).
+    // Toggles a persistent sidebar (built below, after `render`/`reader` exist) rather than
+    // a popover, per CLAUDE.md's house sidebar style: toggle at the *start* of the
+    // headerbar, content as a collapsible Paned start-child.
     let sidebar_toggle = gtk4::ToggleButton::new();
     crate::set_icon_with_fallback(
         &sidebar_toggle,
@@ -1578,12 +1577,7 @@ pub fn show_pdf_reader(
             "view-list-symbolic",
         ],
     );
-    if outline_entries.is_empty() {
-        sidebar_toggle.set_sensitive(false);
-        sidebar_toggle.set_tooltip_text(Some("This PDF has no table of contents"));
-    } else {
-        sidebar_toggle.set_tooltip_text(Some("Show the table of contents"));
-    }
+    sidebar_toggle.set_tooltip_text(Some("Show contents / thumbnails"));
 
     // Whole-document notes/highlights list, in a persistent sidebar (built below, alongside
     // Contents) rather than the old per-page "This page" dropdown — readable prose, not just
@@ -1624,20 +1618,17 @@ pub fn show_pdf_reader(
     popout_button.add_css_class("flat");
     popout_button.set_tooltip_text(Some("Open in a new window"));
 
-    let thumbnails_button = gtk4::Button::from_icon_name("view-grid-symbolic");
-    thumbnails_button.add_css_class("flat");
-    thumbnails_button.set_tooltip_text(Some("Page thumbnails…"));
-
     let export_button = gtk4::Button::from_icon_name("document-save-symbolic");
     export_button.add_css_class("flat");
     export_button.set_tooltip_text(Some("Export notes & highlights…"));
 
     // Visual order, left to right, in the shared host header: sidebar toggle, Undo, Redo
     // (start) … document title (centre) … Two-page, Continuous, mode picker, colour picker,
-    // Note, Page #, Thumbnails, Export, Open in new window, Notes sidebar (end) — unchanged
-    // from when these lived in this tab's own `HeaderBar`, just built as plain boxes now and
-    // handed to `reader_host::set_tab_header` below instead of packed directly (see the
-    // comment on `title_widget` above for why).
+    // Note, Page #, Export, Open in new window, Notes sidebar (end) — unchanged from when
+    // these lived in this tab's own `HeaderBar`, just built as plain boxes now and handed to
+    // `reader_host::set_tab_header` below instead of packed directly (see the comment on
+    // `title_widget` above for why). Thumbnails used to have its own header button opening a
+    // popup grid; it's now a tab in the sidebar (built below), alongside Contents.
     let header_start = gtk4::Box::new(Orientation::Horizontal, 6);
     header_start.append(&sidebar_toggle);
     header_start.append(&undo_button);
@@ -1649,7 +1640,6 @@ pub fn show_pdf_reader(
     header_end.append(&color_drop);
     header_end.append(&note_button);
     header_end.append(&page_num_button);
-    header_end.append(&thumbnails_button);
     header_end.append(&export_button);
     header_end.append(&popout_button);
     header_end.append(&notes_toggle);
@@ -2034,6 +2024,65 @@ pub fn show_pdf_reader(
         scroll
     };
 
+    // Outline and Thumbnails are two tabs of the one left sidebar (as opposed to Notes,
+    // which is its own independent right-hand sidebar — see the comment further down where
+    // `notes_paned` is built). A plain Stack + a two-button switcher, not `gtk4::StackSwitcher`
+    // or `adw::ViewSwitcher`, to match the rest of this reader's hand-built toggle style and
+    // to get `ToggleButton::set_group`'s native radio behaviour (exactly one active, clicking
+    // the active one again does nothing) for free.
+    let (thumbnails_scroll, trigger_thumbnails) =
+        build_thumbnails_sidebar(&reader, &render, &continuous_toggle, &continuous_scroll);
+
+    let outline_tab_toggle = gtk4::ToggleButton::with_label("Outline");
+    let thumbnails_tab_toggle = gtk4::ToggleButton::with_label("Thumbnails");
+    thumbnails_tab_toggle.set_group(Some(&outline_tab_toggle));
+    let sidebar_tabs_row = gtk4::Box::new(Orientation::Horizontal, 0);
+    sidebar_tabs_row.add_css_class("linked");
+    sidebar_tabs_row.set_margin_top(6);
+    sidebar_tabs_row.set_margin_bottom(6);
+    sidebar_tabs_row.set_margin_start(6);
+    sidebar_tabs_row.set_margin_end(6);
+    sidebar_tabs_row.set_halign(gtk4::Align::Center);
+    sidebar_tabs_row.append(&outline_tab_toggle);
+    sidebar_tabs_row.append(&thumbnails_tab_toggle);
+
+    let sidebar_tab_stack = gtk4::Stack::new();
+    sidebar_tab_stack.set_vexpand(true);
+    sidebar_tab_stack.add_named(&contents_scroll, Some("outline"));
+    sidebar_tab_stack.add_named(&thumbnails_scroll, Some("thumbnails"));
+
+    if outline_entries.is_empty() {
+        outline_tab_toggle.set_sensitive(false);
+        outline_tab_toggle.set_tooltip_text(Some("This PDF has no table of contents"));
+        thumbnails_tab_toggle.set_active(true);
+        sidebar_tab_stack.set_visible_child_name("thumbnails");
+        trigger_thumbnails();
+    } else {
+        outline_tab_toggle.set_active(true);
+        sidebar_tab_stack.set_visible_child_name("outline");
+    }
+    {
+        let sidebar_tab_stack = sidebar_tab_stack.clone();
+        outline_tab_toggle.connect_toggled(move |btn| {
+            if btn.is_active() {
+                sidebar_tab_stack.set_visible_child_name("outline");
+            }
+        });
+    }
+    {
+        let sidebar_tab_stack = sidebar_tab_stack.clone();
+        thumbnails_tab_toggle.connect_toggled(move |btn| {
+            if btn.is_active() {
+                sidebar_tab_stack.set_visible_child_name("thumbnails");
+                trigger_thumbnails();
+            }
+        });
+    }
+
+    let sidebar_box = gtk4::Box::new(Orientation::Vertical, 0);
+    sidebar_box.append(&sidebar_tabs_row);
+    sidebar_box.append(&sidebar_tab_stack);
+
     // Notes/highlights list: every annotation in the document, readable prose rather than
     // just on-page markers, sorted by page. Rebuilt fresh (`rebuild_notes`, below) whenever
     // shown or whenever an annotation is added/removed elsewhere in the reader, via the
@@ -2315,12 +2364,13 @@ pub fn show_pdf_reader(
         })
     };
 
-    // Contents (left) and Notes (right) are now two independent sidebars rather than a
-    // shared Stack behind one toggle slot — Cal asked for Notes on its own right-hand
-    // sidebar so it can stay open alongside Contents instead of the two forcing a choice
-    // between them. Width is user-adjustable via each Paned handle; start at a reasonable
-    // default but let it be dragged down to a slim strip.
-    contents_scroll.set_size_request(60, -1);
+    // Contents (left, itself split into Outline/Thumbnails tabs — built above) and Notes
+    // (right) are two independent sidebars rather than a shared Stack behind one toggle slot
+    // — Cal asked for Notes on its own right-hand sidebar so it can stay open alongside
+    // Contents instead of the two forcing a choice between them. Width is user-adjustable
+    // via each Paned handle; start at a reasonable default but let it be dragged down to a
+    // slim strip.
+    sidebar_box.set_size_request(60, -1);
     notes_scroll.set_size_request(60, -1);
 
     // Notes sidebar: its own Paned wrapping `content`, so it sits on the right of the
@@ -2352,10 +2402,10 @@ pub fn show_pdf_reader(
 
     {
         let paned = paned.clone();
-        let contents_scroll = contents_scroll.clone();
+        let sidebar_box = sidebar_box.clone();
         sidebar_toggle.connect_toggled(move |btn| {
             if btn.is_active() {
-                paned.set_start_child(Some(&contents_scroll));
+                paned.set_start_child(Some(&sidebar_box));
             } else {
                 paned.set_start_child(gtk4::Widget::NONE);
             }
@@ -2882,8 +2932,20 @@ pub fn show_pdf_reader(
                     &dialog,
                 );
                 view_stack.set_visible_child_name("continuous");
+                // Deferred to the next idle cycle: the page widgets `build_continuous_view`
+                // just added haven't been through a layout pass yet at this point, so the
+                // ScrolledWindow's vadjustment `upper` bound is still whatever it was before
+                // (typically 0, on the very first activation) — setting the scroll position
+                // synchronously here gets silently clamped back to the top. Found live: after
+                // resuming a saved page, the page indicator correctly read e.g. "6 of 10" but
+                // the visible content was still page 1, every time — continuous mode is the
+                // default, so this broke "resume where I left off" for every document.
                 let page = reader.borrow().page;
-                scroll_continuous_to_page(&reader, &continuous_scroll, page);
+                let reader = reader.clone();
+                let continuous_scroll = continuous_scroll.clone();
+                glib::idle_add_local_once(move || {
+                    scroll_continuous_to_page(&reader, &continuous_scroll, page);
+                });
             } else {
                 view_stack.set_visible_child_name("paged");
                 render();
@@ -3080,22 +3142,6 @@ pub fn show_pdf_reader(
         });
     }
     {
-        let reader = reader.clone();
-        let render = render.clone();
-        let continuous_toggle = continuous_toggle.clone();
-        let continuous_scroll = continuous_scroll.clone();
-        let dialog = reader_window.clone();
-        thumbnails_button.connect_clicked(move |_| {
-            show_thumbnail_grid(
-                &reader,
-                &render,
-                &continuous_toggle,
-                &continuous_scroll,
-                &dialog,
-            );
-        });
-    }
-    {
         let host = host.clone();
         let reader = reader.clone();
         let title = title.to_string();
@@ -3276,56 +3322,44 @@ pub fn show_pdf_reader(
     reader_tab.present();
 }
 
-/// Thumbnail width for the page-overview grid — deliberately much smaller than the reader's
-/// own `READER_BASE_WIDTH`, since this is a jump-to-page aid, not a reading surface.
+/// Thumbnail width for the sidebar list — deliberately much smaller than the reader's own
+/// `READER_BASE_WIDTH`, since this is a jump-to-page aid, not a reading surface.
 const THUMBNAIL_GRID_WIDTH: u32 = 140;
 
-/// A non-modal window listing every page as a small thumbnail in a grid, for jumping around
-/// a long document visually instead of by number — Okular/Acrobat's "page overview" mode.
-/// Thumbnails are plain unannotated renders (no highlight/search blending — this is for
-/// navigation, not a miniature reading view) and are rasterized lazily, nearest-to-current-
-/// page first, one per idle tick — same spreading idiom as continuous mode's own
-/// `schedule_continuous_render`, so opening this on a long document doesn't block the UI.
-fn show_thumbnail_grid(
+/// Builds the Thumbnails tab of the Contents sidebar: every page as a small thumbnail in a
+/// vertical list, for jumping around a long document visually instead of by number —
+/// Okular/Acrobat's "page overview" mode, docked instead of a popup. Thumbnails are plain
+/// unannotated renders (no highlight/search blending — this is for navigation, not a
+/// miniature reading view).
+///
+/// Rendering is deferred: this only builds the row widgets (cheap) and hands back a trigger
+/// closure that does the actual rasterizing, lazily and only once — call it when the tab is
+/// first shown (see the `Thumbnails` toggle below), not at reader-open time, so a document
+/// nobody ever opens the Thumbnails tab for never pays the render cost. Once triggered, pages
+/// rasterize nearest-to-current-page first, one per idle tick — same spreading idiom as
+/// continuous mode's own `schedule_continuous_render`, so it doesn't block the UI even on a
+/// long document.
+fn build_thumbnails_sidebar(
     reader: &Rc<RefCell<ReaderState>>,
     render: &Rc<impl Fn() + 'static>,
     continuous_toggle: &gtk4::ToggleButton,
     continuous_scroll: &gtk4::ScrolledWindow,
-    reader_window: &adw::Window,
-) {
-    let (count, current_page) = {
-        let r = reader.borrow();
-        (r.count, r.page)
-    };
+) -> (gtk4::ScrolledWindow, Rc<dyn Fn()>) {
+    let count = reader.borrow().count;
 
-    let dialog = adw::Window::new();
-    dialog.set_title(Some("Page thumbnails"));
-    dialog.set_transient_for(Some(reader_window));
-    dialog.set_default_size(560, 640);
-
-    let header = adw::HeaderBar::new();
-    header.add_css_class("fond-chrome");
-    let view = adw::ToolbarView::new();
-    view.add_top_bar(&header);
-
-    let flow = gtk4::FlowBox::new();
-    flow.set_valign(gtk4::Align::Start);
-    flow.set_selection_mode(gtk4::SelectionMode::None);
-    flow.set_homogeneous(true);
-    flow.set_row_spacing(10);
-    flow.set_column_spacing(10);
-    flow.set_margin_top(12);
-    flow.set_margin_bottom(12);
-    flow.set_margin_start(12);
-    flow.set_margin_end(12);
+    let rows = gtk4::Box::new(Orientation::Vertical, 8);
+    rows.set_margin_top(6);
+    rows.set_margin_bottom(6);
+    rows.set_margin_start(6);
+    rows.set_margin_end(6);
 
     let mut pictures = Vec::with_capacity(count as usize);
     for page in 0..count {
         let picture = gtk4::Picture::new();
-        picture.set_size_request(96, 128);
+        picture.set_size_request(-1, 128);
         picture.set_content_fit(gtk4::ContentFit::Contain);
 
-        let card = gtk4::Box::new(Orientation::Vertical, 4);
+        let card = gtk4::Box::new(Orientation::Vertical, 2);
         card.append(&picture);
         let label = gtk4::Label::new(Some(&(page + 1).to_string()));
         label.add_css_class("caption");
@@ -3335,16 +3369,12 @@ fn show_thumbnail_grid(
         let button = gtk4::Button::new();
         button.add_css_class("flat");
         button.set_child(Some(&card));
-        if page == current_page {
-            button.add_css_class("suggested-action");
-        }
 
         {
             let reader = reader.clone();
             let render = render.clone();
             let continuous_toggle = continuous_toggle.clone();
             let continuous_scroll = continuous_scroll.clone();
-            let dialog_for_close = dialog.clone();
             button.connect_clicked(move |_| {
                 if continuous_toggle.is_active() {
                     scroll_continuous_to_page(&reader, &continuous_scroll, page);
@@ -3352,24 +3382,48 @@ fn show_thumbnail_grid(
                     reader.borrow_mut().page = page;
                     render();
                 }
-                dialog_for_close.close();
             });
         }
 
-        flow.insert(&button, -1);
+        rows.append(&button);
         pictures.push(picture);
     }
 
     let scroll = gtk4::ScrolledWindow::new();
-    scroll.set_child(Some(&flow));
-    scroll.set_vexpand(true);
-    view.set_content(Some(&scroll));
-    dialog.set_content(Some(&view));
-    dialog.present();
+    scroll.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
+    scroll.set_child(Some(&rows));
 
-    let mut order: Vec<u16> = (0..count).collect();
-    order.sort_by_key(|&p| (p as i32 - current_page as i32).unsigned_abs());
-    schedule_thumbnail_render(reader.clone(), pictures, order, 0);
+    let built = Rc::new(Cell::new(false));
+    let trigger: Rc<dyn Fn()> = {
+        let reader = reader.clone();
+        let built = built.clone();
+        let scroll = scroll.clone();
+        Rc::new(move || {
+            if built.replace(true) {
+                return;
+            }
+            let current_page = reader.borrow().page;
+            let mut order: Vec<u16> = (0..count).collect();
+            order.sort_by_key(|&p| (p as i32 - current_page as i32).unsigned_abs());
+            schedule_thumbnail_render(reader.clone(), pictures.clone(), order, 0);
+
+            // Jump the list roughly to the current page on first show, rather than always
+            // opening at the top — exact scrolling would need each row's real allocation,
+            // which isn't settled yet the same frame the tab becomes visible, so this is an
+            // approximation (fraction of the way through the document), good enough for a
+            // jump-near-here aid.
+            if count > 0 {
+                let fraction = current_page as f64 / count as f64;
+                let scroll = scroll.clone();
+                glib::idle_add_local_once(move || {
+                    let adj = scroll.vadjustment();
+                    adj.set_value(fraction * adj.upper());
+                });
+            }
+        })
+    };
+
+    (scroll, trigger)
 }
 
 /// One tick of `show_thumbnail_grid`'s lazy rasterization — see that function's doc comment.

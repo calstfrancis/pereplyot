@@ -51,6 +51,14 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.5.0" date="2026-09-23">
+      <description>
+        <p>0.5.0 "Turned Leaf" — page thumbnails moved into the Contents sidebar as a second
+        tab alongside Outline, instead of a separate popup window. Fixed a real bug where
+        reopening a document showed the right page number but the wrong page content,
+        always landing back on page 1 instead of resuming where you left off.</p>
+      </description>
+    </release>
     <release version="0.4.1" date="2026-09-23">
       <description>
         <p>0.4.1 "Slim Gutter" — both readers' chrome is consolidated down to one header row
