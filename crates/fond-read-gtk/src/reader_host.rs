@@ -24,6 +24,65 @@ use libadwaita::prelude::*;
 /// back by the generic `close-page` handler `new_tab_view` connects once per host window.
 const ON_CLOSE_DATA_KEY: &str = "fond-reader-on-close";
 
+/// GObject data key `set_tab_header` stashes a page's header content under (see
+/// `TabHeaderContent`) — read back both by the per-window `selected-page` handler
+/// `new_tab_view` connects, and by `set_tab_header` itself for an immediate apply when the
+/// page setting it is already the selected one.
+const HEADER_CONTENT_DATA_KEY: &str = "fond-reader-header-content";
+
+/// GObject data key the three shared header slot boxes (see `HeaderSlots`) are stashed under
+/// on the host `adw::Window` itself, so `set_tab_header` can reach them from just a
+/// `ReaderTab` without `new_tab_view` having to hand out a second return value everywhere.
+const HEADER_SLOTS_DATA_KEY: &str = "fond-reader-header-slots";
+
+/// One tab's contribution to the shared host header: built once by the reader (`pdf.rs`/
+/// `epub.rs`) as three independent widgets — normally the same sidebar/undo/redo cluster,
+/// document-title widget, and end-of-header controls cluster each reader used to pack into
+/// its own nested `HeaderBar` — and handed to [`set_tab_header`] instead of packed directly.
+/// Only the *currently selected* tab's content actually lives inside the host header's slot
+/// boxes at any moment; switching tabs unparents the outgoing set and reparents this one, so
+/// nothing needs rebuilding on every tab switch, just reparenting.
+struct TabHeaderContent {
+    start: gtk4::Widget,
+    title: gtk4::Widget,
+    end: gtk4::Widget,
+}
+
+/// The three always-present, always-empty-until-filled boxes packed into the host header
+/// once, in `new_tab_view` — swapping tabs only ever adds/removes children of these, the
+/// boxes themselves never move.
+#[derive(Clone)]
+struct HeaderSlots {
+    start: gtk4::Box,
+    title: gtk4::Box,
+    end: gtk4::Box,
+}
+
+fn clear_box(b: &gtk4::Box) {
+    while let Some(child) = b.first_child() {
+        b.remove(&child);
+    }
+}
+
+/// Repopulate `slots` from whichever page is currently selected in `view` — called on every
+/// `selected-page` change, and once immediately by [`set_tab_header`] when a page sets its
+/// header content while already selected (its own first open, most commonly).
+fn apply_selected_header(view: &adw::TabView, slots: &HeaderSlots) {
+    clear_box(&slots.start);
+    clear_box(&slots.title);
+    clear_box(&slots.end);
+    if let Some(page) = view.selected_page() {
+        unsafe {
+            if let Some(content) = page.data::<TabHeaderContent>(HEADER_CONTENT_DATA_KEY) {
+                let content = content.as_ref();
+                slots.start.append(&content.start);
+                slots.title.append(&content.title);
+                slots.end.append(&content.end);
+            }
+        }
+    }
+}
+
 thread_local! {
     // The default shared reader window + its tab view, created lazily on the first reader
     // opened and cleared here as soon as it closes (its last tab closed, or the user closed
@@ -47,6 +106,14 @@ thread_local! {
 /// its bottom bar isn't rebuilt afterward.
 pub fn set_host_footer(factory: impl Fn() -> gtk4::Widget + 'static) {
     HOST_FOOTER.with(|cell| *cell.borrow_mut() = Some(Rc::new(factory)));
+}
+
+/// Build a fresh instance of the reserved footer widget (see `set_host_footer`), if the
+/// embedding app registered one. Each reader appends this into its own per-tab bottom status
+/// bar rather than the host window adding a second, separate bottom bar of its own — one
+/// merged status bar per tab instead of the host's status bar stacking below each reader's.
+pub fn host_footer_widget() -> Option<gtk4::Widget> {
+    HOST_FOOTER.with(|cell| cell.borrow().as_ref().map(|f| f()))
 }
 
 /// A handle to one reader's tab: parent window for its own nested dialogs/popovers, and a
@@ -138,6 +205,29 @@ fn new_tab_view(parent: &adw::ApplicationWindow) -> (adw::Window, adw::TabView) 
     }
     header.pack_end(&fullscreen_button);
 
+    // The currently-selected tab's own controls (sidebar/undo/redo, document title, and its
+    // end-of-header cluster) — each reader hands these to `set_tab_header` instead of
+    // packing them into a nested `HeaderBar` of its own, so there is exactly one header row
+    // total instead of the host's window-level row plus a second, per-tab one underneath it.
+    // The boxes below are the only thing ever packed here; swapping tabs only reparents their
+    // children (`apply_selected_header`), never touches these three.
+    let header_start = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+    let header_title = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+    let header_end = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+    header.pack_start(&header_start);
+    header.set_title_widget(Some(&header_title));
+    // Packed after maximize/fullscreen above, so (pack_end's reversed order) it lands just
+    // left of them — window-level controls stay outermost, tab controls stay inward.
+    header.pack_end(&header_end);
+    let header_slots = HeaderSlots {
+        start: header_start,
+        title: header_title,
+        end: header_end,
+    };
+    unsafe {
+        host.set_data(HEADER_SLOTS_DATA_KEY, header_slots.clone());
+    }
+
     {
         let host_for_key = host.clone();
         let button = fullscreen_button.clone();
@@ -155,15 +245,11 @@ fn new_tab_view(parent: &adw::ApplicationWindow) -> (adw::Window, adw::TabView) 
     toolbar.add_top_bar(&header);
     toolbar.add_top_bar(&tab_bar);
 
-    if let Some(footer_widget) = HOST_FOOTER.with(|cell| cell.borrow().as_ref().map(|f| f())) {
-        let statusbar = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-        statusbar.add_css_class("toolbar");
-        statusbar.add_css_class("fond-chrome");
-        let spacer = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
-        spacer.set_hexpand(true);
-        statusbar.append(&spacer);
-        statusbar.append(&footer_widget);
-        toolbar.add_bottom_bar(&statusbar);
+    {
+        let slots = header_slots.clone();
+        tab_view.connect_notify_local(Some("selected-page"), move |view, _| {
+            apply_selected_header(view, &slots);
+        });
     }
 
     toolbar.set_content(Some(&tab_view));
@@ -287,5 +373,36 @@ pub fn on_tab_closed(tab: &ReaderTab, on_close: impl Fn() + 'static) {
     let boxed: Rc<dyn Fn()> = Rc::new(on_close);
     unsafe {
         tab.page.set_data(ON_CLOSE_DATA_KEY, boxed);
+    }
+}
+
+/// Give this tab its header content — the sidebar/undo/redo cluster, the document-title
+/// widget, and the end-of-header controls cluster a reader used to pack into its own nested
+/// `HeaderBar` — for the shared host header to show whenever this tab is selected (see
+/// `TabHeaderContent`). Stored on the page itself, like `on_tab_closed`'s hook, so it keeps
+/// working across `pop_out`/drag-detach without needing to be set again. If this tab is
+/// already the selected one (true for a freshly opened tab, since `open_reader_tab` selects
+/// it before the caller gets a chance to call this), applies immediately rather than waiting
+/// for a `selected-page` change that may never come.
+pub fn set_tab_header(
+    tab: &ReaderTab,
+    start: impl IsA<gtk4::Widget>,
+    title: impl IsA<gtk4::Widget>,
+    end: impl IsA<gtk4::Widget>,
+) {
+    let content = TabHeaderContent {
+        start: start.upcast(),
+        title: title.upcast(),
+        end: end.upcast(),
+    };
+    unsafe {
+        tab.page.set_data(HEADER_CONTENT_DATA_KEY, content);
+    }
+    if tab.tab_view.selected_page().as_ref() == Some(&tab.page) {
+        unsafe {
+            if let Some(slots) = tab.host_window.data::<HeaderSlots>(HEADER_SLOTS_DATA_KEY) {
+                apply_selected_header(&tab.tab_view, slots.as_ref());
+            }
+        }
     }
 }

@@ -171,3 +171,14 @@ pub fn popover_separator() -> gtk4::Separator {
     sep.set_margin_bottom(4);
     sep
 }
+
+/// Set a button's icon via a themed-icon fallback chain instead of a single icon name, so a
+/// missing name in whatever icon theme is active shows the *next* choice instead of GTK's
+/// generic "missing image" glyph — reported live as a plain question mark on the PDF/EPUB
+/// readers' Contents sidebar toggle (`sidebar-show-symbolic`, not guaranteed present in every
+/// icon theme Pereplyot might run under). `names` should be ordered most- to least-specific.
+pub fn set_icon_with_fallback(button: &impl IsA<gtk4::Button>, names: &[&str]) {
+    let icon = gtk4::gio::ThemedIcon::from_names(names);
+    let image = gtk4::Image::from_gicon(&icon);
+    button.set_child(Some(&image));
+}

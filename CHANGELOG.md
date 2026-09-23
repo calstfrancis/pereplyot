@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.1] "Slim Gutter" — 2026-09-23
+
+- **Reader chrome consolidated to reclaim reading space.** Both readers used to show two
+  header rows (the shared reader-host window's own header, plus a second `HeaderBar` nested
+  inside each tab for its sidebar/undo-redo/mode/etc. controls) and, for the PDF reader,
+  three separate bottom rows (its own page-nav/zoom bar, a permanently-visible search bar
+  above the page, and the host window's own footer bar below everything). All of that is now
+  one header row and one status-bar row per tab: each reader hands its controls to the host
+  header instead of packing its own (`fond-read-gtk`'s `reader_host::set_tab_header`, backing
+  a swap keyed on which tab is selected), and the PDF reader's search bar and the host's
+  footer widget both moved into its bottom status bar alongside page nav/zoom.
+- **Fixed: the Contents sidebar toggle's icon could render as a generic "missing icon"
+  glyph** in icon themes that don't ship `sidebar-show-symbolic` under that exact name.
+  Now resolved through a themed-icon fallback chain (`fond-read-gtk::set_icon_with_fallback`)
+  instead of a single hardcoded name.
+
 ## [0.4.0] "Shared Binding" — 2026-09-22
 
 - **New CLI modes**, for Kartoteka and Sputnik to launch this binary instead of embedding

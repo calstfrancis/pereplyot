@@ -51,6 +51,17 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.4.1" date="2026-09-23">
+      <description>
+        <p>0.4.1 "Slim Gutter" — both readers' chrome is consolidated down to one header row
+        and one status-bar row per tab, instead of two header rows and (for the PDF reader)
+        three bottom rows, leaving more of the window for the document itself. The PDF
+        reader's search bar and the reader window's version/changelog button both moved into
+        its status bar. Also fixes the Contents sidebar toggle's icon sometimes rendering as
+        a generic "missing icon" glyph in icon themes without `sidebar-show-symbolic` under
+        that exact name.</p>
+      </description>
+    </release>
     <release version="0.4.0" date="2026-09-22">
       <description>
         <p>0.4.0 "Shared Binding" — Kartoteka and Sputnik now launch this app directly to

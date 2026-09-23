@@ -471,8 +471,10 @@ pub fn show_epub_reader(
     }));
 
     let view = adw::ToolbarView::new();
-    let header = adw::HeaderBar::new();
-    header.add_css_class("fond-chrome");
+    // No header of this tab's own any more — its controls are handed to the shared host
+    // header via `reader_host::set_tab_header` below instead, matching the PDF reader (see
+    // its own `show_pdf_reader` for the fuller explanation), so there's one header row total
+    // rather than the host's own plus a second, per-tab one underneath it.
 
     let prev = gtk4::Button::from_icon_name("go-previous-symbolic");
     prev.set_tooltip_text(Some("Previous chapter"));
@@ -487,7 +489,6 @@ pub fn show_epub_reader(
     nav.append(&chapter_label);
     nav.append(&next);
     nav.append(&bookmark_button);
-    header.set_title_widget(Some(&nav));
     update_bookmark_button(
         &bookmark_button,
         reader.borrow().bookmarks.contains(&start_index),
@@ -576,7 +577,15 @@ pub fn show_epub_reader(
     // for the same discoverability problem (a permanently-hidden button was mistaken for a
     // removed one).
     let sidebar_toggle = gtk4::ToggleButton::new();
-    sidebar_toggle.set_icon_name("sidebar-show-symbolic");
+    crate::set_icon_with_fallback(
+        &sidebar_toggle,
+        &[
+            "sidebar-show-symbolic",
+            "view-sidebar-symbolic",
+            "sidebar-expand-left-symbolic",
+            "view-list-symbolic",
+        ],
+    );
     if book.toc.is_empty() {
         sidebar_toggle.set_sensitive(false);
         sidebar_toggle.set_tooltip_text(Some("This EPUB has no table of contents"));
@@ -680,26 +689,28 @@ pub fn show_epub_reader(
     popout_button.add_css_class("flat");
     popout_button.set_tooltip_text(Some("Open in a new window"));
 
-    // pack_end order is the reverse of visual order (same gotcha CLAUDE.md notes for the
-    // hamburger menu) — Notes packed first so it ends up rightmost: Mode, Colour, Apply,
-    // Font size, Open in new window, Notes. Contents/outline stays at the header's start
-    // (house style: outline left, notes/annotations right — matching the PDF reader's own
-    // fix for the same left/left bug), and search/undo/redo follow it.
-    header.pack_end(&notes_toggle);
-    header.pack_end(&popout_button);
-    header.pack_end(&apply_button);
-    header.pack_end(&color_drop);
-    header.pack_end(&mode_drop);
-    header.pack_end(&zoom_in_button);
-    header.pack_end(&zoom_out_button);
-    header.pack_end(&export_button);
-    header.pack_end(&font_drop);
-    header.pack_end(&theme_drop);
-    header.pack_start(&sidebar_toggle);
-    header.pack_start(&search_toggle);
-    header.pack_start(&undo_button);
-    header.pack_start(&redo_button);
-    view.add_top_bar(&header);
+    // Visual order, left to right, in the shared host header: Contents, Search, Undo, Redo
+    // (start) … chapter nav (centre) … reading theme, font, Export, font-size, Mode,
+    // Colour, Apply, Open in new window, Notes (end) — unchanged from when these lived in
+    // this tab's own `HeaderBar`, just built as plain boxes now and handed to
+    // `reader_host::set_tab_header` below instead of packed directly (see the comment above
+    // `let prev` for why).
+    let header_start = gtk4::Box::new(Orientation::Horizontal, 6);
+    header_start.append(&sidebar_toggle);
+    header_start.append(&search_toggle);
+    header_start.append(&undo_button);
+    header_start.append(&redo_button);
+    let header_end = gtk4::Box::new(Orientation::Horizontal, 6);
+    header_end.append(&theme_drop);
+    header_end.append(&font_drop);
+    header_end.append(&export_button);
+    header_end.append(&zoom_out_button);
+    header_end.append(&zoom_in_button);
+    header_end.append(&mode_drop);
+    header_end.append(&color_drop);
+    header_end.append(&apply_button);
+    header_end.append(&popout_button);
+    header_end.append(&notes_toggle);
 
     // Contents sidebar — always built, even for an EPUB with no TOC (an empty, unreachable
     // panel behind a disabled toggle, per the doc comment above).
@@ -1115,9 +1126,28 @@ pub fn show_epub_reader(
     paned.set_hexpand(true);
     paned.set_position(220);
     view.set_content(Some(&paned));
+
+    // Status bar: just the reader-host footer (if the embedding app registered one, e.g.
+    // Pereplyot's version/changelog button) — this reader otherwise has nothing that
+    // belongs at the bottom of the window, unlike the PDF reader's page nav/zoom. Per-tab
+    // rather than a second bottom bar added by the host window itself, matching the PDF
+    // reader (see its own `show_pdf_reader` for the fuller reasoning).
+    if let Some(footer_widget) = crate::reader_host::host_footer_widget() {
+        let statusbar = gtk4::Box::new(Orientation::Horizontal, 6);
+        statusbar.add_css_class("toolbar");
+        statusbar.add_css_class("fond-chrome");
+        statusbar.add_css_class("fond-statusbar");
+        let spacer = gtk4::Box::new(Orientation::Horizontal, 0);
+        spacer.set_hexpand(true);
+        statusbar.append(&spacer);
+        statusbar.append(&footer_widget);
+        view.add_bottom_bar(&statusbar);
+    }
+
     let reader_tab = crate::reader_host::open_reader_tab(window, title, &view);
     let reader_window = reader_tab.host_window.clone();
     crate::register_reader(hash, &reader_tab);
+    crate::reader_host::set_tab_header(&reader_tab, header_start, nav, header_end);
 
     {
         let window = window.clone();

@@ -1464,13 +1464,14 @@ pub fn show_pdf_reader(
     }));
 
     let view = adw::ToolbarView::new();
-    let header = adw::HeaderBar::new();
-    header.add_css_class("fond-chrome");
-    // Explicit title, not left to the default (the containing window's own title): the
-    // reader host window is shared across every open tab now, so its title can't speak
-    // for any one document — this used to show "Reader" twice (the tab host's own header
-    // falls back to the same window title, since it doesn't set a title widget either).
-    header.set_title_widget(Some(&adw::WindowTitle::new(title, "")));
+    // No header of this tab's own any more — its controls are handed to the shared host
+    // header via `reader_host::set_tab_header` below instead, so there's one header row
+    // total rather than the host's own plus a second, per-tab one underneath it. Explicit
+    // title widget, not left to the default (the containing window's own title): the reader
+    // host window is shared across every open tab now, so its title can't speak for any one
+    // document — this used to show "Reader" twice (the tab host's own header fell back to
+    // the same window title, since it didn't set a title widget either).
+    let title_widget = adw::WindowTitle::new(title, "");
 
     let prev = gtk4::Button::from_icon_name("go-previous-symbolic");
     prev.add_css_class("flat");
@@ -1568,7 +1569,15 @@ pub fn show_pdf_reader(
     // `reader` exist) rather than a popover, per CLAUDE.md's house sidebar style: toggle at
     // the *start* of the headerbar, content as a collapsible Paned start-child.
     let sidebar_toggle = gtk4::ToggleButton::new();
-    sidebar_toggle.set_icon_name("sidebar-show-symbolic");
+    crate::set_icon_with_fallback(
+        &sidebar_toggle,
+        &[
+            "sidebar-show-symbolic",
+            "view-sidebar-symbolic",
+            "sidebar-expand-left-symbolic",
+            "view-list-symbolic",
+        ],
+    );
     if outline_entries.is_empty() {
         sidebar_toggle.set_sensitive(false);
         sidebar_toggle.set_tooltip_text(Some("This PDF has no table of contents"));
@@ -1623,47 +1632,68 @@ pub fn show_pdf_reader(
     export_button.add_css_class("flat");
     export_button.set_tooltip_text(Some("Export notes & highlights…"));
 
-    // pack_end order is the reverse of visual order (last-packed ends up leftmost) — same
-    // gotcha CLAUDE.md notes for the hamburger menu. Visual order here, left to right:
-    // Two-page, Continuous, mode picker, colour picker, Note, Page #, Thumbnails, Export,
-    // Open in new window, Notes sidebar. The Contents/outline toggle and Undo/Redo live at
-    // the *start* of the headerbar instead (house style for the sidebar toggle: outline on
-    // the left; Notes/annotations mirror it on the right, rather than clustering both on
-    // the left — Undo/Redo follow Contents for the same "persistent chrome, not a per-mode
-    // control" reasoning). Page nav, rotate/invert, and zoom move to the bottom status bar
-    // (below) so the headerbar's title-widget slot stays free for the document's own name —
-    // a wide title plus this many controls didn't fit together.
-    header.pack_end(&notes_toggle);
-    header.pack_end(&popout_button);
-    header.pack_end(&export_button);
-    header.pack_end(&thumbnails_button);
-    header.pack_end(&page_num_button);
-    header.pack_end(&note_button);
-    header.pack_end(&color_drop);
-    header.pack_end(&mode_drop);
-    header.pack_end(&continuous_toggle);
-    header.pack_end(&two_page_toggle);
-    header.pack_start(&sidebar_toggle);
-    header.pack_start(&undo_button);
-    header.pack_start(&redo_button);
-    view.add_top_bar(&header);
+    // Visual order, left to right, in the shared host header: sidebar toggle, Undo, Redo
+    // (start) … document title (centre) … Two-page, Continuous, mode picker, colour picker,
+    // Note, Page #, Thumbnails, Export, Open in new window, Notes sidebar (end) — unchanged
+    // from when these lived in this tab's own `HeaderBar`, just built as plain boxes now and
+    // handed to `reader_host::set_tab_header` below instead of packed directly (see the
+    // comment on `title_widget` above for why).
+    let header_start = gtk4::Box::new(Orientation::Horizontal, 6);
+    header_start.append(&sidebar_toggle);
+    header_start.append(&undo_button);
+    header_start.append(&redo_button);
+    let header_end = gtk4::Box::new(Orientation::Horizontal, 6);
+    header_end.append(&two_page_toggle);
+    header_end.append(&continuous_toggle);
+    header_end.append(&mode_drop);
+    header_end.append(&color_drop);
+    header_end.append(&note_button);
+    header_end.append(&page_num_button);
+    header_end.append(&thumbnails_button);
+    header_end.append(&export_button);
+    header_end.append(&popout_button);
+    header_end.append(&notes_toggle);
 
-    // Status bar (house style, same classes as the main window's): page nav on the left,
-    // zoom on the right.
+    // Status bar (house style, same classes as the main window's): page nav and search on
+    // the left/middle, rotate/invert/zoom on the right, the reader-host footer (if the
+    // embedding app registered one) at the far right. Combines what used to be three
+    // separate bottom rows — this tab's own nav+zoom bar, its search bar (previously its own
+    // row above the page), and the host window's own footer bar below all of it — into one,
+    // so the rest of the window is free for the document itself.
     let statusbar = gtk4::Box::new(Orientation::Horizontal, 6);
     statusbar.add_css_class("toolbar");
     statusbar.add_css_class("fond-chrome");
     statusbar.add_css_class("fond-statusbar");
-    let statusbar_spacer = gtk4::Box::new(Orientation::Horizontal, 0);
-    statusbar_spacer.set_hexpand(true);
+
+    let search_entry = gtk4::SearchEntry::new();
+    search_entry.set_placeholder_text(Some("Search this PDF…"));
+    search_entry.set_hexpand(true);
+    search_entry.set_max_width_chars(28);
+    let search_prev = gtk4::Button::from_icon_name("go-up-symbolic");
+    search_prev.add_css_class("flat");
+    search_prev.set_tooltip_text(Some("Previous match"));
+    search_prev.set_sensitive(false);
+    let search_next = gtk4::Button::from_icon_name("go-down-symbolic");
+    search_next.add_css_class("flat");
+    search_next.set_tooltip_text(Some("Next match"));
+    search_next.set_sensitive(false);
+    let search_count = gtk4::Label::new(None);
+    search_count.add_css_class("dim-label");
+
     statusbar.append(&nav);
-    statusbar.append(&statusbar_spacer);
+    statusbar.append(&search_entry);
+    statusbar.append(&search_count);
+    statusbar.append(&search_prev);
+    statusbar.append(&search_next);
     statusbar.append(&rotate_button);
     statusbar.append(&invert_button);
     statusbar.append(&zoom_fit_width);
     statusbar.append(&zoom_fit_page);
     statusbar.append(&zoom_out);
     statusbar.append(&zoom_in);
+    if let Some(footer_widget) = crate::reader_host::host_footer_widget() {
+        statusbar.append(&footer_widget);
+    }
     view.add_bottom_bar(&statusbar);
 
     let hint = gtk4::Label::new(Some("Drag over the page to add a highlight"));
@@ -1671,26 +1701,6 @@ pub fn show_pdf_reader(
     hint.add_css_class("caption");
     hint.set_margin_top(4);
     hint.set_margin_bottom(4);
-
-    let search_entry = gtk4::SearchEntry::new();
-    search_entry.set_placeholder_text(Some("Search this PDF…"));
-    search_entry.set_hexpand(true);
-    let search_prev = gtk4::Button::from_icon_name("go-up-symbolic");
-    search_prev.set_tooltip_text(Some("Previous match"));
-    search_prev.set_sensitive(false);
-    let search_next = gtk4::Button::from_icon_name("go-down-symbolic");
-    search_next.set_tooltip_text(Some("Next match"));
-    search_next.set_sensitive(false);
-    let search_count = gtk4::Label::new(None);
-    search_count.add_css_class("dim-label");
-    let search_row = gtk4::Box::new(Orientation::Horizontal, 6);
-    search_row.set_margin_start(8);
-    search_row.set_margin_end(8);
-    search_row.set_margin_top(4);
-    search_row.append(&search_entry);
-    search_row.append(&search_count);
-    search_row.append(&search_prev);
-    search_row.append(&search_next);
 
     let picture = gtk4::Picture::new();
     picture.set_halign(gtk4::Align::Center);
@@ -1737,7 +1747,6 @@ pub fn show_pdf_reader(
     view_stack.set_visible_child_name("paged");
 
     let content = gtk4::Box::new(Orientation::Vertical, 0);
-    content.append(&search_row);
     content.append(&hint);
     content.append(&view_stack);
     // `content` is reparented into the sidebar Paned below instead of set directly here —
@@ -1746,6 +1755,7 @@ pub fn show_pdf_reader(
     let reader_tab = crate::reader_host::open_reader_tab(window, title, &view);
     let reader_window = reader_tab.host_window.clone();
     crate::register_reader(pdf_hash, &reader_tab);
+    crate::reader_host::set_tab_header(&reader_tab, header_start, title_widget, header_end);
 
     // Render the current page into the Picture (via the shared helper both this view and
     // continuous-scroll mode use), and refresh the page label. Also fills `right_picture`
