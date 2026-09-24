@@ -172,6 +172,92 @@ pub fn popover_separator() -> gtk4::Separator {
     sep
 }
 
+/// A small multi-line note editor, sharing the "save on focus-leave, no explicit Save
+/// button" behavior every inline editor in this app already uses, but — unlike the plain
+/// `gtk4::Entry` every note field used until now — able to hold more than one line. Every
+/// other reader worth comparing against (Kindle, Apple Books, Foliate) treats a margin note
+/// as a small paragraph, not a single sentence; a single-line `Entry` silently ate anything
+/// past the first Enter (which just defocused the field instead of inserting a newline).
+/// `gtk4::TextView` has no native placeholder, so a dim label is manually shown/hidden over
+/// it via `TextBuffer::connect_changed`.
+pub fn note_edit_widget(initial: Option<&str>, on_save: impl Fn(String) + 'static) -> gtk4::Widget {
+    let text_view = gtk4::TextView::new();
+    text_view.set_wrap_mode(gtk4::WrapMode::WordChar);
+    text_view.set_top_margin(6);
+    text_view.set_bottom_margin(6);
+    text_view.set_left_margin(8);
+    text_view.set_right_margin(8);
+
+    let buffer = text_view.buffer();
+    if let Some(text) = initial {
+        buffer.set_text(text);
+    }
+
+    let scroll = gtk4::ScrolledWindow::new();
+    scroll.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
+    scroll.set_min_content_height(48);
+    scroll.set_max_content_height(140);
+    scroll.set_propagate_natural_height(true);
+    scroll.set_child(Some(&text_view));
+
+    let frame = gtk4::Frame::new(None);
+    frame.set_child(Some(&scroll));
+
+    let placeholder = gtk4::Label::new(Some("No note"));
+    placeholder.add_css_class("dim-label");
+    placeholder.set_halign(gtk4::Align::Start);
+    placeholder.set_valign(gtk4::Align::Start);
+    placeholder.set_margin_top(6);
+    placeholder.set_margin_start(8);
+    placeholder.set_can_target(false);
+    placeholder.set_visible(buffer.char_count() == 0);
+
+    let overlay = gtk4::Overlay::new();
+    overlay.set_child(Some(&frame));
+    overlay.add_overlay(&placeholder);
+
+    {
+        let placeholder = placeholder.clone();
+        buffer.connect_changed(move |buf| {
+            placeholder.set_visible(buf.char_count() == 0);
+        });
+    }
+
+    let focus = gtk4::EventControllerFocus::new();
+    {
+        let buffer = buffer.clone();
+        focus.connect_leave(move |_| {
+            let text = buffer.text(&buffer.start_iter(), &buffer.end_iter(), false);
+            on_save(text.trim().to_string());
+        });
+    }
+    text_view.add_controller(focus);
+
+    overlay.upcast()
+}
+
+/// A small colored square showing a highlight/underline/strikeout's color, for annotation
+/// list rows (the notes sidebar, the annotations dialog) — those rows showed only `{:?}`
+/// kind text before this, with no visual link back to what's actually marked on the page,
+/// unlike every comparable reader's notebook/highlights view (Kindle, Apple Books), which
+/// leads with color since that's usually how a reader actually remembers a passage. `None`
+/// (a margin note, or an annotation predating the color picker) draws nothing.
+pub fn color_swatch(hex: Option<&str>) -> Option<gtk4::Widget> {
+    let hex = hex?.to_string();
+    let swatch = gtk4::DrawingArea::new();
+    swatch.set_content_width(12);
+    swatch.set_content_height(12);
+    swatch.set_valign(gtk4::Align::Center);
+    swatch.set_tooltip_text(Some(&hex));
+    swatch.set_draw_func(move |_, cr, w, h| {
+        let [r, g, b, _] = pdf::annotation_rgba(Some(&hex));
+        cr.set_source_rgb(r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0);
+        cr.rectangle(0.0, 0.0, w as f64, h as f64);
+        let _ = cr.fill();
+    });
+    Some(swatch.upcast())
+}
+
 /// Set a button's icon via a themed-icon fallback chain instead of a single icon name, so a
 /// missing name in whatever icon theme is active shows the *next* choice instead of GTK's
 /// generic "missing image" glyph — reported live as a plain question mark on the PDF/EPUB

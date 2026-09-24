@@ -12,7 +12,7 @@ use gtk4::{gdk, glib, Orientation};
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
-use crate::{popover_button, popover_separator, ReaderHost};
+use crate::{color_swatch, note_edit_widget, popover_button, popover_separator, ReaderHost};
 
 /// Live state of an open PDF reader window.
 struct ReaderState {
@@ -771,17 +771,15 @@ fn show_pdf_context_menu(
                 return;
             };
 
+            let kind_row = gtk4::Box::new(Orientation::Horizontal, 6);
+            if let Some(swatch) = color_swatch(annotation.color.as_deref()) {
+                kind_row.append(&swatch);
+            }
             let kind_label = gtk4::Label::new(Some(&format!("{:?}", annotation.kind)));
             kind_label.set_xalign(0.0);
             kind_label.add_css_class("dim-label");
-            rows.append(&kind_label);
-
-            let note_entry = gtk4::Entry::new();
-            note_entry.set_placeholder_text(Some("No note"));
-            if let Some(note) = &annotation.note {
-                note_entry.set_text(note);
-            }
-            rows.append(&note_entry);
+            kind_row.append(&kind_label);
+            rows.append(&kind_row);
 
             let save_note = {
                 let host = host.clone();
@@ -819,21 +817,9 @@ fn show_pdf_context_menu(
                     }
                 }
             };
-            {
-                let save_note = save_note.clone();
-                note_entry.connect_activate(move |e| save_note(&e.text()));
-            }
-            {
-                let focus = gtk4::EventControllerFocus::new();
-                let save_note = save_note.clone();
-                let note_entry_weak = note_entry.downgrade();
-                focus.connect_leave(move |_| {
-                    if let Some(e) = note_entry_weak.upgrade() {
-                        save_note(&e.text());
-                    }
-                });
-                note_entry.add_controller(focus);
-            }
+            let note_widget =
+                note_edit_widget(annotation.note.as_deref(), move |text| save_note(&text));
+            rows.append(&note_widget);
 
             rows.append(&popover_separator());
             let delete_button = popover_button("Delete annotation", true);
@@ -1932,7 +1918,9 @@ pub fn show_pdf_reader(
             let focus_in_text_entry = view_for_focus
                 .root()
                 .and_then(|root| root.focus())
-                .is_some_and(|w| w.is::<gtk4::Entry>() || w.is::<gtk4::Text>());
+                .is_some_and(|w| {
+                    w.is::<gtk4::Entry>() || w.is::<gtk4::Text>() || w.is::<gtk4::TextView>()
+                });
             if focus_in_text_entry {
                 return glib::Propagation::Proceed;
             }
@@ -2211,6 +2199,9 @@ pub fn show_pdf_reader(
                 let outer = gtk4::Box::new(Orientation::Vertical, 2);
 
                 let header_box = gtk4::Box::new(Orientation::Horizontal, 6);
+                if let Some(swatch) = color_swatch(annotation.color.as_deref()) {
+                    header_box.append(&swatch);
+                }
                 let header_label =
                     gtk4::Label::new(Some(&format!("p.{page_label} — {:?}", annotation.kind)));
                 header_label.set_xalign(0.0);
@@ -2253,13 +2244,6 @@ pub fn show_pdf_reader(
                     outer.append(&snippet_label);
                 }
 
-                let note_entry = gtk4::Entry::new();
-                note_entry.set_placeholder_text(Some("No note"));
-                if let Some(note) = &annotation.note {
-                    note_entry.set_text(note);
-                }
-                outer.append(&note_entry);
-
                 let save_note = {
                     let host = host.clone();
                     let reader = reader.clone();
@@ -2296,21 +2280,9 @@ pub fn show_pdf_reader(
                         }
                     }
                 };
-                {
-                    let save_note = save_note.clone();
-                    note_entry.connect_activate(move |e| save_note(&e.text()));
-                }
-                {
-                    let focus = gtk4::EventControllerFocus::new();
-                    let save_note = save_note.clone();
-                    let note_entry_weak = note_entry.downgrade();
-                    focus.connect_leave(move |_| {
-                        if let Some(e) = note_entry_weak.upgrade() {
-                            save_note(&e.text());
-                        }
-                    });
-                    note_entry.add_controller(focus);
-                }
+                let note_widget =
+                    note_edit_widget(annotation.note.as_deref(), move |text| save_note(&text));
+                outer.append(&note_widget);
 
                 {
                     let host = host.clone();

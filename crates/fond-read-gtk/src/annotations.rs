@@ -1,5 +1,6 @@
 //! The annotations dialog: an entry's highlights, underlines, strikeouts and marginal
-//! notes, each jumpable into the reader, editable, or deletable, plus Markdown export.
+//! notes — each shown with its highlight color and quoted passage, searchable, jumpable
+//! into the reader, editable, or deletable — plus Markdown export.
 //!
 //! Reads and writes the same sidecar the readers do, through [`ReaderHost`] — it re-reads
 //! on each action rather than holding a snapshot, so it never disagrees with a reader open
@@ -14,7 +15,7 @@ use libadwaita::prelude::*;
 
 use super::epub::show_epub_reader;
 use super::pdf::show_pdf_reader;
-use crate::ReaderHost;
+use crate::{color_swatch, note_edit_widget, ReaderHost};
 
 /// List an entry's annotations — page, kind, note — so each can be jumped to in the reader,
 /// have its note edited, or be deleted. Reads and writes the same `annots/<key>.json`
@@ -120,13 +121,53 @@ pub fn show_annotations_dialog(
     header.pack_end(&export_button);
     view.add_top_bar(&header);
 
+    // Filters rows by snippet/note/location text as the user types — the same corpus an
+    // export would render, so "find the highlight I remember the wording of" doesn't require
+    // scrolling a long list by eye the way this dialog used to.
+    let search_entry = gtk4::SearchEntry::new();
+    search_entry.set_placeholder_text(Some("Search notes and highlights"));
+    search_entry.set_margin_top(8);
+    search_entry.set_margin_bottom(4);
+    search_entry.set_margin_start(12);
+    search_entry.set_margin_end(12);
+
     let list = gtk4::ListBox::new();
     list.set_selection_mode(gtk4::SelectionMode::None);
     list.add_css_class("fond-list");
-    list.set_margin_top(12);
+    list.set_margin_top(4);
     list.set_margin_bottom(12);
     list.set_margin_start(12);
     list.set_margin_end(12);
+
+    // (row, lowercased "location note snippet") pairs the filter/search below matches
+    // against — populated as each row is built, since that's the only place all three of
+    // those strings are assembled per-annotation.
+    let search_corpus: Rc<std::cell::RefCell<Vec<(gtk4::ListBoxRow, String)>>> =
+        Rc::new(std::cell::RefCell::new(Vec::new()));
+    let search_query: Rc<std::cell::RefCell<String>> = Rc::new(std::cell::RefCell::new(String::new()));
+    {
+        let corpus = search_corpus.clone();
+        let query = search_query.clone();
+        list.set_filter_func(move |row| {
+            let q = query.borrow();
+            if q.is_empty() {
+                return true;
+            }
+            corpus
+                .borrow()
+                .iter()
+                .find(|(r, _)| r == row)
+                .is_some_and(|(_, text)| text.contains(q.as_str()))
+        });
+    }
+    {
+        let list = list.clone();
+        let query = search_query.clone();
+        search_entry.connect_search_changed(move |entry| {
+            *query.borrow_mut() = entry.text().to_lowercase();
+            list.invalidate_filter();
+        });
+    }
 
     let mut annotations: Vec<fond_bib::Annotation> = sidecar.annotations.clone();
     annotations.sort_by_key(|a| a.page);
@@ -167,6 +208,9 @@ pub fn show_annotations_dialog(
                 .unwrap_or_else(|| chapter.to_string()),
             (None, None) => String::from("Unknown location"),
         };
+        if let Some(swatch) = color_swatch(annotation.color.as_deref()) {
+            header_row.append(&swatch);
+        }
         let kind_label = gtk4::Label::new(Some(&format!("{location} · {:?}", annotation.kind)));
         kind_label.add_css_class("fond-row-title");
         kind_label.set_xalign(0.0);
@@ -227,18 +271,20 @@ pub fn show_annotations_dialog(
         header_row.append(&delete_button);
         outer.append(&header_row);
 
-        let note_entry = gtk4::Entry::new();
-        note_entry.set_placeholder_text(Some("No note"));
-        if let Some(note) = &annotation.note {
-            note_entry.set_text(note);
+        // The highlighted passage itself, as a blockquote — the thing a reader is usually
+        // actually scanning for, and the one piece of context this dialog used to leave out
+        // even though the on-page notes sidebars and the Markdown export both show it.
+        if let Some(snippet) = &annotation.snippet {
+            let snippet_label = gtk4::Label::new(Some(snippet));
+            snippet_label.set_xalign(0.0);
+            snippet_label.set_wrap(true);
+            snippet_label.add_css_class("dim-label");
+            snippet_label.add_css_class("caption");
+            outer.append(&snippet_label);
         }
-        outer.append(&note_entry);
 
-        row.set_child(Some(&outer));
-        list.append(&row);
-
-        // Note edits save on Enter or when the field loses focus, matching the rest of the
-        // app's "save as you go" dialogs rather than needing an explicit Save button.
+        // Note edits save when the field loses focus, matching the rest of the app's "save
+        // as you go" dialogs rather than needing an explicit Save button.
         let save_note = {
             let host = host.clone();
             let id = annotation.id.clone();
@@ -254,21 +300,23 @@ pub fn show_annotations_dialog(
                 }
             }
         };
-        {
-            let save_note = save_note.clone();
-            note_entry.connect_activate(move |e| save_note(&e.text()));
-        }
-        {
-            let focus = gtk4::EventControllerFocus::new();
-            let save_note = save_note.clone();
-            let note_entry_weak = note_entry.downgrade();
-            focus.connect_leave(move |_| {
-                if let Some(e) = note_entry_weak.upgrade() {
-                    save_note(&e.text());
-                }
-            });
-            note_entry.add_controller(focus);
-        }
+        let note_widget = note_edit_widget(annotation.note.as_deref(), move |text| {
+            save_note(&text)
+        });
+        outer.append(&note_widget);
+
+        row.set_child(Some(&outer));
+        list.append(&row);
+
+        search_corpus.borrow_mut().push((
+            row.clone(),
+            format!(
+                "{location} {} {}",
+                annotation.note.as_deref().unwrap_or(""),
+                annotation.snippet.as_deref().unwrap_or("")
+            )
+            .to_lowercase(),
+        ));
 
         {
             let host = host.clone();
@@ -295,7 +343,12 @@ pub fn show_annotations_dialog(
     let scrolled = gtk4::ScrolledWindow::new();
     scrolled.set_vexpand(true);
     scrolled.set_child(Some(&list));
-    view.set_content(Some(&scrolled));
+
+    let content = gtk4::Box::new(Orientation::Vertical, 0);
+    content.append(&search_entry);
+    content.append(&scrolled);
+    view.set_content(Some(&content));
     dialog.set_content(Some(&view));
+    search_entry.grab_focus();
     dialog.present();
 }

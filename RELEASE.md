@@ -1,4 +1,4 @@
-# Pereplyot v0.4.0 "Shared Binding"
+# Pereplyot v0.6.0 "Wide Margin"
 
 Install via Flatpak:
 
@@ -18,18 +18,17 @@ flatpak update io.github.calstfrancis.Pereplyot
 
 ### What's new
 
-**Kartoteka and Sputnik now launch this app directly to open a document**, instead of each
-embedding their own pinned copy of the reader — one reader implementation to keep current,
-not three copies that quietly drift apart. Opening a citation from Kartoteka, or a course
-material or library reading from Sputnik, launches Pereplyot with its annotations, reading
-position, and page-numbering override routed straight into that app's own vault or
-material store — behaving exactly as it always has, just with this app's reader doing the
-work instead of a stale embedded one. If Pereplyot isn't installed, both apps fall back to
-opening the file with your system's default handler instead.
+**Notes and highlights, reworked to match how other readers (Kindle, Apple Books, Foliate)
+handle them.** Margin notes could only ever be one line before this — a plain text field
+that silently swallowed anything past your first Enter. Every place you write a note (the
+right-click menu on a highlight, both readers' Notes sidebars, and the Annotations dialog)
+now gives you a proper multi-line editor that still saves the moment you click away, no
+extra button required.
 
-**Fixed:** closing the reader via its window's own close button — not an explicit tab
-close — silently never saved your reading position. The most common way anyone actually
-closes a reader, now fixed.
+Every annotation list now shows a small color swatch matching the highlight's actual color
+on the page, instead of plain text alone. The Annotations dialog also now shows the
+highlighted passage itself — not just which page or chapter it's on — and gained a search
+field so you can find a highlight or note by what it actually says.
 
 ---
 

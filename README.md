@@ -14,13 +14,14 @@ matches.
 
 ## Status
 
-**v0.4.0 "Shared Binding", released 2026-09-22.** Opening a PDF or EPUB (via Open,
+**v0.6.0 "Wide Margin", released 2026-09-24.** Opening a PDF or EPUB (via Open,
 drag-and-drop, a file manager's "Open With", or **launched by Kartoteka/Sputnik** — see
 below); a Library (cover-grid, opt-in) and History (every document opened, automatic,
 **shared across Kartoteka and Sputnik too**) shelf; and the reader itself —
-highlighting/underline/strike/notes with export to Markdown, bookmarks, in-document search,
-continuous scroll and facing-pages view, zoom-to-fit-width/page, rotate and invert-colours
-for PDF, reading themes (Light/Sepia/Dark) and font choice for EPUB, a page-thumbnail grid,
+highlighting/underline/strike/multi-line notes (with color swatches and a search field in
+the Annotations dialog) with export to Markdown, bookmarks, in-document search, continuous
+scroll and facing-pages view, zoom-to-fit-width/page, rotate and invert-colours for PDF,
+reading themes (Light/Sepia/Dark) and font choice for EPUB, a page-thumbnail grid,
 click-to-turn page zones, keyboard/mouse page and chapter navigation, a Contents outline and
 a Notes list, and tabs for reading more than one document at once. No Welcome window, no
 screenshot automation, and EPUB cover art (Library shows a placeholder icon for EPUBs) yet.

@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.0] "Wide Margin" — 2026-09-24
+
+- **Notes and highlights, reworked to match how other readers (Kindle, Apple Books, Foliate)
+  handle them.** Margin notes were limited to a single line (a plain `Entry`, silently eating
+  anything past the first Enter) everywhere a note could be edited — the right-click menu on
+  a highlight, both readers' Notes sidebars, and the Annotations dialog. All four now use a
+  small multi-line editor that still saves automatically when it loses focus, with no new
+  button to press.
+- **Every annotation list now shows its highlight color** as a small swatch next to the page/
+  chapter and kind (the Notes sidebars, the right-click menu, and the Annotations dialog) —
+  previously only the on-page highlight itself showed color; the lists were plain text.
+- **The Annotations dialog now shows the quoted passage**, not just the location/kind and
+  note — it already rendered this way in the on-page Notes sidebars and in the Markdown
+  export, but the dedicated dialog had left it out.
+- **The Annotations dialog gained a search field**, filtering the list by the highlighted
+  text, the note, and the page/chapter as you type.
+
 ## [0.5.0] "Turned Leaf" — 2026-09-23
 
 - **Page thumbnails moved into the Contents sidebar**, as a second tab alongside Outline —

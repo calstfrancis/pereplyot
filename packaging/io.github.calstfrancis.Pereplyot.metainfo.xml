@@ -51,6 +51,14 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.6.0" date="2026-09-24">
+      <description>
+        <p>0.6.0 "Wide Margin" — notes and highlights reworked to match how other readers
+        handle them: margin notes are no longer limited to a single line, every annotation
+        list now shows its highlight color, the Annotations dialog shows the quoted passage
+        instead of just its location, and that dialog gained a search field.</p>
+      </description>
+    </release>
     <release version="0.5.0" date="2026-09-23">
       <description>
         <p>0.5.0 "Turned Leaf" — page thumbnails moved into the Contents sidebar as a second

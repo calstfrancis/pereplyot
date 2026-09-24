@@ -17,7 +17,7 @@ use super::pdf::{
     update_bookmark_button, COLOR_PRESETS, EPUB_MARK_KIND_OPTIONS, UNDO_HISTORY_LIMIT,
 };
 use crate::RebuildCell;
-use crate::{popover_button, popover_separator, ReaderHost};
+use crate::{color_swatch, note_edit_widget, popover_button, popover_separator, ReaderHost};
 
 /// Live state of an open EPUB reader window: the chapter list, current position, and this
 /// entry's annotation sidecar (loaded once at open and rewritten to disk on every highlight
@@ -927,6 +927,9 @@ pub fn show_epub_reader(
                 let outer = gtk4::Box::new(Orientation::Vertical, 2);
 
                 let header_box = gtk4::Box::new(Orientation::Horizontal, 6);
+                if let Some(swatch) = color_swatch(annotation.color.as_deref()) {
+                    header_box.append(&swatch);
+                }
                 let header_label =
                     gtk4::Label::new(Some(&format!("Ch. {chapter_num} — {kind_label}")));
                 header_label.set_xalign(0.0);
@@ -975,13 +978,6 @@ pub fn show_epub_reader(
                     outer.append(&snippet_label);
                 }
 
-                let note_entry = gtk4::Entry::new();
-                note_entry.set_placeholder_text(Some("No note"));
-                if let Some(note) = &annotation.note {
-                    note_entry.set_text(note);
-                }
-                outer.append(&note_entry);
-
                 let save_note = {
                     let host = host.clone();
                     let reader = reader.clone();
@@ -1012,21 +1008,9 @@ pub fn show_epub_reader(
                         }
                     }
                 };
-                {
-                    let save_note = save_note.clone();
-                    note_entry.connect_activate(move |e| save_note(&e.text()));
-                }
-                {
-                    let focus = gtk4::EventControllerFocus::new();
-                    let save_note = save_note.clone();
-                    let note_entry_weak = note_entry.downgrade();
-                    focus.connect_leave(move |_| {
-                        if let Some(e) = note_entry_weak.upgrade() {
-                            save_note(&e.text());
-                        }
-                    });
-                    note_entry.add_controller(focus);
-                }
+                let note_widget =
+                    note_edit_widget(annotation.note.as_deref(), move |text| save_note(&text));
+                outer.append(&note_widget);
 
                 {
                     let host = host.clone();
@@ -1495,7 +1479,9 @@ pub fn show_epub_reader(
             let focus_in_text_entry = view_for_focus
                 .root()
                 .and_then(|root| root.focus())
-                .is_some_and(|w| w.is::<gtk4::Entry>() || w.is::<gtk4::Text>());
+                .is_some_and(|w| {
+                    w.is::<gtk4::Entry>() || w.is::<gtk4::Text>() || w.is::<gtk4::TextView>()
+                });
             if focus_in_text_entry {
                 return glib::Propagation::Proceed;
             }
