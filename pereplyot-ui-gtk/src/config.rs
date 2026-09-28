@@ -16,12 +16,16 @@ fn config_path() -> PathBuf {
 pub struct Config {
     /// "system" | "light" | "dark".
     pub theme: String,
+    /// Custom labels for the reader's four highlight colours, in palette order; blank means
+    /// the colour's default label.
+    pub highlight_labels: Vec<String>,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Config {
             theme: "system".to_string(),
+            highlight_labels: Vec::new(),
         }
     }
 }

@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.7.0] "Ochre Thread" — 2026-09-28
+
+- **Highlighting now uses a four-colour reading scheme, always visible in the reader's
+  toolbar** instead of a colour drop-down: warm ochre (key idea / thesis — *what is the
+  author saying?*), dusty blue (evidence / support — *what supports it?*), sage (connection
+  / implication — *why does it matter?*), and terracotta (problem / question — *what needs
+  scrutiny?*). Click a colour to highlight in it, or the "A" button beside them to switch
+  back to plain text selection (PDF). Hovering a colour shows its meaning and what to use it
+  for. The Highlight / Underline / Strikeout choice stays as a small drop-down next to the
+  palette.
+- **The colour labels are editable** — "Highlight labels…" in the menu. Renamed labels show
+  in the toolbar tooltips and next to annotations in the Notes and Annotations lists.
+- **Two-page and Continuous are now icon toggles** in the PDF toolbar, freeing header space.
+- Highlights made before this keep the colours they were drawn in.
+- Fixed a formatting-check failure that had left CI red since 0.6.0.
+
 ## [0.6.0] "Wide Margin" — 2026-09-24
 
 - **Notes and highlights, reworked to match how other readers (Kindle, Apple Books, Foliate)

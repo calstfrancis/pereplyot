@@ -28,6 +28,7 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
         .build();
 
     app.style_manager().set_color_scheme(config.color_scheme());
+    fond_read_gtk::palette::set_highlight_labels(&config.highlight_labels);
 
     // The shared reader host window (`fond-read-gtk`, also embedded in Kartoteka/Sputnik)
     // has no version of its own to show — only Pereplyot's makes sense here, so this app
@@ -244,6 +245,15 @@ fn install_actions(app: &adw::Application, widgets: &Rc<Widgets>) {
         });
     }
     window.add_action(&theme_action);
+
+    let labels_action = gio::SimpleAction::new("highlight-labels", None);
+    {
+        let widgets = widgets.clone();
+        labels_action.connect_activate(move |_, _| {
+            crate::ui::highlight_labels::show(&widgets.window, widgets.config.clone())
+        });
+    }
+    window.add_action(&labels_action);
 
     let about_action = gio::SimpleAction::new("about", None);
     {

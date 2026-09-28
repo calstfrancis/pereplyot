@@ -23,6 +23,7 @@ use gtk4::Orientation;
 pub mod annotations;
 pub mod epub;
 pub mod history;
+pub mod palette;
 pub mod pdf;
 pub mod reader_host;
 
@@ -248,7 +249,8 @@ pub fn color_swatch(hex: Option<&str>) -> Option<gtk4::Widget> {
     swatch.set_content_width(12);
     swatch.set_content_height(12);
     swatch.set_valign(gtk4::Align::Center);
-    swatch.set_tooltip_text(Some(&hex));
+    let tooltip = palette::label_for_hex(&hex).unwrap_or_else(|| hex.clone());
+    swatch.set_tooltip_text(Some(&tooltip));
     swatch.set_draw_func(move |_, cr, w, h| {
         let [r, g, b, _] = pdf::annotation_rgba(Some(&hex));
         cr.set_source_rgb(r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0);

@@ -120,17 +120,6 @@ fn sync_undo_redo_buttons(
     redo_button.set_sensitive(!r.redo_stack.is_empty());
 }
 
-/// The colour `DropDown`'s fixed preset order — a small curated set (like a real
-/// highlighter's usual colours) rather than a full colour-wheel picker, index into this by
-/// selection.
-pub(crate) const COLOR_PRESETS: [(&str, &str); 5] = [
-    ("Amber", "#f6c344"),
-    ("Green", "#8bc34a"),
-    ("Blue", "#4a90d9"),
-    ("Pink", "#e91e8c"),
-    ("Red", "#e74c3c"),
-];
-
 /// Parse an annotation's stored `#rrggbb` hex colour into RGBA at the standard highlight
 /// alpha (matching the original hardcoded `HIGHLIGHT_RGBA`'s opacity), falling back to that
 /// same amber for anything that doesn't parse — a hand-edited sidecar entry, or one written
@@ -275,21 +264,10 @@ fn build_drag_preview_overlay(
     (overlay, preview, live_rect)
 }
 
-/// The `DropDown`'s fixed option order — index into this, not into `AnnotationKind`
-/// directly, since the drop-down deliberately excludes `Note` (drawn via its own button, not
-/// a drag gesture) and adds a `None` "Select text" entry with no `AnnotationKind` of its own
-/// (a drag in that mode copies to the clipboard instead of saving an annotation).
-const DRAW_KIND_OPTIONS: [(&str, Option<fond_bib::AnnotationKind>); 4] = [
-    ("Select text", None),
-    ("Highlight", Some(fond_bib::AnnotationKind::Highlight)),
-    ("Underline", Some(fond_bib::AnnotationKind::Underline)),
-    ("Strikeout", Some(fond_bib::AnnotationKind::Strikeout)),
-];
-
-/// The EPUB reader's mode `DropDown` options — unlike `DRAW_KIND_OPTIONS`, no "Select
-/// text" entry (the browser's native selection is always available regardless of this
-/// mode) and no bare `Option` wrapper (every entry applies a real, always-selected kind).
-pub(crate) const EPUB_MARK_KIND_OPTIONS: [(&str, fond_bib::AnnotationKind); 3] = [
+/// The mark-style `DropDown` beside the colour palette, shared by both readers. "Select
+/// text" isn't here — it's the palette's own first button in the PDF reader, and the EPUB
+/// reader's native selection is always available.
+pub(crate) const MARK_KIND_OPTIONS: [(&str, fond_bib::AnnotationKind); 3] = [
     ("Highlight", fond_bib::AnnotationKind::Highlight),
     ("Underline", fond_bib::AnnotationKind::Underline),
     ("Strikeout", fond_bib::AnnotationKind::Strikeout),
@@ -1437,7 +1415,7 @@ pub fn show_pdf_reader(
         last_selection: None,
         search_matches: Vec::new(),
         search_current: 0,
-        draw_color: COLOR_PRESETS[0].1.to_string(),
+        draw_color: crate::palette::HIGHLIGHT_COLORS[0].hex.to_string(),
         continuous_pictures: Vec::new(),
         continuous_offsets: Vec::new(),
         continuous_rendered: Vec::new(),
@@ -1535,18 +1513,24 @@ pub fn show_pdf_reader(
         page_num_button.set_tooltip_text(Some("Set the printed page number for this page"));
     }
 
-    let mode_labels: Vec<&str> = DRAW_KIND_OPTIONS.iter().map(|(l, _)| *l).collect();
-    let mode_drop = gtk4::DropDown::from_strings(&mode_labels);
-    mode_drop.set_tooltip_text(Some("What a drag on the page does"));
-    // Index 0 is "Select text" — start on "Highlight" (index 1) to match `ReaderState`'s own
-    // default and the reader's original drag behaviour; `connect_selected_notify` below only
-    // fires on a change, not on construction, so leaving this at the DropDown's own default
-    // of 0 would show "Select text" while every drag still highlighted until first touched.
-    mode_drop.set_selected(1);
-
-    let color_labels: Vec<&str> = COLOR_PRESETS.iter().map(|(l, _)| *l).collect();
-    let color_drop = gtk4::DropDown::from_strings(&color_labels);
-    color_drop.set_tooltip_text(Some("Highlight colour"));
+    // What a drag on the page does: the palette picks Select text or a colour, and the style
+    // drop-down picks which kind of mark that colour draws. Both feed one `apply_mode` closure,
+    // wired below once `hint`/`picture` exist.
+    let mode_change: crate::RebuildCell = Rc::new(RefCell::new(None));
+    let style_labels: Vec<&str> = MARK_KIND_OPTIONS.iter().map(|(l, _)| *l).collect();
+    let style_drop = gtk4::DropDown::from_strings(&style_labels);
+    style_drop.set_tooltip_text(Some("What kind of mark a drag draws"));
+    let palette_choice: Rc<Cell<Option<usize>>> = Rc::new(Cell::new(Some(0)));
+    let palette = {
+        let palette_choice = palette_choice.clone();
+        let mode_change = mode_change.clone();
+        crate::palette::palette_widget(true, Some(0), move |choice| {
+            palette_choice.set(choice);
+            if let Some(f) = mode_change.borrow().as_ref() {
+                f();
+            }
+        })
+    };
 
     // Always enabled — Thumbnails is always available even for a PDF with no outline
     // (unlike before this toggle covered Contents alone and was disabled without one).
@@ -1573,9 +1557,13 @@ pub fn show_pdf_reader(
     notes_toggle.set_icon_name("view-list-symbolic");
     notes_toggle.set_tooltip_text(Some("Show notes and highlights"));
 
-    let continuous_toggle = gtk4::ToggleButton::with_label("Continuous");
+    let continuous_toggle = gtk4::ToggleButton::new();
+    crate::set_icon_with_fallback(
+        &continuous_toggle,
+        &["view-continuous-symbolic", "view-paged-symbolic"],
+    );
     continuous_toggle.set_tooltip_text(Some(
-        "Scroll continuously through every page, instead of one page at a time",
+        "Continuous — scroll through every page, instead of one page at a time",
     ));
     // Mutually exclusive with `continuous_toggle` (each deactivates the other on activate,
     // wired below) rather than a single 3-way control, so every existing
@@ -1584,10 +1572,14 @@ pub fn show_pdf_reader(
     // `view_stack` child and `render()` (extended to also fill `right_picture`) rather than
     // being a separate mode with its own render path, so navigation/zoom/search/outline/
     // notes-sidebar jumps all stay in sync with two-page mode for free.
-    let two_page_toggle = gtk4::ToggleButton::with_label("Two-page");
+    let two_page_toggle = gtk4::ToggleButton::new();
+    crate::set_icon_with_fallback(
+        &two_page_toggle,
+        &["view-dual-symbolic", "view-paged-symbolic"],
+    );
     two_page_toggle.set_tooltip_text(Some(
-        "Show two facing pages side by side, like an open book. Drawing a new highlight or \
-         note still needs single-page or Continuous mode.",
+        "Two-page — show two facing pages side by side, like an open book. Drawing a new \
+         highlight or note still needs single-page or Continuous mode.",
     ));
 
     let undo_button = gtk4::Button::from_icon_name("edit-undo-symbolic");
@@ -1609,7 +1601,7 @@ pub fn show_pdf_reader(
     export_button.set_tooltip_text(Some("Export notes & highlights…"));
 
     // Visual order, left to right, in the shared host header: sidebar toggle, Undo, Redo
-    // (start) … document title (centre) … Two-page, Continuous, mode picker, colour picker,
+    // (start) … document title (centre) … Two-page, Continuous, colour palette, mark style,
     // Note, Page #, Export, Open in new window, Notes sidebar (end) — unchanged from when
     // these lived in this tab's own `HeaderBar`, just built as plain boxes now and handed to
     // `reader_host::set_tab_header` below instead of packed directly (see the comment on
@@ -1622,8 +1614,8 @@ pub fn show_pdf_reader(
     let header_end = gtk4::Box::new(Orientation::Horizontal, 6);
     header_end.append(&two_page_toggle);
     header_end.append(&continuous_toggle);
-    header_end.append(&mode_drop);
-    header_end.append(&color_drop);
+    header_end.append(&palette);
+    header_end.append(&style_drop);
     header_end.append(&note_button);
     header_end.append(&page_num_button);
     header_end.append(&export_button);
@@ -3000,12 +2992,25 @@ pub fn show_pdf_reader(
         let reader = reader.clone();
         let hint = hint.clone();
         let picture = picture.clone();
-        mode_drop.connect_selected_notify(move |drop| {
-            let idx = drop.selected() as usize;
-            let Some((_, kind)) = DRAW_KIND_OPTIONS.get(idx) else {
-                return;
-            };
-            reader.borrow_mut().draw_kind = *kind;
+        let style_drop_for_mode = style_drop.clone();
+        let palette_choice = palette_choice.clone();
+        let apply_mode: Rc<dyn Fn()> = Rc::new(move || {
+            let style_drop = &style_drop_for_mode;
+            let choice = palette_choice.get();
+            let kind = choice.map(|_| {
+                MARK_KIND_OPTIONS
+                    .get(style_drop.selected() as usize)
+                    .map(|(_, k)| *k)
+                    .unwrap_or(fond_bib::AnnotationKind::Highlight)
+            });
+            style_drop.set_sensitive(choice.is_some());
+            {
+                let mut r = reader.borrow_mut();
+                r.draw_kind = kind;
+                if let Some(color) = choice.and_then(|i| crate::palette::HIGHLIGHT_COLORS.get(i)) {
+                    r.draw_color = color.hex.to_string();
+                }
+            }
             let cursor = cursor_for_select_mode(kind.is_none());
             picture.set_cursor(cursor.as_ref());
             for p in &reader.borrow().continuous_pictures {
@@ -3020,15 +3025,11 @@ pub fn show_pdf_reader(
             };
             hint.set_text(text);
         });
-    }
-    {
-        let reader = reader.clone();
-        color_drop.connect_selected_notify(move |drop| {
-            let idx = drop.selected() as usize;
-            if let Some((_, hex)) = COLOR_PRESETS.get(idx) {
-                reader.borrow_mut().draw_color = hex.to_string();
-            }
-        });
+        {
+            let apply_mode = apply_mode.clone();
+            style_drop.connect_selected_notify(move |_| apply_mode());
+        }
+        *mode_change.borrow_mut() = Some(apply_mode);
     }
     {
         let host = host.clone();

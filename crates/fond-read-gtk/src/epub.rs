@@ -13,9 +13,7 @@ use gtk4::{gdk, gio, glib, Orientation};
 use libadwaita as adw;
 use webkit6::prelude::*;
 
-use super::pdf::{
-    update_bookmark_button, COLOR_PRESETS, EPUB_MARK_KIND_OPTIONS, UNDO_HISTORY_LIMIT,
-};
+use super::pdf::{update_bookmark_button, MARK_KIND_OPTIONS, UNDO_HISTORY_LIMIT};
 use crate::RebuildCell;
 use crate::{color_swatch, note_edit_widget, popover_button, popover_separator, ReaderHost};
 
@@ -605,12 +603,16 @@ pub fn show_epub_reader(
     redo_button.set_tooltip_text(Some("Redo (Ctrl+Shift+Z)"));
     redo_button.set_sensitive(false);
 
-    let mode_labels: Vec<&str> = EPUB_MARK_KIND_OPTIONS.iter().map(|(l, _)| *l).collect();
+    let mode_labels: Vec<&str> = MARK_KIND_OPTIONS.iter().map(|(l, _)| *l).collect();
     let mode_drop = gtk4::DropDown::from_strings(&mode_labels);
     mode_drop.set_tooltip_text(Some("What kind of mark to apply to the selection"));
-    let color_labels: Vec<&str> = COLOR_PRESETS.iter().map(|(l, _)| *l).collect();
-    let color_drop = gtk4::DropDown::from_strings(&color_labels);
-    color_drop.set_tooltip_text(Some("Highlight colour"));
+    let palette_choice: Rc<Cell<usize>> = Rc::new(Cell::new(0));
+    let palette = {
+        let palette_choice = palette_choice.clone();
+        crate::palette::palette_widget(false, Some(0), move |choice| {
+            palette_choice.set(choice.unwrap_or(0));
+        })
+    };
     let apply_button = gtk4::Button::with_label("Apply");
     apply_button.set_tooltip_text(Some("Mark the selected text"));
 
@@ -690,8 +692,8 @@ pub fn show_epub_reader(
     popout_button.set_tooltip_text(Some("Open in a new window"));
 
     // Visual order, left to right, in the shared host header: Contents, Search, Undo, Redo
-    // (start) … chapter nav (centre) … reading theme, font, Export, font-size, Mode,
-    // Colour, Apply, Open in new window, Notes (end) — unchanged from when these lived in
+    // (start) … chapter nav (centre) … reading theme, font, Export, font-size, colour
+    // palette, Mode, Apply, Open in new window, Notes (end) — unchanged from when these lived in
     // this tab's own `HeaderBar`, just built as plain boxes now and handed to
     // `reader_host::set_tab_header` below instead of packed directly (see the comment above
     // `let prev` for why).
@@ -706,8 +708,8 @@ pub fn show_epub_reader(
     header_end.append(&export_button);
     header_end.append(&zoom_out_button);
     header_end.append(&zoom_in_button);
+    header_end.append(&palette);
     header_end.append(&mode_drop);
-    header_end.append(&color_drop);
     header_end.append(&apply_button);
     header_end.append(&popout_button);
     header_end.append(&notes_toggle);
@@ -1641,19 +1643,19 @@ pub fn show_epub_reader(
         let view = web_view.clone();
         let host = host.clone();
         let mode_drop = mode_drop.clone();
-        let color_drop = color_drop.clone();
+        let palette_choice = palette_choice.clone();
         let rebuild_notes = rebuild_notes.clone();
         apply_button.connect_clicked(move |_| {
             let reader = reader.clone();
             let view_for_apply = view.clone();
             let host = host.clone();
-            let kind = EPUB_MARK_KIND_OPTIONS
+            let kind = MARK_KIND_OPTIONS
                 .get(mode_drop.selected() as usize)
                 .map(|(_, k)| *k)
                 .unwrap_or(fond_bib::AnnotationKind::Highlight);
-            let color = COLOR_PRESETS
-                .get(color_drop.selected() as usize)
-                .map(|(_, hex)| hex.to_string());
+            let color = crate::palette::HIGHLIGHT_COLORS
+                .get(palette_choice.get())
+                .map(|c| c.hex.to_string());
             let rebuild_notes = rebuild_notes.clone();
             view.evaluate_javascript(
                 EPUB_CAPTURE_SELECTION_JS,

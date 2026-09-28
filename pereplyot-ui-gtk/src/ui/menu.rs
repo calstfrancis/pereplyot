@@ -93,6 +93,7 @@ pub fn build(widgets: &Rc<Widgets>) -> gtk4::Popover {
     }
     rows.append(&popover_separator());
 
+    activate_row(&rows, &popover, "Highlight labels…", "win.highlight-labels");
     activate_row(&rows, &popover, "About Pereplyot", "win.about");
 
     popover

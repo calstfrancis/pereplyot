@@ -1,4 +1,4 @@
-# Pereplyot v0.6.0 "Wide Margin"
+# Pereplyot v0.7.0 "Ochre Thread"
 
 Install via Flatpak:
 
@@ -18,17 +18,20 @@ flatpak update io.github.calstfrancis.Pereplyot
 
 ### What's new
 
-**Notes and highlights, reworked to match how other readers (Kindle, Apple Books, Foliate)
-handle them.** Margin notes could only ever be one line before this — a plain text field
-that silently swallowed anything past your first Enter. Every place you write a note (the
-right-click menu on a highlight, both readers' Notes sidebars, and the Annotations dialog)
-now gives you a proper multi-line editor that still saves the moment you click away, no
-extra button required.
+**Highlighting with meaning, not just colour.** The colour drop-down is gone. Four colours
+now sit in the reader's toolbar, each standing for a different kind of passage: warm ochre
+for the key idea or thesis (*what is the author saying?*), dusty blue for evidence and support
+(*what supports it?*), sage for connections and implications (*why does it matter?*), and
+terracotta for problems and questions (*what needs scrutiny?*). Click a colour to start
+highlighting in it, or the "A" button beside them to go back to plain text selection. Hover
+any colour to see what it's for.
 
-Every annotation list now shows a small color swatch matching the highlight's actual color
-on the page, instead of plain text alone. The Annotations dialog also now shows the
-highlighted passage itself — not just which page or chapter it's on — and gained a search
-field so you can find a highlight or note by what it actually says.
+Don't like the wording? Choose **Highlight labels…** from the menu to rename any colour. Your
+labels show up in the toolbar and next to your highlights in the Notes and Annotations lists.
+Highlights you made before this update keep their original colours.
+
+The Two-page and Continuous view toggles are now compact icons, giving the toolbar a little
+more breathing room.
 
 ---
 

@@ -144,7 +144,8 @@ pub fn show_annotations_dialog(
     // those strings are assembled per-annotation.
     let search_corpus: Rc<std::cell::RefCell<Vec<(gtk4::ListBoxRow, String)>>> =
         Rc::new(std::cell::RefCell::new(Vec::new()));
-    let search_query: Rc<std::cell::RefCell<String>> = Rc::new(std::cell::RefCell::new(String::new()));
+    let search_query: Rc<std::cell::RefCell<String>> =
+        Rc::new(std::cell::RefCell::new(String::new()));
     {
         let corpus = search_corpus.clone();
         let query = search_query.clone();
@@ -300,9 +301,8 @@ pub fn show_annotations_dialog(
                 }
             }
         };
-        let note_widget = note_edit_widget(annotation.note.as_deref(), move |text| {
-            save_note(&text)
-        });
+        let note_widget =
+            note_edit_widget(annotation.note.as_deref(), move |text| save_note(&text));
         outer.append(&note_widget);
 
         row.set_child(Some(&outer));
