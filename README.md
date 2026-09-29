@@ -54,6 +54,12 @@ pereplyot --vault=<root> --key=<key> <file>                 # Kartoteka; a Sputn
 pereplyot --annotations-file=<path> [--progress-file=<path>] <file>   # a Sputnik course material
 ```
 
+Any of them also takes `--title=<title>` (the caller's own name for the document, used in
+place of the file's metadata title) and `--annotations` (open the document's Annotations
+dialog instead of the reader — what Kartoteka's "Annotations…" does; falls back to the
+reader if there are none yet). Unknown `--options` are ignored with a warning rather than
+rejected, so a newer Kartoteka/Sputnik can't break an older Pereplyot by passing one.
+
 The `--vault`/`--key` form writes straight into that vault's `notes/<key>.md` /
 `annots/<key>.json` — the exact files Kartoteka's own `KartotekaReaderHost` reads and
 writes — via a `fond_bib::Library` opened directly on `root`, so annotations, resume
@@ -66,19 +72,19 @@ over, with no vault/key concept at all, since Sputnik's course-material store is
 `fond_bib::Library`. Bookmarks (a Pereplyot-only concept, no vault schema slot yet) always
 stay in Pereplyot's own local, content-hash-keyed store regardless of invocation shape.
 
-`crates/fond-read-gtk` is the same crate both apps depend on (as a pinned git dependency on
-this repo) — the reader is never written twice. It was originally built inside Kartoteka;
-see that repo's `docs/READER-EXTRACTION.md` for the boundary survey (the `ReaderHost` trait,
-now eight methods including bookmarks, no citation keys, no vault) that made pulling it out
-into its own app possible. `fond-bib`/`fond-doc` (the document/annotation primitives
-`fond-read-gtk` itself depends on) stay in Kartoteka, MIT-licensed, consumed here as an
-ordinary git dependency.
+`crates/fond-read-gtk` is the reader widget itself. It was originally built inside
+Kartoteka; see that repo's `docs/READER-EXTRACTION.md` for the boundary survey (the
+`ReaderHost` trait, now eight methods including bookmarks, no citation keys, no vault) that
+made pulling it out into its own app possible. Neither Kartoteka nor Sputnik depends on it
+any more — the launch modes above are the whole interface, so there's no version pin to
+keep in step. `fond-bib`/`fond-doc` (the document/annotation primitives `fond-read-gtk`
+itself depends on) stay in Kartoteka, MIT-licensed, consumed here as an ordinary git
+dependency.
 
-`fond_read_gtk::history` is a small shared reading-history log both apps also write to
-(alongside their own annotation storage, unaffected) whenever they open a document — so
-Pereplyot's History shelf reflects what was opened anywhere, not just through Pereplyot
-itself. See that module's own doc comment for why it resolves a real home-relative path
-rather than the usual sandbox-relative one, and the one flatpak permission that requires.
+`fond_read_gtk::history` backs the History shelf. Because Kartoteka and Sputnik open
+documents through Pereplyot, what's read from either lands there too. See that module's own
+doc comment for why it resolves a real home-relative path rather than the usual
+sandbox-relative one.
 
 ## License
 

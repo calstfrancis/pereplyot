@@ -51,6 +51,14 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.8.0" date="2026-09-29">
+      <description>
+        <p>0.8.0 "Open Clasp" — Kartoteka's Annotations window now opens in Pereplyot, and
+        documents opened from Kartoteka or Sputnik show their library title. Fixed Pereplyot
+        staying open in the background after its reader was closed, when launched from
+        another app or a file manager.</p>
+      </description>
+    </release>
     <release version="0.7.0" date="2026-09-28">
       <description>
         <p>0.7.0 "Ochre Thread" — highlighting now uses a four-colour reading scheme shown

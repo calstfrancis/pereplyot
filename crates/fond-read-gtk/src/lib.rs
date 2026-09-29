@@ -117,6 +117,10 @@ pub fn existing_reader(hash: &str) -> Option<reader_host::ReaderTab> {
     OPEN_READERS.with(|r| r.borrow().get(hash).cloned())
 }
 
+pub fn any_reader_open() -> bool {
+    OPEN_READERS.with(|r| !r.borrow().is_empty())
+}
+
 /// Surface the reader tab already open on `hash`, reporting whether there was one.
 pub fn present_existing(hash: &str) -> bool {
     match existing_reader(hash) {

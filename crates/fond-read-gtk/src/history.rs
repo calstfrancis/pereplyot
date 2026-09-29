@@ -1,7 +1,7 @@
-//! A reading-history log shared across every app that embeds this reader — Kartoteka,
-//! Sputnik, and Pereplyot's own launcher all record here, so Pereplyot's History shelf
-//! shows what was opened anywhere, not just through Pereplyot itself. Call [`record_open`]
-//! wherever a host calls [`crate::pdf::show_pdf_reader`]/[`crate::epub::show_epub_reader`].
+//! Pereplyot's reading-history log, backing its History shelf. Kartoteka and Sputnik open
+//! documents by launching Pereplyot, so what's read from those apps lands here too without
+//! either of them writing this file. Call [`record_open`] wherever a host calls
+//! [`crate::pdf::show_pdf_reader`]/[`crate::epub::show_epub_reader`].
 //!
 //! Deliberately **not** resolved via `glib::user_data_dir()`: that call is sandbox-relative
 //! and, run inside three different flatpak sandboxes, resolves to three different private

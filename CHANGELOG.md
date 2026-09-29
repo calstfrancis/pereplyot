@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.8.0] "Open Clasp" — 2026-09-29
+
+- **New launch options for Kartoteka and Sputnik:** `--title=<title>` shows the calling app's
+  own name for a document (e.g. Kartoteka's bibliographic title) instead of the file's
+  metadata title, and `--annotations` opens straight to the Annotations dialog instead of
+  the reader (Kartoteka's "Annotations…" now uses this rather than its own built-in copy
+  of the dialog). With these, neither app builds in any part of Pereplyot any more — they
+  always get whatever version of Pereplyot is installed.
+- **Unknown command-line options are now ignored with a warning** instead of refusing to
+  open the file, so a newer Kartoteka or Sputnik can't break an older Pereplyot.
+- **Fixed: Pereplyot kept running invisibly after its reader was closed**, whenever it had
+  been launched by Kartoteka, Sputnik, or a file manager's "Open With". The hidden start
+  window was meant to close itself, but GTK ignores a close request on a window that was
+  never shown — it's now destroyed instead.
+
 ## [0.7.0] "Ochre Thread" — 2026-09-28
 
 - **Highlighting now uses a four-colour reading scheme, always visible in the reader's

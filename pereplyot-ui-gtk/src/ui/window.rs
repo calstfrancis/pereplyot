@@ -322,7 +322,18 @@ fn show_open_dialog(widgets: &Rc<Widgets>) {
 /// reader with a fresh [`LocalReaderHost`] — the one path every entry point (the Open
 /// button, drag-and-drop, and a plain CLI/"Open With" file argument) funnels through.
 pub fn open_path(widgets: &Rc<Widgets>, path: PathBuf) {
-    open_path_with_host(widgets, path, None);
+    open_path_with_host(widgets, path, LaunchOptions::default());
+}
+
+/// What a launch on Kartoteka's/Sputnik's behalf adds to a plain open (see `main.rs`).
+#[derive(Default)]
+pub struct LaunchOptions {
+    pub host_override: Option<reader_host::HostOverride>,
+    /// The calling app's own title for the document (e.g. Kartoteka's bibliographic title),
+    /// preferred over whatever the file's metadata says.
+    pub title: Option<String>,
+    /// Open the document's Annotations dialog instead of the reader.
+    pub annotations_only: bool,
 }
 
 /// [`open_path`], but for a document Pereplyot was launched to open on another app's
@@ -330,14 +341,20 @@ pub fn open_path(widgets: &Rc<Widgets>, path: PathBuf) {
 /// into that app's own vault/material storage instead of Pereplyot's local one. See
 /// `reader_host::HostOverride`. Used by `main.rs`'s `--vault=`/`--annotations-file=`
 /// command-line handling; `open_path` above is just this with `override_: None`.
+/// Returns the Annotations dialog, when `options.annotations_only` actually showed one.
 pub fn open_path_with_host(
     widgets: &Rc<Widgets>,
     path: PathBuf,
-    override_: Option<reader_host::HostOverride>,
-) {
+    options: LaunchOptions,
+) -> Option<adw::Window> {
+    let LaunchOptions {
+        host_override: override_,
+        title: title_override,
+        annotations_only,
+    } = options;
     if !path.is_file() {
         toast(widgets, "Not a file");
-        return;
+        return None;
     }
 
     let kind = if fond_doc::looks_like_pdf(&path) {
@@ -346,19 +363,25 @@ pub fn open_path_with_host(
         DocKind::Epub
     } else {
         toast(widgets, "Only PDF and EPUB files are supported");
-        return;
+        return None;
     };
 
     let bytes = match fs::read(&path) {
         Ok(b) => b,
         Err(e) => {
             toast(widgets, &format!("Couldn't read file: {e}"));
-            return;
+            return None;
         }
     };
     let hash = blake3::hash(&bytes).to_hex().to_string();
-    let title = sniff_title(kind, &path, &bytes)
+    let title = title_override
+        .filter(|t| !t.trim().is_empty())
+        .or_else(|| sniff_title(kind, &path, &bytes))
         .unwrap_or_else(|| file_stem(&path).unwrap_or_else(|| "Untitled".to_string()));
+    let document_id = match &override_ {
+        Some(reader_host::HostOverride::Vault { key, .. }) => key.clone(),
+        _ => file_stem(&path).unwrap_or_else(|| hash.clone()),
+    };
 
     // Resolve the saved reading position before the host exists — same reason
     // `LocalReaderHost`'s own case reads `reader_host::saved_progress` up front rather than
@@ -374,9 +397,27 @@ pub fn open_path_with_host(
         Ok(host) => host,
         Err(e) => {
             toast(widgets, &format!("Couldn't open: {e}"));
-            return;
+            return None;
         }
     };
+
+    // A document with no annotations yet has nothing to list, so it opens in the reader
+    // instead of leaving the launch with no visible window at all.
+    if annotations_only && !host.load_annotations().annotations.is_empty() {
+        let attachment = Some((hash.clone(), path.clone()));
+        let (pdf, epub) = match kind {
+            DocKind::Pdf => (attachment, None),
+            DocKind::Epub => (None, attachment),
+        };
+        return fond_read_gtk::annotations::show_annotations_dialog(
+            &host,
+            &widgets.window,
+            &document_id,
+            pdf,
+            epub,
+            &title,
+        );
+    }
     match kind {
         DocKind::Pdf => {
             let start_page = saved_progress.map(|p| p.page).unwrap_or(1);
@@ -402,11 +443,11 @@ pub fn open_path_with_host(
         }
     }
 
-    // Shared, cross-app history: Kartoteka and Sputnik record here too (each via this same
-    // `fond_read_gtk::history::record_open`, at their own reader-open call sites), so this
-    // shows what was opened anywhere, not just through Pereplyot itself.
+    // Kartoteka and Sputnik open documents by launching Pereplyot, so recording here covers
+    // what was read from those apps too.
     history::record_open(kind, &hash, &path, &title);
     rebuild_history(widgets);
+    None
 }
 
 fn sniff_title(kind: DocKind, path: &Path, bytes: &[u8]) -> Option<String> {

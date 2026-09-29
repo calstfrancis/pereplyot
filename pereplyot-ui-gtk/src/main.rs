@@ -33,7 +33,7 @@ enum ParsedArgs {
     Launcher,
     Open {
         file: PathBuf,
-        host_override: Option<HostOverride>,
+        options: ui::window::LaunchOptions,
     },
 }
 
@@ -48,6 +48,8 @@ fn parse_args(args: &[std::ffi::OsString]) -> Result<ParsedArgs, String> {
     let mut key: Option<String> = None;
     let mut annotations_file: Option<PathBuf> = None;
     let mut progress_file: Option<PathBuf> = None;
+    let mut title: Option<String> = None;
+    let mut annotations_only = false;
     let mut file: Option<PathBuf> = None;
 
     for arg in args {
@@ -60,8 +62,15 @@ fn parse_args(args: &[std::ffi::OsString]) -> Result<ParsedArgs, String> {
             annotations_file = Some(PathBuf::from(v));
         } else if let Some(v) = s.strip_prefix("--progress-file=") {
             progress_file = Some(PathBuf::from(v));
+        } else if let Some(v) = s.strip_prefix("--title=") {
+            title = Some(v.to_string());
+        } else if s == "--annotations" {
+            annotations_only = true;
         } else if s.starts_with("--") {
-            return Err(format!("Unknown option: {s}"));
+            // Ignored rather than fatal: Kartoteka/Sputnik may pass an option a
+            // not-yet-updated Pereplyot doesn't know, and opening the file anyway beats
+            // opening nothing.
+            eprintln!("pereplyot: ignoring unknown option {s}");
         } else if file.is_none() {
             file = Some(PathBuf::from(arg));
         } else {
@@ -105,7 +114,11 @@ fn parse_args(args: &[std::ffi::OsString]) -> Result<ParsedArgs, String> {
 
     Ok(ParsedArgs::Open {
         file,
-        host_override,
+        options: ui::window::LaunchOptions {
+            host_override,
+            title,
+            annotations_only,
+        },
     })
 }
 
@@ -146,10 +159,25 @@ fn main() -> glib::ExitCode {
     // `Application` tracks at all) to close the launcher once nothing is left to read, if
     // it was never genuinely shown.
     let launcher_shown: Rc<Cell<bool>> = Rc::new(Cell::new(false));
+    // An `--annotations` launch's dialog keeps the process alive the same way a reader does.
+    let dialogs_open: Rc<Cell<u32>> = Rc::new(Cell::new(0));
+    let close_if_unused = {
+        let launcher_shown = launcher_shown.clone();
+        let dialogs_open = dialogs_open.clone();
+        Rc::new(move |widgets: &Rc<ui::Widgets>| {
+            if !launcher_shown.get() && dialogs_open.get() == 0 && !fond_read_gtk::any_reader_open()
+            {
+                // `destroy`, not `close`: GTK4's `close` is a no-op on a window that was never
+                // realized, which a never-shown launcher isn't — so the process used to
+                // outlive its last reader.
+                widgets.window.destroy();
+            }
+        })
+    };
 
     let ensure_window: EnsureWindow = {
         let widgets_slot = widgets_slot.clone();
-        let launcher_shown = launcher_shown.clone();
+        let close_if_unused = close_if_unused.clone();
         Rc::new(move |app: &adw::Application| {
             if let Some(widgets) = widgets_slot.borrow().clone() {
                 return widgets;
@@ -158,13 +186,9 @@ fn main() -> glib::ExitCode {
             let widgets = ui::window::build(app, Config::load());
             *widgets_slot.borrow_mut() = Some(widgets.clone());
 
-            let launcher_shown = launcher_shown.clone();
+            let close_if_unused = close_if_unused.clone();
             let widgets_for_hook = widgets.clone();
-            fond_read_gtk::on_all_readers_closed(move || {
-                if !launcher_shown.get() {
-                    widgets_for_hook.window.close();
-                }
-            });
+            fond_read_gtk::on_all_readers_closed(move || close_if_unused(&widgets_for_hook));
 
             widgets
         })
@@ -192,14 +216,26 @@ fn main() -> glib::ExitCode {
                     launcher_shown.set(true);
                     widgets.window.present();
                 }
-                ParsedArgs::Open {
-                    file,
-                    host_override,
-                } => {
+                ParsedArgs::Open { file, options } => {
                     if launcher_shown.get() {
                         widgets.window.present();
                     }
-                    ui::window::open_path_with_host(&widgets, file, host_override);
+                    if let Some(dialog) = ui::window::open_path_with_host(&widgets, file, options) {
+                        dialogs_open.set(dialogs_open.get() + 1);
+                        let dialogs_open = dialogs_open.clone();
+                        let close_if_unused = close_if_unused.clone();
+                        let widgets = widgets.clone();
+                        dialog.connect_close_request(move |_| {
+                            dialogs_open.set(dialogs_open.get().saturating_sub(1));
+                            // After the dialog has actually gone — closing the launcher it's
+                            // transient for, from inside its own close handler, would tear it
+                            // down mid-signal.
+                            let close_if_unused = close_if_unused.clone();
+                            let widgets = widgets.clone();
+                            glib::idle_add_local_once(move || close_if_unused(&widgets));
+                            glib::Propagation::Proceed
+                        });
+                    }
                 }
             }
 

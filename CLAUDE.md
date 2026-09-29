@@ -8,8 +8,9 @@ This file only covers what's Pereplyot-specific.
 
 ## What this app is
 
-A standalone PDF/EPUB reader built around `crates/fond-read-gtk`, the reader widget also
-embedded in Kartoteka and Sputnik (git dependency on this repo, pinned by tag). Pereplyot
+A standalone PDF/EPUB reader built around `crates/fond-read-gtk`. Kartoteka and Sputnik
+don't link it; they launch this app with command-line flags (see `README.md`), so those
+flags are a cross-app interface — keep them backward-compatible. Pereplyot
 has no library/vault — it opens whatever file it's given and stores annotations/progress
 locally, keyed by content hash, under `~/.local/share/pereplyot/` (`src/reader_host.rs`,
 `LocalReaderHost`). See `README.md` for the fuller relationship to Kartoteka/Sputnik and

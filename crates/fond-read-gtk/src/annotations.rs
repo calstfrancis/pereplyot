@@ -34,7 +34,7 @@ pub fn show_annotations_dialog(
     pdf_attachment: Option<(String, std::path::PathBuf)>,
     epub_attachment: Option<(String, std::path::PathBuf)>,
     reader_title: &str,
-) {
+) -> Option<adw::Window> {
     // An absent sidecar and one with every annotation deleted are both "nothing to show"
     // here. Before the `ReaderHost` boundary these were distinguishable (a missing file gave
     // this toast; an empty file opened an empty dialog); now both give the toast, since the
@@ -42,7 +42,7 @@ pub fn show_annotations_dialog(
     let sidecar = host.load_annotations();
     if sidecar.annotations.is_empty() {
         host.notify("No annotations for this entry");
-        return;
+        return None;
     }
 
     // The PDF's own printed page numbers, if any — same resolution `show_pdf_reader` uses
@@ -351,4 +351,5 @@ pub fn show_annotations_dialog(
     dialog.set_content(Some(&view));
     search_entry.grab_focus();
     dialog.present();
+    Some(dialog)
 }
