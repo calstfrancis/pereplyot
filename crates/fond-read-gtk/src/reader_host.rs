@@ -35,6 +35,11 @@ const HEADER_CONTENT_DATA_KEY: &str = "fond-reader-header-content";
 /// `ReaderTab` without `new_tab_view` having to hand out a second return value everywhere.
 const HEADER_SLOTS_DATA_KEY: &str = "fond-reader-header-slots";
 
+/// `TabPage` data key for the tab's keyboard shortcut handler — see `set_tab_key_handler`.
+const KEY_HANDLER_DATA_KEY: &str = "fond-reader-key-handler";
+
+type KeyHandler = Rc<dyn Fn(gtk4::gdk::Key, gtk4::gdk::ModifierType) -> glib::Propagation>;
+
 /// One tab's contribution to the shared host header: built once by the reader (`pdf.rs`/
 /// `epub.rs`) as three independent widgets — normally the same sidebar/undo/redo cluster,
 /// document-title widget, and end-of-header controls cluster each reader used to pack into
@@ -242,6 +247,39 @@ fn new_tab_view(parent: &adw::ApplicationWindow) -> (adw::Window, adw::TabView) 
         host.add_controller(key_controller);
     }
 
+    // The selected tab's page-turn/bookmark/undo keys, caught at the window in the capture
+    // phase so they work wherever focus happens to be in this window — the shared header,
+    // the tab bar, or nowhere at all — not only inside the tab's own content. Open popovers
+    // (menus, drop-downs, the annotation editor) are left alone: their own arrow-key and
+    // Space handling is what someone in a menu expects.
+    {
+        let key_controller = gtk4::EventControllerKey::new();
+        key_controller.set_propagation_phase(gtk4::PropagationPhase::Capture);
+        let host_weak = host.downgrade();
+        let tab_view_for_keys = tab_view.clone();
+        key_controller.connect_key_pressed(move |_, keyval, _keycode, modifiers| {
+            let in_popover = host_weak
+                .upgrade()
+                .and_then(|h| gtk4::prelude::GtkWindowExt::focus(&h))
+                .is_some_and(|w| w.ancestor(gtk4::Popover::static_type()).is_some());
+            if in_popover {
+                return glib::Propagation::Proceed;
+            }
+            let Some(page) = tab_view_for_keys.selected_page() else {
+                return glib::Propagation::Proceed;
+            };
+            let handler = unsafe {
+                page.data::<KeyHandler>(KEY_HANDLER_DATA_KEY)
+                    .map(|h| h.as_ref().clone())
+            };
+            match handler {
+                Some(handler) => handler(keyval, modifiers),
+                None => glib::Propagation::Proceed,
+            }
+        });
+        host.add_controller(key_controller);
+    }
+
     toolbar.add_top_bar(&header);
     toolbar.add_top_bar(&tab_bar);
 
@@ -373,6 +411,20 @@ pub fn on_tab_closed(tab: &ReaderTab, on_close: impl Fn() + 'static) {
     let boxed: Rc<dyn Fn()> = Rc::new(on_close);
     unsafe {
         tab.page.set_data(ON_CLOSE_DATA_KEY, boxed);
+    }
+}
+
+/// Give this tab its keyboard shortcuts. The host window calls `handler` for every key press
+/// while this tab is the selected one, before any focused widget sees it (see `new_tab_view`)
+/// — return `Propagation::Stop` for a key it handled. Stored on the page itself, like
+/// `on_tab_closed`'s hook, so it follows the tab through `pop_out`.
+pub fn set_tab_key_handler(
+    tab: &ReaderTab,
+    handler: impl Fn(gtk4::gdk::Key, gtk4::gdk::ModifierType) -> glib::Propagation + 'static,
+) {
+    let boxed: KeyHandler = Rc::new(handler);
+    unsafe {
+        tab.page.set_data(KEY_HANDLER_DATA_KEY, boxed);
     }
 }
 

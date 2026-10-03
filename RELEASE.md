@@ -1,4 +1,4 @@
-# Pereplyot v0.8.0 "Open Clasp"
+# Pereplyot v0.9.0 "True Register"
 
 Install via Flatpak:
 
@@ -18,16 +18,19 @@ flatpak update io.github.calstfrancis.Pereplyot
 
 ### What's new
 
-**Kartoteka and Sputnik now hand everything reading-related to Pereplyot.** Choosing
-"Annotations…" on a Kartoteka entry now opens that entry's highlights and notes in Pereplyot
-— the same dialog as before, with "Go to page" jumping straight into the reader. Documents
-opened from Kartoteka or Sputnik also show their proper library title rather than whatever
-the file's own metadata says. Because neither app builds in any part of Pereplyot any more,
-they'll always use whichever version of Pereplyot you have installed.
+**Selecting and highlighting PDF text now lands on the text you dragged over.** On many
+publisher and scanned PDFs, a drag could select a different line from the one under the
+pointer, draw the highlight in the wrong place, or select nothing at all. The cause was page
+layouts and page rotations the reader didn't account for; it now handles both, so selections,
+highlights, search matches and right-clicks all line up with the page.
 
-**Fixed: Pereplyot quietly kept running after you closed the reader**, whenever it had been
-opened from Kartoteka, Sputnik, or a file manager's "Open With". It now exits as soon as the
-last reader or Annotations window closes.
+**Copying text works properly.** Text copied from a PDF keeps its spaces instead of running
+every word together, and right-clicking now offers "Copy selected text" after a selection and
+"Copy highlighted text" on any existing highlight, underline or note.
+
+**Page-turn keys work from anywhere in the reader window**, not only when the page itself has
+focus. Menus and text fields keep their usual keys, and the numeric keypad's arrow and Page
+Up/Down keys work too.
 
 ---
 

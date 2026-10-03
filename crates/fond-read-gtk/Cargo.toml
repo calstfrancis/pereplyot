@@ -14,6 +14,7 @@ repository.workspace = true
 [dependencies]
 fond-bib = { workspace = true }
 fond-doc = { workspace = true }
+pdfium-render = { workspace = true }
 gtk4 = { version = "0.11", features = ["v4_10"] }
 libadwaita = { version = "0.9", features = ["v1_4"] }
 glib = "0.22"

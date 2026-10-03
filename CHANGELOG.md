@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.9.0] "True Register" — 2026-10-03
+
+- **Fixed: PDF text selection and highlighting missing the text under the pointer.** On many
+  publisher and scanned PDFs the page area doesn't start at the corner of the page's
+  coordinate space, and some pages carry their own rotation. The reader assumed neither,
+  so a drag could select a different line than the one you dragged over, draw the
+  highlight somewhere else, or land on blank margin and select nothing at all. The drag
+  preview, the saved highlight, right-click hit-testing, search matches, and highlights
+  imported from the PDF itself now all line up with the text on these pages too.
+- **Copied and saved text keeps its spaces.** Many PDFs (LaTeX and Typst output among them)
+  place words without storing space characters, and selections from them came out as one
+  run-together word. Text copied from a selection, and the quote saved with a new
+  highlight, now keeps the word breaks.
+- **Right-click to copy text (PDF):** "Copy selected text" after a Select-text drag, and
+  "Copy highlighted text" (or underlined / struck-out / noted) on any existing mark.
+- **Keyboard page navigation works wherever focus is in the reader window**, not only
+  inside the page area: after clicking a toolbar button, the tab bar, or anywhere in the
+  window. Menus and drop-downs still get their own arrow keys, and typing in the page
+  number, search, or a note is unaffected. The numeric keypad's arrow, Page Up/Down, Home
+  and End keys work too.
+
 ## [0.8.0] "Open Clasp" — 2026-09-29
 
 - **New launch options for Kartoteka and Sputnik:** `--title=<title>` shows the calling app's

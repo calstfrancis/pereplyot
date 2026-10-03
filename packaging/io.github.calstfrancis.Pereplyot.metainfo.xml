@@ -51,6 +51,14 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.9.0" date="2026-10-03">
+      <description>
+        <p>0.9.0 "True Register" — fixed PDF selection and highlighting missing the text under
+        the pointer on many publisher and scanned PDFs. Copied and saved text now keeps its
+        spaces, a right-click copies selected or highlighted text, and keyboard page
+        navigation works from anywhere in the reader window.</p>
+      </description>
+    </release>
     <release version="0.8.0" date="2026-09-29">
       <description>
         <p>0.8.0 "Open Clasp" — Kartoteka's Annotations window now opens in Pereplyot, and

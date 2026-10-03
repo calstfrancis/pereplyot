@@ -15,6 +15,9 @@ repository = "https://github.com/calstfrancis/pereplyot"
 # Sputnik pins its own Kartoteka-sourced dependencies.
 fond-bib = { git = "https://github.com/calstfrancis/kartoteka", tag = "v0.16.0" }
 fond-doc = { git = "https://github.com/calstfrancis/kartoteka", tag = "v0.16.0" }
+# Same version/features fond-doc builds it with, so the two unify into one crate — only
+# needed directly for page geometry (crop-box origin, /Rotate) that fond-doc doesn't expose.
+pdfium-render = { version = "0.8", default-features = false, features = ["pdfium_latest", "thread_safe", "sync"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 blake3 = "1"

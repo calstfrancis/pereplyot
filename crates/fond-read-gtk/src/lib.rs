@@ -23,6 +23,7 @@ use gtk4::Orientation;
 pub mod annotations;
 pub mod epub;
 pub mod history;
+mod page_geom;
 pub mod palette;
 pub mod pdf;
 pub mod reader_host;

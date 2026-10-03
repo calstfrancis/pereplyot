@@ -23,7 +23,8 @@ evidence, connection, problem — labels editable under "Highlight labels…"; c
 and a search field in the Annotations dialog) with export to Markdown, bookmarks, in-document search, continuous
 scroll and facing-pages view, zoom-to-fit-width/page, rotate and invert-colours for PDF,
 reading themes (Light/Sepia/Dark) and font choice for EPUB, a page-thumbnail grid,
-click-to-turn page zones, keyboard/mouse page and chapter navigation, a Contents outline and
+click-to-turn page zones, right-click copying of selected or highlighted PDF text,
+keyboard/mouse page and chapter navigation (from anywhere in the reader window), a Contents outline and
 a Notes list, and tabs for reading more than one document at once. No Welcome window, no
 screenshot automation, and EPUB cover art (Library shows a placeholder icon for EPUBs) yet.
 

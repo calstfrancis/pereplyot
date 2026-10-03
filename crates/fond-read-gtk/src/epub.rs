@@ -1446,14 +1446,12 @@ pub fn show_epub_reader(
     }
 
     {
-        let key_controller = gtk4::EventControllerKey::new();
-        // Capture phase, not the default bubble — otherwise the WebView (which owns focus
-        // whenever the reader isn't showing chrome) and any focused header control can
-        // consume Left/Right for their own purposes (in-page scroll, focus navigation)
-        // before this ever sees them. Runs top-down, ahead of all of that. The search
-        // entry still needs normal Left/Right/cursor behavior while it has focus, so that's
-        // explicitly passed through below rather than intercepted.
-        key_controller.set_propagation_phase(gtk4::PropagationPhase::Capture);
+        // Registered with the tab host, which catches keys at the window in the capture
+        // phase (see `reader_host::set_tab_key_handler`) — ahead of the WebView (which owns
+        // focus whenever the reader isn't showing chrome) and any focused header control,
+        // either of which would otherwise consume Left/Right for in-page scroll or focus
+        // navigation. The search entry still needs normal Left/Right/cursor behavior while
+        // it has focus, so that's explicitly passed through below rather than intercepted.
         let epub_undo = epub_undo.clone();
         let epub_redo = epub_redo.clone();
         let search_toggle = search_toggle.clone();
@@ -1461,7 +1459,7 @@ pub fn show_epub_reader(
         let next = next.clone();
         let bookmark_button = bookmark_button.clone();
         let view_for_focus = view.clone();
-        key_controller.connect_key_pressed(move |_, keyval, _keycode, modifiers| {
+        crate::reader_host::set_tab_key_handler(&reader_tab, move |keyval, modifiers| {
             if keyval == gdk::Key::z && modifiers.contains(gdk::ModifierType::CONTROL_MASK) {
                 if modifiers.contains(gdk::ModifierType::SHIFT_MASK) {
                     epub_redo();
@@ -1490,11 +1488,11 @@ pub fn show_epub_reader(
             // Prev/next chapter — reuses the prev/next buttons' own handlers via
             // `emit_clicked` rather than duplicating their chapter-boundary logic.
             match keyval {
-                gdk::Key::Left => {
+                gdk::Key::Left | gdk::Key::KP_Left => {
                     prev.emit_clicked();
                     return glib::Propagation::Stop;
                 }
-                gdk::Key::Right => {
+                gdk::Key::Right | gdk::Key::KP_Right => {
                     next.emit_clicked();
                     return glib::Propagation::Stop;
                 }
@@ -1506,7 +1504,6 @@ pub fn show_epub_reader(
             }
             glib::Propagation::Proceed
         });
-        view.add_controller(key_controller);
     }
 
     {

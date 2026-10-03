@@ -12,6 +12,7 @@ use gtk4::{gdk, glib, Orientation};
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
+use crate::page_geom::PageGeom;
 use crate::{color_swatch, note_edit_widget, popover_button, popover_separator, ReaderHost};
 
 /// Live state of an open PDF reader window.
@@ -26,10 +27,11 @@ struct ReaderState {
     /// highlight added. Held here (not re-read from the library each time) so the in-memory
     /// list and the on-screen render never disagree mid-session.
     annotations: fond_bib::AnnotationSidecar,
-    /// The current page's rendered pixel size and PDF-point size, refreshed by `render()` —
-    /// the scale a drag-selected rectangle is converted through when saving a new highlight.
+    /// The current page's rendered pixel size, refreshed by `render()` — the scale a
+    /// drag-selected rectangle is converted through when saving a new highlight.
     render_px: (u32, u32),
-    page_pts: (f32, f32),
+    /// Each page's box origin/size and `/Rotate`, read on first use — see `PageGeom`.
+    page_geoms: RefCell<std::collections::HashMap<u16, Option<PageGeom>>>,
     /// Which kind the next drag creates — set by the mode `DropDown`, defaulting to
     /// `Highlight`. `Note` is never drawn this way (it has no on-page region); it's added
     /// via the separate "Note…" button instead. `None` is the drop-down's "Select text"
@@ -89,6 +91,24 @@ struct ReaderState {
     /// rewritten to the host on every add/remove, same lifecycle as `annotations`. Kept
     /// sorted so the Notes sidebar's "Bookmarks" section lists them in page order.
     bookmarks: Vec<u32>,
+}
+
+impl ReaderState {
+    fn geom(&self, page: u16) -> Option<PageGeom> {
+        if let Some(cached) = self.page_geoms.borrow().get(&page) {
+            return *cached;
+        }
+        let geom = PageGeom::read(self.pdfium, &self.bytes, page);
+        self.page_geoms.borrow_mut().insert(page, geom);
+        geom
+    }
+
+    /// On-screen point size of `page` — for layout only, so falls back to US Letter.
+    fn display_size(&self, page: u16) -> (f32, f32) {
+        self.geom(page)
+            .map(|g| g.display_size())
+            .unwrap_or((612.0, 792.0))
+    }
 }
 
 /// How many undo steps a PDF reader session keeps before dropping the oldest.
@@ -193,48 +213,26 @@ fn build_drag_preview_overlay(
             // what's about to happen. Falls back to the plain rectangle over blank space
             // (a figure, a margin) where there's no text to hug.
             let page = page_of();
-            let page_pts = {
-                let r = reader.borrow();
-                fond_doc::page_size(r.pdfium, &r.bytes, page).unwrap_or((0.0, 0.0))
-            };
-            let line_rects = (page_pts.0 > 0.0 && page_pts.1 > 0.0 && w > 0 && h > 0)
+            let line_rects = (w > 0 && h > 0)
                 .then(|| {
-                    let scale_x = w as f64 / page_pts.0 as f64;
-                    let scale_y = h as f64 / page_pts.1 as f64;
-                    let to_pdf = |px: f64, py: f64| {
-                        let x = px.clamp(0.0, w as f64) / scale_x;
-                        let y = page_pts.1 as f64 - py.clamp(0.0, h as f64) / scale_y;
-                        (x, y)
-                    };
-                    let (sx, sy) = to_pdf(x0, y0);
-                    let (ex, ey) = to_pdf(x1, y1);
                     let r = reader.borrow();
-                    fond_doc::select_text_range(
+                    let geom = r.geom(page)?;
+                    let (w, h) = (w as f64, h as f64);
+                    let (sx, sy) = geom.px_to_pdf(x0, y0, w, h);
+                    let (ex, ey) = geom.px_to_pdf(x1, y1, w, h);
+                    let sel = fond_doc::select_text_range(
                         r.pdfium, &r.bytes, page, sx as f32, sy as f32, ex as f32, ey as f32,
                     )
                     .ok()
-                    .flatten()
+                    .flatten()?;
+                    Some(
+                        sel.quads
+                            .iter()
+                            .map(|q| geom.quad_px_bounds(q, w, h))
+                            .collect::<Vec<_>>(),
+                    )
                 })
-                .flatten()
-                .map(|sel| {
-                    let scale_x = w as f64 / page_pts.0 as f64;
-                    let scale_y = h as f64 / page_pts.1 as f64;
-                    sel.quads
-                        .iter()
-                        .map(|q| {
-                            let min_x = q[0].min(q[2]).min(q[4]).min(q[6]);
-                            let max_x = q[0].max(q[2]).max(q[4]).max(q[6]);
-                            let min_y = q[1].min(q[3]).min(q[5]).min(q[7]);
-                            let max_y = q[1].max(q[3]).max(q[5]).max(q[7]);
-                            (
-                                min_x * scale_x,
-                                h as f64 - max_y * scale_y,
-                                max_x * scale_x,
-                                h as f64 - min_y * scale_y,
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                });
+                .flatten();
 
             match line_rects {
                 Some(rects) if !rects.is_empty() => {
@@ -359,12 +357,14 @@ fn invert_rgba(rgba: &mut [u8]) {
 /// can never visually disagree about what a page looks like. Returns the texture, its pixel
 /// size, and the page's PDF-point size (the scale a drag-selected rectangle on that page
 /// converts through).
-fn render_pdf_page_texture(
-    r: &ReaderState,
-    page: u16,
-) -> Option<(gdk::Texture, u32, u32, (f32, f32))> {
+fn render_pdf_page_texture(r: &ReaderState, page: u16) -> Option<(gdk::Texture, u32, u32)> {
     let width = (READER_BASE_WIDTH * r.zoom) as u32;
-    let page_pts = fond_doc::page_size(r.pdfium, &r.bytes, page).unwrap_or((0.0, 0.0));
+    let geom = r.geom(page);
+    let page_pts = geom.map(|g| g.display_size()).unwrap_or((0.0, 0.0));
+    let to_display = |quads: &[[f64; 8]]| match geom {
+        Some(g) => g.quads_to_display(quads),
+        None => quads.to_vec(),
+    };
     let mut rp = fond_doc::render_page(r.pdfium, &r.bytes, page, width).ok()?;
     let current_page = page as u32 + 1;
 
@@ -388,8 +388,10 @@ fn render_pdf_page_texture(
             fond_bib::AnnotationKind::Underline => fond_doc::MarkupKind::Underline,
             fond_bib::AnnotationKind::Strikeout => fond_doc::MarkupKind::Strikeout,
         };
-        let items: Vec<(fond_doc::MarkupKind, [f64; 8])> =
-            a.quadpoints.iter().map(|q| (kind, *q)).collect();
+        let items: Vec<(fond_doc::MarkupKind, [f64; 8])> = to_display(&a.quadpoints)
+            .into_iter()
+            .map(|q| (kind, q))
+            .collect();
         fond_doc::blend_annotations(
             &mut rp,
             page_pts.0,
@@ -407,7 +409,7 @@ fn render_pdf_page_texture(
                 &mut rp,
                 page_pts.0,
                 page_pts.1,
-                &current.quads,
+                &to_display(&current.quads),
                 SEARCH_MATCH_RGBA,
             );
         }
@@ -420,7 +422,13 @@ fn render_pdf_page_texture(
     // same while dragging and once settled.
     if let Some((sel_page, _, quads)) = &r.last_selection {
         if *sel_page == page {
-            fond_doc::blend_highlights(&mut rp, page_pts.0, page_pts.1, quads, SELECTION_RGBA);
+            fond_doc::blend_highlights(
+                &mut rp,
+                page_pts.0,
+                page_pts.1,
+                &to_display(quads),
+                SELECTION_RGBA,
+            );
         }
     }
 
@@ -440,11 +448,11 @@ fn render_pdf_page_texture(
         &data,
         (out_w * 4) as usize,
     );
-    Some((texture.upcast(), out_w, out_h, page_pts))
+    Some((texture.upcast(), out_w, out_h))
 }
 
 /// Convert a drag gesture's start/end (widget-local pixel coordinates on `page`'s own
-/// render, at that page's own `render_w`×`render_h` / `page_w_pts`×`page_h_pts` scale) into
+/// render, at that page's own `render_w`×`render_h` scale and `PageGeom`) into
 /// PDF-space quadpoints — hugging real text if the drag covers any, same as
 /// `select_text_in_rect` documents — and save a new annotation for it. The shared save path
 /// for both the page-by-page view's drag handler and continuous-scroll mode's per-page ones,
@@ -457,8 +465,7 @@ fn render_pdf_page_texture(
 struct DragGeometry {
     render_w: u32,
     render_h: u32,
-    page_w_pts: f32,
-    page_h_pts: f32,
+    page: Option<PageGeom>,
     start_x: f64,
     start_y: f64,
     end_x: f64,
@@ -473,25 +480,67 @@ fn drag_pdf_points(geom: &DragGeometry) -> Option<((f64, f64), (f64, f64))> {
     let &DragGeometry {
         render_w,
         render_h,
-        page_w_pts,
-        page_h_pts,
+        page,
         start_x,
         start_y,
         end_x,
         end_y,
     } = geom;
-    if render_w == 0 || render_h == 0 || page_w_pts <= 0.0 || page_h_pts <= 0.0 {
+    let page = page?;
+    if render_w == 0 || render_h == 0 {
         return None;
     }
-    let scale_x = render_w as f64 / page_w_pts as f64;
-    let scale_y = render_h as f64 / page_h_pts as f64;
-    let to_pdf = |px: f64, py: f64| {
-        let x = px.clamp(0.0, render_w as f64) / scale_x;
-        // PDF y is bottom-up; the drag's y is top-down pixel space.
-        let y = page_h_pts as f64 - py.clamp(0.0, render_h as f64) / scale_y;
-        (x, y)
-    };
-    Some((to_pdf(start_x, start_y), to_pdf(end_x, end_y)))
+    let (w, h) = (render_w as f64, render_h as f64);
+    Some((
+        page.px_to_pdf(start_x, start_y, w, h),
+        page.px_to_pdf(end_x, end_y, w, h),
+    ))
+}
+
+/// The text under `quads` (one per line, user space), read back through PDFium's bounded-
+/// text call. `fond_doc::select_text_range`'s own `text` is built from individual glyphs and
+/// skips PDFium's generated spaces, so on the many PDFs that position words instead of
+/// storing space characters (LaTeX and Typst output, for a start) it runs every word
+/// together. Each line's box is shrunk to its middle band so neighbouring lines' glyph boxes,
+/// which often overlap vertically, don't leak in.
+fn selection_text(r: &ReaderState, page: u16, quads: &[[f64; 8]]) -> Option<String> {
+    let document = r.pdfium.load_pdf_from_byte_slice(&r.bytes, None).ok()?;
+    let pdf_page = document.pages().get(page).ok()?;
+    let text = pdf_page.text().ok()?;
+    let lines: Vec<String> = quads
+        .iter()
+        .map(|q| {
+            let (l, rt) = (
+                q[0].min(q[2]).min(q[4]).min(q[6]),
+                q[0].max(q[2]).max(q[4]).max(q[6]),
+            );
+            let (b, t) = (
+                q[1].min(q[3]).min(q[5]).min(q[7]),
+                q[1].max(q[3]).max(q[5]).max(q[7]),
+            );
+            let dx = ((rt - l) * 0.25).min(0.5);
+            let dy = (t - b) * 0.25;
+            let rect = pdfium_render::prelude::PdfRect::new_from_values(
+                (b + dy) as f32,
+                (l + dx) as f32,
+                (t - dy) as f32,
+                (rt - dx) as f32,
+            );
+            text.inside_rect(rect)
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .filter(|line| !line.is_empty())
+        .collect();
+    (!lines.is_empty()).then(|| lines.join(" "))
+}
+
+fn copy_to_clipboard(host: &Rc<dyn ReaderHost>, text: &str) {
+    if let Some(display) = gdk::Display::default() {
+        display.clipboard().set_text(text);
+    }
+    host.notify("Copied to clipboard");
 }
 
 /// Copies the text under a "Select text" mode drag to the clipboard instead of saving an
@@ -525,11 +574,9 @@ fn copy_drag_selection(
     };
     match selection {
         Some(sel) if !sel.text.trim().is_empty() => {
-            if let Some(display) = gdk::Display::default() {
-                display.clipboard().set_text(&sel.text);
-            }
-            reader.borrow_mut().last_selection = Some((page, sel.text, sel.quads));
-            host.notify("Copied to clipboard");
+            let text = selection_text(&reader.borrow(), page, &sel.quads).unwrap_or(sel.text);
+            copy_to_clipboard(host, &text);
+            reader.borrow_mut().last_selection = Some((page, text, sel.quads));
             true
         }
         _ => {
@@ -578,7 +625,10 @@ fn save_drag_annotation(
         .ok()
         .flatten()
     }
-    .map(|sel| (sel.quads, Some(sel.text)))
+    .map(|sel| {
+        let text = selection_text(&reader.borrow(), page, &sel.quads).unwrap_or(sel.text);
+        (sel.quads, Some(text))
+    })
     .unwrap_or_else(|| {
         let x0 = start.0.min(end.0);
         let x1 = start.0.max(end.0);
@@ -653,36 +703,13 @@ fn annotation_at_pdf_point(
         .map(|a| a.id.clone())
 }
 
-/// Convert a click's picture-local pixel position to PDF-space point coordinates, given the
-/// page's rendered pixel size and PDF-point size — the inverse of the drag-to-annotate math
-/// in `save_drag_annotation`.
-fn px_to_pdf_point(
-    click_x: f64,
-    click_y: f64,
-    render_w: u32,
-    render_h: u32,
-    page_w_pts: f32,
-    page_h_pts: f32,
-) -> Option<(f32, f32)> {
-    if render_w == 0 || render_h == 0 || page_w_pts <= 0.0 || page_h_pts <= 0.0 {
-        return None;
-    }
-    let scale_x = render_w as f64 / page_w_pts as f64;
-    let scale_y = render_h as f64 / page_h_pts as f64;
-    let x_pt = (click_x / scale_x) as f32;
-    // PDF y is bottom-up; the click's y is top-down pixel space.
-    let y_pt = (page_h_pts as f64 - click_y / scale_y) as f32;
-    Some((x_pt, y_pt))
-}
-
 /// The geometry a right-click needs to hit-test against a page's annotations and, if it
 /// lands on one, resolve back to PDF space for the popover's own bookkeeping. Grouped like
 /// `DragGeometry` for the same reason: fewer loose parameters on `show_pdf_context_menu`.
 struct ClickGeometry {
     render_w: u32,
     render_h: u32,
-    page_w_pts: f32,
-    page_h_pts: f32,
+    page: Option<PageGeom>,
     click_x: f64,
     click_y: f64,
 }
@@ -708,15 +735,16 @@ fn show_pdf_context_menu(
     let ClickGeometry {
         render_w,
         render_h,
-        page_w_pts,
-        page_h_pts,
+        page: page_geom,
         click_x,
         click_y,
     } = geom;
 
-    let hit_id = px_to_pdf_point(click_x, click_y, render_w, render_h, page_w_pts, page_h_pts)
+    let hit_id = page_geom
+        .filter(|_| render_w > 0 && render_h > 0)
+        .map(|g| g.px_to_pdf(click_x, click_y, render_w as f64, render_h as f64))
         .and_then(|(x_pt, y_pt)| {
-            annotation_at_pdf_point(&reader.borrow().annotations, page, x_pt, y_pt)
+            annotation_at_pdf_point(&reader.borrow().annotations, page, x_pt as f32, y_pt as f32)
         });
 
     let popover = gtk4::Popover::new();
@@ -735,6 +763,23 @@ fn show_pdf_context_menu(
     rows.set_margin_start(6);
     rows.set_margin_end(6);
     rows.set_width_request(240);
+
+    let selection_here = reader
+        .borrow()
+        .last_selection
+        .as_ref()
+        .filter(|(sel_page, _, _)| *sel_page == page)
+        .map(|(_, text, _)| text.clone());
+    if let Some(text) = selection_here.clone() {
+        let copy = popover_button("Copy selected text", false);
+        let host = host.clone();
+        let popover = popover.clone();
+        copy.connect_clicked(move |_| {
+            copy_to_clipboard(&host, &text);
+            popover.popdown();
+        });
+        rows.append(&copy);
+    }
 
     match hit_id {
         Some(id) => {
@@ -757,7 +802,32 @@ fn show_pdf_context_menu(
             kind_label.set_xalign(0.0);
             kind_label.add_css_class("dim-label");
             kind_row.append(&kind_label);
+            if selection_here.is_some() {
+                rows.append(&popover_separator());
+            }
             rows.append(&kind_row);
+
+            // Re-read from the page rather than trusting `snippet`, which for annotations
+            // saved before `selection_text` existed has its words run together.
+            let marked_text = selection_text(&reader.borrow(), page, &annotation.quadpoints)
+                .or_else(|| annotation.snippet.clone())
+                .filter(|t| !t.trim().is_empty());
+            if let Some(text) = marked_text {
+                let label = match annotation.kind {
+                    fond_bib::AnnotationKind::Underline => "Copy underlined text",
+                    fond_bib::AnnotationKind::Strikeout => "Copy struck-out text",
+                    fond_bib::AnnotationKind::Note => "Copy noted text",
+                    fond_bib::AnnotationKind::Highlight => "Copy highlighted text",
+                };
+                let copy = popover_button(label, false);
+                let host = host.clone();
+                let popover = popover.clone();
+                copy.connect_clicked(move |_| {
+                    copy_to_clipboard(&host, &text);
+                    popover.popdown();
+                });
+                rows.append(&copy);
+            }
 
             let save_note = {
                 let host = host.clone();
@@ -838,11 +908,7 @@ fn show_pdf_context_menu(
             // same underlying dialog either way (it already pre-fills from the selection and
             // carries its quadpoints when present), just a label that says what's actually
             // about to happen instead of always the generic one.
-            let has_selection_here = reader
-                .borrow()
-                .last_selection
-                .as_ref()
-                .is_some_and(|(sel_page, _, _)| *sel_page == page);
+            let has_selection_here = selection_here.is_some();
             let add_note = popover_button(
                 if has_selection_here {
                     "Create note from selection…"
@@ -931,10 +997,7 @@ fn build_continuous_view(
 
         // Plausible size from the page's own point dimensions — cheap metadata, not a
         // rasterization — so the layout is correct before this page's texture has rendered.
-        let pts = {
-            let r = reader.borrow();
-            fond_doc::page_size(r.pdfium, &r.bytes, page).unwrap_or((612.0, 792.0))
-        };
+        let pts = reader.borrow().display_size(page);
         let w = (READER_BASE_WIDTH * zoom) as u32;
         let h = if pts.0 > 0.0 {
             (w as f32 * pts.1 / pts.0) as u32
@@ -1000,15 +1063,10 @@ fn build_continuous_view(
                     let end_y = start_y + offset_y;
                     let render_w = this_picture.width().max(0) as u32;
                     let render_h = this_picture.height().max(0) as u32;
-                    let page_pts = {
-                        let r = reader.borrow();
-                        fond_doc::page_size(r.pdfium, &r.bytes, page).unwrap_or((0.0, 0.0))
-                    };
                     let geom = DragGeometry {
                         render_w,
                         render_h,
-                        page_w_pts: page_pts.0,
-                        page_h_pts: page_pts.1,
+                        page: reader.borrow().geom(page),
                         start_x,
                         start_y,
                         end_x,
@@ -1048,10 +1106,7 @@ fn build_continuous_view(
             click.connect_pressed(move |_gesture, _n, x, y| {
                 let render_w = this_picture.width().max(0) as u32;
                 let render_h = this_picture.height().max(0) as u32;
-                let page_pts = {
-                    let r = reader.borrow();
-                    fond_doc::page_size(r.pdfium, &r.bytes, page).unwrap_or((0.0, 0.0))
-                };
+                let page_geom = reader.borrow().geom(page);
                 let refresh: Rc<dyn Fn()> = {
                     let reader = reader.clone();
                     Rc::new(move || render_continuous_page(&reader, page))
@@ -1069,8 +1124,7 @@ fn build_continuous_view(
                     ClickGeometry {
                         render_w,
                         render_h,
-                        page_w_pts: page_pts.0,
-                        page_h_pts: page_pts.1,
+                        page: page_geom,
                         click_x: x,
                         click_y: y,
                     },
@@ -1214,7 +1268,7 @@ fn render_continuous_page(reader: &Rc<RefCell<ReaderState>>, page: u16) {
         return;
     };
     let mut r = reader.borrow_mut();
-    if let Some((texture, w, h, _)) = render_pdf_page_texture(&r, page) {
+    if let Some((texture, w, h)) = render_pdf_page_texture(&r, page) {
         picture.set_paintable(Some(&texture));
         picture.set_size_request(w as i32, h as i32);
         if let Some(flag) = r.continuous_rendered.get_mut(page as usize) {
@@ -1410,7 +1464,7 @@ pub fn show_pdf_reader(
         zoom: 1.0,
         annotations,
         render_px: (0, 0),
-        page_pts: (0.0, 0.0),
+        page_geoms: RefCell::new(std::collections::HashMap::new()),
         draw_kind: Some(fond_bib::AnnotationKind::Highlight),
         last_selection: None,
         search_matches: Vec::new(),
@@ -1744,9 +1798,8 @@ pub fn show_pdf_reader(
         Rc::new(move || {
             let mut r = reader.borrow_mut();
             match render_pdf_page_texture(&r, r.page) {
-                Some((texture, w, h, page_pts)) => {
+                Some((texture, w, h)) => {
                     r.render_px = (w, h);
-                    r.page_pts = page_pts;
                     picture.set_paintable(Some(&texture));
                     picture.set_size_request(w as i32, h as i32);
                 }
@@ -1756,7 +1809,7 @@ pub fn show_pdf_reader(
                 let right_page = r.page + 1;
                 if right_page < r.count {
                     match render_pdf_page_texture(&r, right_page) {
-                        Some((texture, w, h, _)) => {
+                        Some((texture, w, h)) => {
                             right_picture.set_paintable(Some(&texture));
                             right_picture.set_size_request(w as i32, h as i32);
                             right_picture.set_visible(true);
@@ -1876,18 +1929,11 @@ pub fn show_pdf_reader(
         redo_button.connect_clicked(move |_| redo());
     }
     {
-        let key_controller = gtk4::EventControllerKey::new();
-        // Bubble phase (the default) delivers a key press to whatever's focused first —
-        // and with a page-full of buttons/dropdowns/toggles to focus, GTK's own
-        // directional-navigation binds Left/Right/Home/End on most of them to move focus
-        // between widgets rather than letting the event bubble here at all, so page
-        // navigation silently did nothing unless the picture itself happened to hold
-        // focus. Capture phase runs top-down, before any child's own key bindings, so this
-        // intercepts navigation keys regardless of what currently has focus — matching
-        // what a reader's page-turn shortcuts should do. The one thing that must still work
-        // normally is editing `page_entry`/the search entry (Left/Right/Home/End move the
-        // text cursor there), so those are explicitly passed through below.
-        key_controller.set_propagation_phase(gtk4::PropagationPhase::Capture);
+        // Registered with the tab host rather than added to `view`: the host catches keys at
+        // the window in the capture phase (see `reader_host::set_tab_key_handler`), so
+        // navigation works whatever has focus in the reader window, not just widgets inside
+        // this tab's own content. Editing `page_entry`/the search entry/a note still needs
+        // Left/Right/Home/End/Space for the text cursor, so those pass through below.
         let undo = undo.clone();
         let redo = redo.clone();
         let prev = prev.clone();
@@ -1898,7 +1944,7 @@ pub fn show_pdf_reader(
         let continuous_scroll = continuous_scroll.clone();
         let view_for_focus = view.clone();
         let bookmark_button = bookmark_button.clone();
-        key_controller.connect_key_pressed(move |_, keyval, _keycode, modifiers| {
+        crate::reader_host::set_tab_key_handler(&reader_tab, move |keyval, modifiers| {
             if keyval == gdk::Key::z && modifiers.contains(gdk::ModifierType::CONTROL_MASK) {
                 if modifiers.contains(gdk::ModifierType::SHIFT_MASK) {
                     redo();
@@ -1921,11 +1967,23 @@ pub fn show_pdf_reader(
             // two-page-spread-aware) via `emit_clicked`, rather than duplicating that logic
             // here. Space/Backspace match the common reader convention (Preview, Acrobat).
             match keyval {
-                gdk::Key::Left | gdk::Key::Up | gdk::Key::Page_Up | gdk::Key::BackSpace => {
+                gdk::Key::Left
+                | gdk::Key::Up
+                | gdk::Key::Page_Up
+                | gdk::Key::BackSpace
+                | gdk::Key::KP_Left
+                | gdk::Key::KP_Up
+                | gdk::Key::KP_Page_Up => {
                     prev.emit_clicked();
                     return glib::Propagation::Stop;
                 }
-                gdk::Key::Right | gdk::Key::Down | gdk::Key::Page_Down | gdk::Key::space => {
+                gdk::Key::Right
+                | gdk::Key::Down
+                | gdk::Key::Page_Down
+                | gdk::Key::space
+                | gdk::Key::KP_Right
+                | gdk::Key::KP_Down
+                | gdk::Key::KP_Page_Down => {
                     next.emit_clicked();
                     return glib::Propagation::Stop;
                 }
@@ -1933,7 +1991,7 @@ pub fn show_pdf_reader(
                     bookmark_button.emit_clicked();
                     return glib::Propagation::Stop;
                 }
-                gdk::Key::Home => {
+                gdk::Key::Home | gdk::Key::KP_Home => {
                     if continuous_toggle.is_active() {
                         scroll_continuous_to_page(&reader, &continuous_scroll, 0);
                     } else {
@@ -1942,7 +2000,7 @@ pub fn show_pdf_reader(
                     }
                     return glib::Propagation::Stop;
                 }
-                gdk::Key::End => {
+                gdk::Key::End | gdk::Key::KP_End => {
                     let last = reader.borrow().count.saturating_sub(1);
                     if continuous_toggle.is_active() {
                         scroll_continuous_to_page(&reader, &continuous_scroll, last);
@@ -1956,7 +2014,6 @@ pub fn show_pdf_reader(
             }
             glib::Propagation::Proceed
         });
-        view.add_controller(key_controller);
     }
 
     // Contents/Notes sidebar: persistent (not a popover) so it stays visible while
@@ -2454,21 +2511,14 @@ pub fn show_pdf_reader(
                 let end_x = start_x + offset_x;
                 let end_y = start_y + offset_y;
 
-                let (page, render_w, render_h, page_w_pts, page_h_pts) = {
+                let (page, render_w, render_h, page_geom) = {
                     let r = reader.borrow();
-                    (
-                        r.page,
-                        r.render_px.0,
-                        r.render_px.1,
-                        r.page_pts.0,
-                        r.page_pts.1,
-                    )
+                    (r.page, r.render_px.0, r.render_px.1, r.geom(r.page))
                 };
                 let geom = DragGeometry {
                     render_w,
                     render_h,
-                    page_w_pts,
-                    page_h_pts,
+                    page: page_geom,
                     start_x,
                     start_y,
                     end_x,
@@ -2516,15 +2566,9 @@ pub fn show_pdf_reader(
                 host.notify("Rotate back to 0° to edit annotations");
                 return;
             }
-            let (page, render_w, render_h, page_w_pts, page_h_pts) = {
+            let (page, render_w, render_h, page_geom) = {
                 let r = reader.borrow();
-                (
-                    r.page,
-                    r.render_px.0,
-                    r.render_px.1,
-                    r.page_pts.0,
-                    r.page_pts.1,
-                )
+                (r.page, r.render_px.0, r.render_px.1, r.geom(r.page))
             };
             let refresh: Rc<dyn Fn()> = {
                 let reader = reader.clone();
@@ -2548,8 +2592,7 @@ pub fn show_pdf_reader(
                 ClickGeometry {
                     render_w,
                     render_h,
-                    page_w_pts,
-                    page_h_pts,
+                    page: page_geom,
                     click_x: x,
                     click_y: y,
                 },
@@ -2757,7 +2800,7 @@ pub fn show_pdf_reader(
             let viewport_height = scroll.height().max(1) as f64;
             let page_pts = {
                 let r = reader.borrow();
-                fond_doc::page_size(r.pdfium, &r.bytes, r.page).unwrap_or((612.0, 792.0))
+                r.display_size(r.page)
             };
             let fit_width_zoom = viewport_width / READER_BASE_WIDTH;
             let aspect = if page_pts.0 > 0.0 {
