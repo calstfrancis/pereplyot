@@ -19,13 +19,25 @@ pub struct Config {
     /// Custom labels for the reader's four highlight colours, in palette order; blank means
     /// the colour's default label.
     pub highlight_labels: Vec<String>,
+    /// Library card width in px (`LIBRARY_SIZE_MIN..=LIBRARY_SIZE_MAX`).
+    pub library_card_size: u32,
+    /// "added" | "title".
+    pub library_sort: String,
+    /// The shelf last shown in the Library; empty means all documents.
+    pub library_shelf: String,
 }
+
+pub const LIBRARY_SIZE_MIN: u32 = 80;
+pub const LIBRARY_SIZE_MAX: u32 = 280;
 
 impl Default for Config {
     fn default() -> Self {
         Config {
             theme: "system".to_string(),
             highlight_labels: Vec::new(),
+            library_card_size: 120,
+            library_sort: "added".to_string(),
+            library_shelf: String::new(),
         }
     }
 }

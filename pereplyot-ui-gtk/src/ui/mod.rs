@@ -23,6 +23,8 @@ pub struct Widgets {
     /// Cards for intentionally-added documents — cleared and repopulated by
     /// `window::rebuild_library` whenever Library membership changes.
     pub library_flow: gtk4::FlowBox,
+    /// The row of shelf tabs above the cards — rebuilt by `window::rebuild_library`.
+    pub library_shelf_bar: gtk4::Box,
     /// Shown only when the Library is empty; toggled by `window::rebuild_library`.
     pub library_empty_hint: gtk4::Label,
     pub config: Rc<RefCell<Config>>,

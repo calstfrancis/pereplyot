@@ -1920,6 +1920,9 @@ pub fn show_pdf_reader(
     let reader_tab = crate::reader_host::open_reader_tab(window, title, &view);
     let reader_window = reader_tab.host_window.clone();
     crate::register_reader(pdf_hash, &reader_tab);
+    crate::label_icon_buttons(&header_start);
+    crate::label_icon_buttons(&header_end);
+    crate::label_icon_buttons(&statusbar);
     crate::reader_host::set_tab_header(&reader_tab, header_start, title_widget, header_end);
 
     // Render the current page into the Picture (via the shared helper both this view and
@@ -2084,6 +2087,11 @@ pub fn show_pdf_reader(
         let continuous_scroll = continuous_scroll.clone();
         let view_for_focus = view.clone();
         let bookmark_button = bookmark_button.clone();
+        let zoom_in_key = zoom_in.clone();
+        let zoom_out_key = zoom_out.clone();
+        let zoom_fit_key = zoom_fit_width.clone();
+        let palette_for_keys = palette.clone();
+        let search_for_keys = search_entry.clone();
         crate::reader_host::set_tab_key_handler(&reader_tab, move |keyval, modifiers| {
             if (keyval == gdk::Key::z || keyval == gdk::Key::Z)
                 && modifiers.contains(gdk::ModifierType::CONTROL_MASK)
@@ -2095,6 +2103,27 @@ pub fn show_pdf_reader(
                 }
                 return glib::Propagation::Stop;
             }
+            if modifiers.contains(gdk::ModifierType::CONTROL_MASK) {
+                match keyval {
+                    gdk::Key::plus | gdk::Key::equal | gdk::Key::KP_Add => {
+                        zoom_in_key.emit_clicked();
+                        return glib::Propagation::Stop;
+                    }
+                    gdk::Key::minus | gdk::Key::KP_Subtract => {
+                        zoom_out_key.emit_clicked();
+                        return glib::Propagation::Stop;
+                    }
+                    gdk::Key::_0 | gdk::Key::KP_0 => {
+                        zoom_fit_key.emit_clicked();
+                        return glib::Propagation::Stop;
+                    }
+                    gdk::Key::f | gdk::Key::F => {
+                        search_for_keys.grab_focus();
+                        return glib::Propagation::Stop;
+                    }
+                    _ => {}
+                }
+            }
             let focus_in_text_entry = view_for_focus
                 .root()
                 .and_then(|root| root.focus())
@@ -2103,6 +2132,31 @@ pub fn show_pdf_reader(
                 });
             if focus_in_text_entry {
                 return glib::Propagation::Proceed;
+            }
+            if crate::focus_owns_activation_keys(&view_for_focus)
+                && matches!(
+                    keyval,
+                    gdk::Key::space
+                        | gdk::Key::Up
+                        | gdk::Key::Down
+                        | gdk::Key::KP_Up
+                        | gdk::Key::KP_Down
+                )
+            {
+                return glib::Propagation::Proceed;
+            }
+            if modifiers.is_empty() {
+                let index = match keyval {
+                    gdk::Key::_1 => Some(0),
+                    gdk::Key::_2 => Some(1),
+                    gdk::Key::_3 => Some(2),
+                    gdk::Key::_4 => Some(3),
+                    _ => None,
+                };
+                if let Some(i) = index {
+                    crate::palette::select_color(&palette_for_keys, true, i);
+                    return glib::Propagation::Stop;
+                }
             }
             // Left/Right, Up/Down, Space/Backspace, and Page_Up/Page_Down reuse the
             // prev/next buttons' own click handlers (continuous-scroll-aware,
@@ -2915,6 +2969,39 @@ pub fn show_pdf_reader(
             *zoom_debounce.borrow_mut() = Some(id);
         })
     };
+    for target in [scroll.clone(), continuous_scroll.clone()] {
+        let wheel = gtk4::EventControllerScroll::new(gtk4::EventControllerScrollFlags::VERTICAL);
+        wheel.set_propagation_phase(gtk4::PropagationPhase::Capture);
+        {
+            let request_zoom = request_zoom.clone();
+            let zoom_baseline = zoom_baseline.clone();
+            wheel.connect_scroll(move |ctl, _dx, dy| {
+                if !ctl
+                    .current_event_state()
+                    .contains(gdk::ModifierType::CONTROL_MASK)
+                {
+                    return glib::Propagation::Proceed;
+                }
+                request_zoom(zoom_baseline() * (1.0 - dy * 0.1));
+                glib::Propagation::Stop
+            });
+        }
+        target.add_controller(wheel);
+
+        let pinch = gtk4::GestureZoom::new();
+        pinch.set_propagation_phase(gtk4::PropagationPhase::Capture);
+        let start_zoom = Rc::new(Cell::new(1.0f64));
+        {
+            let start_zoom = start_zoom.clone();
+            let zoom_baseline = zoom_baseline.clone();
+            pinch.connect_begin(move |_, _| start_zoom.set(zoom_baseline()));
+        }
+        {
+            let request_zoom = request_zoom.clone();
+            pinch.connect_scale_changed(move |_, scale| request_zoom(start_zoom.get() * scale));
+        }
+        target.add_controller(pinch);
+    }
     {
         let request_zoom = request_zoom.clone();
         let zoom_baseline = zoom_baseline.clone();

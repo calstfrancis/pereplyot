@@ -13,8 +13,8 @@ use fond_read_gtk::history::{self, DocKind, HistoryEntry};
 
 use crate::about::show_about;
 use crate::changelog::show_changelog;
-use crate::config::Config;
-use crate::library::{Library, LibraryEntry};
+use crate::config::{Config, LIBRARY_SIZE_MAX, LIBRARY_SIZE_MIN};
+use crate::library::{Library, LibraryEntry, Sort};
 use crate::reader_host;
 use crate::thumbnail;
 use crate::ui::{menu, toast, Widgets};
@@ -113,7 +113,43 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
     library_empty_hint.set_margin_start(24);
     library_empty_hint.set_margin_end(24);
 
+    let library_shelf_bar = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+    let shelf_scroll = gtk4::ScrolledWindow::new();
+    shelf_scroll.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Never);
+    shelf_scroll.set_hexpand(true);
+    shelf_scroll.set_child(Some(&library_shelf_bar));
+
+    let sort_drop = gtk4::DropDown::from_strings(&["Recently added", "Title"]);
+    sort_drop.set_selected(u32::from(config.library_sort == "title"));
+    sort_drop.set_tooltip_text(Some("Sort the Library"));
+
+    let size_scale = gtk4::Scale::with_range(
+        gtk4::Orientation::Horizontal,
+        LIBRARY_SIZE_MIN as f64,
+        LIBRARY_SIZE_MAX as f64,
+        10.0,
+    );
+    size_scale.set_value(config.library_card_size as f64);
+    size_scale.set_draw_value(false);
+    size_scale.set_width_request(130);
+    size_scale.set_tooltip_text(Some("Card size"));
+    size_scale.update_property(&[gtk4::accessible::Property::Label("Library card size")]);
+
+    let library_controls = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    library_controls.set_halign(gtk4::Align::End);
+    library_controls.append(&sort_drop);
+    library_controls.append(&gtk4::Image::from_icon_name("view-grid-symbolic"));
+    library_controls.append(&size_scale);
+
+    let library_tools = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
+    library_tools.set_margin_top(8);
+    library_tools.set_margin_start(12);
+    library_tools.set_margin_end(12);
+    library_tools.append(&shelf_scroll);
+    library_tools.append(&library_controls);
+
     let library_page = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    library_page.append(&library_tools);
     library_page.append(&library_empty_hint);
     library_page.append(&library_flow);
     let library_scroll = gtk4::ScrolledWindow::new();
@@ -180,6 +216,7 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
         toasts,
         history_box,
         library_flow,
+        library_shelf_bar,
         library_empty_hint,
         config: Rc::new(RefCell::new(config)),
         library: RefCell::new(Library::load()),
@@ -190,6 +227,37 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
         version_button.connect_clicked(move |_| show_changelog(&widgets.window));
     }
     menu_button.set_popover(Some(&menu::build(&widgets)));
+
+    {
+        let widgets = widgets.clone();
+        sort_drop.connect_selected_notify(move |d| {
+            {
+                let mut c = widgets.config.borrow_mut();
+                c.library_sort = if d.selected() == 1 { "title" } else { "added" }.to_string();
+                c.save();
+            }
+            rebuild_library_cards(&widgets);
+        });
+    }
+    {
+        let widgets = widgets.clone();
+        let pending: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
+        size_scale.connect_value_changed(move |sc| {
+            widgets.config.borrow_mut().library_card_size = sc.value().round() as u32;
+            if let Some(id) = pending.borrow_mut().take() {
+                id.remove();
+            }
+            let widgets = widgets.clone();
+            let slot = pending.clone();
+            let id =
+                glib::timeout_add_local_once(std::time::Duration::from_millis(120), move || {
+                    slot.borrow_mut().take();
+                    widgets.config.borrow().save();
+                    rebuild_library_cards(&widgets);
+                });
+            *pending.borrow_mut() = Some(id);
+        });
+    }
 
     install_actions(app, &widgets);
     install_drop_target(&widgets);
@@ -548,6 +616,7 @@ fn add_to_library(widgets: &Rc<Widgets>, entry: &HistoryEntry) {
         title: entry.title.clone(),
         kind: entry.kind,
         added_at: chrono::Utc::now(),
+        shelf: current_shelf(widgets),
     });
     toast(
         widgets,
@@ -557,13 +626,217 @@ fn add_to_library(widgets: &Rc<Widgets>, entry: &HistoryEntry) {
     rebuild_history(widgets);
 }
 
+/// The shelf currently shown, if it still exists; `None` means "All".
+fn current_shelf(widgets: &Rc<Widgets>) -> Option<String> {
+    let want = widgets.config.borrow().library_shelf.clone();
+    widgets
+        .library
+        .borrow()
+        .shelves()
+        .iter()
+        .find(|s| **s == want)
+        .cloned()
+}
+
 fn rebuild_library(widgets: &Rc<Widgets>) {
+    rebuild_shelf_bar(widgets);
+    rebuild_library_cards(widgets);
+}
+
+fn prompt_name(
+    parent: &adw::ApplicationWindow,
+    heading: &str,
+    initial: &str,
+    ok_label: &str,
+    on_ok: impl Fn(String) + 'static,
+) {
+    let dialog = adw::MessageDialog::new(Some(parent), Some(heading), None);
+    let entry = gtk4::Entry::new();
+    entry.set_text(initial);
+    entry.set_activates_default(true);
+    entry.update_property(&[gtk4::accessible::Property::Label(heading)]);
+    dialog.set_extra_child(Some(&entry));
+    dialog.add_responses(&[("cancel", "Cancel"), ("ok", ok_label)]);
+    dialog.set_response_appearance("ok", adw::ResponseAppearance::Suggested);
+    dialog.set_default_response(Some("ok"));
+    dialog.set_close_response("cancel");
+    dialog.connect_response(None, move |_, id| {
+        if id == "ok" {
+            on_ok(entry.text().to_string());
+        }
+    });
+    dialog.present();
+}
+
+fn new_shelf_prompt(widgets: &Rc<Widgets>, then_file: Option<String>) {
+    let w = widgets.clone();
+    prompt_name(&widgets.window, "New shelf", "", "Create", move |name| {
+        let name = name.trim().to_string();
+        if !w.library.borrow_mut().add_shelf(&name) {
+            toast(&w, "That name is empty or already used");
+            return;
+        }
+        if let Some(hash) = &then_file {
+            w.library.borrow_mut().set_shelf(hash, Some(&name));
+        }
+        w.config.borrow_mut().library_shelf = name;
+        w.config.borrow().save();
+        rebuild_library(&w);
+        rebuild_history(&w);
+    });
+}
+
+fn rebuild_shelf_bar(widgets: &Rc<Widgets>) {
+    let bar = &widgets.library_shelf_bar;
+    while let Some(child) = bar.first_child() {
+        bar.remove(&child);
+    }
+    let selected = current_shelf(widgets);
+    let (total, shelves): (usize, Vec<(String, usize)>) = {
+        let lib = widgets.library.borrow();
+        (
+            lib.entries().len(),
+            lib.shelves()
+                .iter()
+                .map(|s| (s.clone(), lib.count_on(s)))
+                .collect(),
+        )
+    };
+
+    let all = gtk4::ToggleButton::with_label(&format!("All ({total})"));
+    all.add_css_class("flat");
+    all.set_active(selected.is_none());
+    bar.append(&all);
+    {
+        let w = widgets.clone();
+        all.connect_toggled(move |b| {
+            if b.is_active() {
+                w.config.borrow_mut().library_shelf = String::new();
+                w.config.borrow().save();
+                rebuild_library_cards(&w);
+            }
+        });
+    }
+
+    for (name, count) in shelves {
+        let chip = gtk4::ToggleButton::with_label(&format!("{name} ({count})"));
+        chip.add_css_class("flat");
+        chip.set_group(Some(&all));
+        chip.set_tooltip_text(Some("Right-click to rename or delete this shelf"));
+        chip.set_active(selected.as_deref() == Some(name.as_str()));
+        bar.append(&chip);
+        {
+            let w = widgets.clone();
+            let name = name.clone();
+            chip.connect_toggled(move |b| {
+                if b.is_active() {
+                    w.config.borrow_mut().library_shelf = name.clone();
+                    w.config.borrow().save();
+                    rebuild_library_cards(&w);
+                }
+            });
+        }
+        let show_menu = {
+            let w = widgets.clone();
+            let name = name.clone();
+            let chip = chip.clone();
+            Rc::new(move || {
+                let popover = gtk4::Popover::new();
+                let rows = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+                let rename = gtk4::Button::with_label("Rename…");
+                rename.add_css_class("flat");
+                let delete = gtk4::Button::with_label("Delete shelf (keeps documents)");
+                delete.add_css_class("flat");
+                delete.add_css_class("destructive-action");
+                rows.append(&rename);
+                rows.append(&delete);
+                popover.set_child(Some(&rows));
+                {
+                    let w = w.clone();
+                    let name = name.clone();
+                    let popover = popover.clone();
+                    rename.connect_clicked(move |_| {
+                        popover.popdown();
+                        let w2 = w.clone();
+                        let old = name.clone();
+                        prompt_name(&w.window, "Rename shelf", &name, "Rename", move |new| {
+                            if w2.library.borrow_mut().rename_shelf(&old, &new) {
+                                w2.config.borrow_mut().library_shelf = new.trim().to_string();
+                                w2.config.borrow().save();
+                                rebuild_library(&w2);
+                            } else {
+                                toast(&w2, "That name is empty or already used");
+                            }
+                        });
+                    });
+                }
+                {
+                    let w = w.clone();
+                    let name = name.clone();
+                    let popover = popover.clone();
+                    delete.connect_clicked(move |_| {
+                        popover.popdown();
+                        w.library.borrow_mut().delete_shelf(&name);
+                        w.config.borrow_mut().library_shelf = String::new();
+                        w.config.borrow().save();
+                        rebuild_library(&w);
+                    });
+                }
+                popover.set_parent(&chip);
+                popover.connect_closed(|p| p.unparent());
+                popover.popup();
+            })
+        };
+        let click = gtk4::GestureClick::new();
+        click.set_button(gtk4::gdk::BUTTON_SECONDARY);
+        {
+            let show_menu = show_menu.clone();
+            click.connect_pressed(move |_, _, _, _| show_menu());
+        }
+        chip.add_controller(click);
+        let keys = gtk4::EventControllerKey::new();
+        keys.connect_key_pressed(move |_, key, _, mods| {
+            if key == gtk4::gdk::Key::Menu
+                || (key == gtk4::gdk::Key::F10
+                    && mods.contains(gtk4::gdk::ModifierType::SHIFT_MASK))
+            {
+                show_menu();
+                return glib::Propagation::Stop;
+            }
+            glib::Propagation::Proceed
+        });
+        chip.add_controller(keys);
+    }
+
+    let add = gtk4::Button::from_icon_name("list-add-symbolic");
+    add.add_css_class("flat");
+    add.set_tooltip_text(Some("New shelf"));
+    add.update_property(&[gtk4::accessible::Property::Label("New shelf")]);
+    {
+        let w = widgets.clone();
+        add.connect_clicked(move |_| new_shelf_prompt(&w, None));
+    }
+    bar.append(&add);
+}
+
+fn rebuild_library_cards(widgets: &Rc<Widgets>) {
     while let Some(child) = widgets.library_flow.first_child() {
         widgets.library_flow.remove(&child);
     }
-
-    let entries: Vec<_> = widgets.library.borrow().entries().to_vec();
+    let shelf = current_shelf(widgets);
+    let sort = if widgets.config.borrow().library_sort == "title" {
+        Sort::Title
+    } else {
+        Sort::Added
+    };
+    let entries = widgets.library.borrow().view(shelf.as_deref(), sort);
+    let nothing_at_all = widgets.library.borrow().entries().is_empty();
     widgets.library_empty_hint.set_visible(entries.is_empty());
+    widgets.library_empty_hint.set_text(if nothing_at_all {
+        "Nothing in your library yet — open a document and add it here from History."
+    } else {
+        "This shelf is empty — right-click a document in the Library to move it here."
+    });
 
     for entry in entries {
         widgets
@@ -572,21 +845,122 @@ fn rebuild_library(widgets: &Rc<Widgets>) {
     }
 }
 
+fn show_card_menu(widgets: &Rc<Widgets>, hash: &str, anchor: &gtk4::Button) {
+    let popover = gtk4::Popover::new();
+    let rows = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+    rows.set_margin_top(6);
+    rows.set_margin_bottom(6);
+    rows.set_margin_start(6);
+    rows.set_margin_end(6);
+
+    let heading = gtk4::Label::new(Some("Move to shelf"));
+    heading.add_css_class("dim-label");
+    heading.add_css_class("caption-heading");
+    heading.set_xalign(0.0);
+    rows.append(&heading);
+
+    let (current, shelves) = {
+        let lib = widgets.library.borrow();
+        (
+            lib.entries()
+                .iter()
+                .find(|e| e.hash == hash)
+                .and_then(|e| e.shelf.clone()),
+            lib.shelves().to_vec(),
+        )
+    };
+    let mut choices: Vec<(String, Option<String>)> = vec![("No shelf".into(), None)];
+    choices.extend(shelves.into_iter().map(|s| (s.clone(), Some(s))));
+    for (label, target) in choices {
+        let marker = if target == current { "✓ " } else { "" };
+        let button = gtk4::Button::with_label(&format!("{marker}{label}"));
+        button.add_css_class("flat");
+        let w = widgets.clone();
+        let hash = hash.to_string();
+        let popover = popover.clone();
+        button.connect_clicked(move |_| {
+            popover.popdown();
+            w.library.borrow_mut().set_shelf(&hash, target.as_deref());
+            rebuild_library(&w);
+        });
+        rows.append(&button);
+    }
+    let new_shelf = gtk4::Button::with_label("New shelf…");
+    new_shelf.add_css_class("flat");
+    {
+        let w = widgets.clone();
+        let hash = hash.to_string();
+        let popover = popover.clone();
+        new_shelf.connect_clicked(move |_| {
+            popover.popdown();
+            new_shelf_prompt(&w, Some(hash.clone()));
+        });
+    }
+    rows.append(&new_shelf);
+
+    let sep = gtk4::Separator::new(gtk4::Orientation::Horizontal);
+    sep.set_margin_top(4);
+    sep.set_margin_bottom(4);
+    rows.append(&sep);
+    let remove = gtk4::Button::with_label("Remove from Library");
+    remove.add_css_class("flat");
+    remove.add_css_class("destructive-action");
+    {
+        let w = widgets.clone();
+        let hash = hash.to_string();
+        let popover = popover.clone();
+        remove.connect_clicked(move |_| {
+            popover.popdown();
+            w.library.borrow_mut().remove(&hash);
+            rebuild_library(&w);
+            rebuild_history(&w);
+        });
+    }
+    rows.append(&remove);
+
+    popover.set_child(Some(&rows));
+    popover.set_parent(anchor);
+    popover.connect_closed(|p| p.unparent());
+    popover.popup();
+}
+
 fn build_library_card(widgets: &Rc<Widgets>, entry: &LibraryEntry) -> gtk4::Widget {
+    let size = widgets
+        .config
+        .borrow()
+        .library_card_size
+        .clamp(LIBRARY_SIZE_MIN, LIBRARY_SIZE_MAX);
+    let cover_h = size * 4 / 3;
+
     let card = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
-    card.set_width_request(120);
+    card.set_width_request(size as i32);
 
     let cover_slot = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     cover_slot.add_css_class("library-cover-slot");
-    cover_slot.set_size_request(120, 160);
+    cover_slot.set_size_request(size as i32, cover_h as i32);
     cover_slot.set_halign(gtk4::Align::Center);
-    cover_slot.set_valign(gtk4::Align::Center);
+    cover_slot.set_valign(gtk4::Align::Start);
+    card.set_valign(gtk4::Align::Start);
 
-    match thumbnail::render_thumbnail(entry.kind, &entry.path, &entry.hash) {
+    match thumbnail::render_thumbnail(entry.kind, &entry.path, &entry.hash, size) {
         Some(texture) => {
             let picture = gtk4::Picture::for_paintable(&texture);
             picture.set_content_fit(gtk4::ContentFit::Cover);
-            cover_slot.append(&picture);
+            picture.set_can_shrink(true);
+            // A bare Picture's natural size is the texture's, which ignores the card size;
+            // a non-propagating scroller pins it (and passes clicks/wheel through).
+            let pin = gtk4::ScrolledWindow::new();
+            pin.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Never);
+            pin.set_min_content_width(size as i32);
+            pin.set_min_content_height(cover_h as i32);
+            pin.set_propagate_natural_width(false);
+            pin.set_propagate_natural_height(false);
+            pin.set_can_target(false);
+            pin.set_focusable(false);
+            picture.set_hexpand(true);
+            picture.set_vexpand(true);
+            pin.set_child(Some(&picture));
+            cover_slot.append(&pin);
         }
         None => {
             let icon_name = match entry.kind {
@@ -594,8 +968,9 @@ fn build_library_card(widgets: &Rc<Widgets>, entry: &LibraryEntry) -> gtk4::Widg
                 DocKind::Epub => "accessories-dictionary-symbolic",
             };
             let icon = gtk4::Image::from_icon_name(icon_name);
-            icon.set_pixel_size(48);
+            icon.set_pixel_size((size / 2) as i32);
             icon.add_css_class("dim-label");
+            icon.set_vexpand(true);
             cover_slot.append(&icon);
         }
     }
@@ -606,13 +981,17 @@ fn build_library_card(widgets: &Rc<Widgets>, entry: &LibraryEntry) -> gtk4::Widg
     title.set_justify(gtk4::Justification::Center);
     title.set_lines(2);
     title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-    title.set_max_width_chars(16);
+    title.set_max_width_chars((size / 8).max(8) as i32);
     card.append(&title);
 
     let button = gtk4::Button::new();
     button.add_css_class("flat");
     button.set_child(Some(&card));
-    button.set_tooltip_text(Some("Right-click to remove from Library"));
+    button.set_tooltip_text(Some(&format!(
+        "{}\nRight-click (or Menu key) to organise",
+        entry.title
+    )));
+    button.update_property(&[gtk4::accessible::Property::Label(&entry.title)]);
 
     let handler_widgets = widgets.clone();
     let path = entry.path.clone();
@@ -626,28 +1005,31 @@ fn build_library_card(widgets: &Rc<Widgets>, entry: &LibraryEntry) -> gtk4::Widg
 
     let click = gtk4::GestureClick::new();
     click.set_button(gtk4::gdk::BUTTON_SECONDARY);
-    let handler_widgets = widgets.clone();
-    let hash = entry.hash.clone();
-    let parent_button = button.clone();
-    click.connect_pressed(move |_, _, _, _| {
-        let popover = gtk4::Popover::new();
-        let remove_button = gtk4::Button::with_label("Remove from Library");
-        remove_button.add_css_class("flat");
-        remove_button.add_css_class("destructive-action");
-        let handler_widgets = handler_widgets.clone();
-        let hash = hash.clone();
-        let popover_to_close = popover.clone();
-        remove_button.connect_clicked(move |_| {
-            handler_widgets.library.borrow_mut().remove(&hash);
-            rebuild_library(&handler_widgets);
-            rebuild_history(&handler_widgets);
-            popover_to_close.popdown();
-        });
-        popover.set_child(Some(&remove_button));
-        popover.set_parent(&parent_button);
-        popover.popup();
-    });
+    {
+        let w = widgets.clone();
+        let hash = entry.hash.clone();
+        let anchor = button.clone();
+        click.connect_pressed(move |_, _, _, _| show_card_menu(&w, &hash, &anchor));
+    }
     button.add_controller(click);
+
+    let keys = gtk4::EventControllerKey::new();
+    {
+        let w = widgets.clone();
+        let hash = entry.hash.clone();
+        let anchor = button.clone();
+        keys.connect_key_pressed(move |_, key, _, mods| {
+            if key == gtk4::gdk::Key::Menu
+                || (key == gtk4::gdk::Key::F10
+                    && mods.contains(gtk4::gdk::ModifierType::SHIFT_MASK))
+            {
+                show_card_menu(&w, &hash, &anchor);
+                return glib::Propagation::Stop;
+            }
+            glib::Propagation::Proceed
+        });
+    }
+    button.add_controller(keys);
 
     button.upcast()
 }

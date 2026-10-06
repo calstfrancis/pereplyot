@@ -277,3 +277,68 @@ pub fn set_icon_with_fallback(button: &impl IsA<gtk4::Button>, names: &[&str]) {
     let image = gtk4::Image::from_gicon(&icon);
     button.set_child(Some(&image));
 }
+
+fn is_icon_only(button: &gtk4::Widget) -> bool {
+    match button.downcast_ref::<gtk4::Button>() {
+        Some(b) => b.label().is_none() && !b.child().is_some_and(|c| c.is::<gtk4::Label>()),
+        None => button
+            .downcast_ref::<gtk4::ToggleButton>()
+            .is_some_and(|b| {
+                b.label().is_none() && !b.child().is_some_and(|c| c.is::<gtk4::Label>())
+            }),
+    }
+}
+
+fn sync_accessible_label(widget: &gtk4::Widget) {
+    let Some(tip) = widget.tooltip_text() else {
+        return;
+    };
+    let first = tip.lines().next().unwrap_or("");
+    let name = match first.rfind(" (") {
+        Some(i) if first.ends_with(')') => &first[..i],
+        _ => first,
+    };
+    if !name.is_empty() {
+        widget.update_property(&[gtk4::accessible::Property::Label(name)]);
+    }
+}
+
+/// Give every icon-only button under `root` an accessible name taken from its tooltip, and
+/// keep it in step when the tooltip changes (the bookmark star, for one). Screen readers
+/// otherwise announce these as unnamed buttons.
+pub fn label_icon_buttons(root: &impl IsA<gtk4::Widget>) {
+    let root = root.as_ref();
+    if (root.is::<gtk4::Button>() || root.is::<gtk4::ToggleButton>()) && is_icon_only(root) {
+        sync_accessible_label(root);
+        root.connect_notify_local(Some("tooltip-text"), |w, _| sync_accessible_label(w));
+    }
+    if root.is::<gtk4::DropDown>() {
+        sync_accessible_label(root);
+    }
+    let mut child = root.first_child();
+    while let Some(c) = child {
+        label_icon_buttons(&c);
+        child = c.next_sibling();
+    }
+}
+
+/// Whether keyboard focus is on a control that owns Space/Enter/arrow keys itself (a button,
+/// drop-down or list row), so reader-wide page shortcuts must leave those keys alone.
+pub fn focus_owns_activation_keys(root: &impl IsA<gtk4::Widget>) -> bool {
+    let Some(focus) = root.as_ref().root().and_then(|r| r.focus()) else {
+        return false;
+    };
+    let mut w = Some(focus);
+    while let Some(cur) = w {
+        if cur.is::<gtk4::Button>()
+            || cur.is::<gtk4::ToggleButton>()
+            || cur.is::<gtk4::DropDown>()
+            || cur.is::<gtk4::ListBoxRow>()
+            || cur.is::<gtk4::CheckButton>()
+        {
+            return true;
+        }
+        w = cur.parent();
+    }
+    false
+}

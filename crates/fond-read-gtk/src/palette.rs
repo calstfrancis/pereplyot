@@ -101,6 +101,64 @@ fn tooltip_markup(index: usize) -> String {
     markup
 }
 
+/// A swatch with its 1-based palette number drawn on it, so the four colours stay
+/// distinguishable without relying on hue alone (and match the 1–4 keys).
+pub fn numbered_swatch(hex: &'static str, number: usize) -> gtk4::DrawingArea {
+    let area = swatch(hex);
+    area.set_content_width(22);
+    area.set_content_height(22);
+    area.set_draw_func(move |_, cr, w, h| {
+        let [r, g, b, _] = crate::pdf::annotation_rgba(Some(hex));
+        let radius = (w.min(h) as f64) / 2.0;
+        cr.arc(
+            w as f64 / 2.0,
+            h as f64 / 2.0,
+            radius,
+            0.0,
+            std::f64::consts::TAU,
+        );
+        cr.set_source_rgb(r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0);
+        let _ = cr.fill_preserve();
+        cr.set_source_rgba(0.0, 0.0, 0.0, 0.55);
+        cr.set_line_width(1.0);
+        let _ = cr.stroke();
+        cr.set_source_rgb(0.1, 0.1, 0.1);
+        cr.select_font_face(
+            "sans",
+            gtk4::cairo::FontSlant::Normal,
+            gtk4::cairo::FontWeight::Bold,
+        );
+        cr.set_font_size(h as f64 * 0.58);
+        let text = number.to_string();
+        if let Ok(ext) = cr.text_extents(&text) {
+            cr.move_to(
+                w as f64 / 2.0 - ext.width() / 2.0 - ext.x_bearing(),
+                h as f64 / 2.0 - ext.height() / 2.0 - ext.y_bearing(),
+            );
+            let _ = cr.show_text(&text);
+        }
+    });
+    area
+}
+
+/// Activate colour `index` (0-based) in a [`palette_widget`] row; `with_select` says whether
+/// the row starts with the Select-text button.
+pub fn select_color(row: &gtk4::Box, with_select: bool, index: usize) {
+    let mut child = row.first_child();
+    let mut i = 0usize;
+    let skip = usize::from(with_select);
+    while let Some(w) = child {
+        if i == index + skip {
+            if let Some(t) = w.downcast_ref::<gtk4::ToggleButton>() {
+                t.set_active(true);
+            }
+            return;
+        }
+        i += 1;
+        child = w.next_sibling();
+    }
+}
+
 pub fn swatch(hex: &'static str) -> gtk4::DrawingArea {
     let area = gtk4::DrawingArea::new();
     area.set_content_width(16);
@@ -156,13 +214,17 @@ pub fn palette_widget(
 
     for (i, color) in HIGHLIGHT_COLORS.iter().enumerate() {
         let button = gtk4::ToggleButton::new();
-        button.set_child(Some(&swatch(color.hex)));
+        button.set_child(Some(&numbered_swatch(color.hex, i + 1)));
         button.set_has_tooltip(true);
         button.connect_query_tooltip(move |_, _, _, _, tooltip| {
             tooltip.set_markup(Some(&tooltip_markup(i)));
             true
         });
-        button.update_property(&[gtk4::accessible::Property::Label(color.name)]);
+        button.update_property(&[gtk4::accessible::Property::Label(&format!(
+            "Highlight colour {}: {}",
+            i + 1,
+            highlight_label(i)
+        ))]);
         match &first {
             Some(f) => button.set_group(Some(f)),
             None => first = Some(button.clone()),

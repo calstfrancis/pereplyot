@@ -1180,6 +1180,9 @@ pub fn show_epub_reader(
     let reader_tab = crate::reader_host::open_reader_tab(window, title, &view);
     let reader_window = reader_tab.host_window.clone();
     crate::register_reader(hash, &reader_tab);
+    crate::label_icon_buttons(&header_start);
+    crate::label_icon_buttons(&header_end);
+    crate::label_icon_buttons(&nav);
     crate::reader_host::set_tab_header(&reader_tab, header_start, nav, header_end);
 
     {
@@ -1506,6 +1509,8 @@ pub fn show_epub_reader(
         let next = next.clone();
         let bookmark_button = bookmark_button.clone();
         let view_for_focus = view.clone();
+        let zoom_in_key = zoom_in_button.clone();
+        let zoom_out_key = zoom_out_button.clone();
         crate::reader_host::set_tab_key_handler(&reader_tab, move |keyval, modifiers| {
             if (keyval == gdk::Key::z || keyval == gdk::Key::Z)
                 && modifiers.contains(gdk::ModifierType::CONTROL_MASK)
@@ -1533,6 +1538,19 @@ pub fn show_epub_reader(
                 });
             if focus_in_text_entry {
                 return glib::Propagation::Proceed;
+            }
+            if modifiers.contains(gdk::ModifierType::CONTROL_MASK) {
+                match keyval {
+                    gdk::Key::plus | gdk::Key::equal | gdk::Key::KP_Add => {
+                        zoom_in_key.emit_clicked();
+                        return glib::Propagation::Stop;
+                    }
+                    gdk::Key::minus | gdk::Key::KP_Subtract => {
+                        zoom_out_key.emit_clicked();
+                        return glib::Propagation::Stop;
+                    }
+                    _ => {}
+                }
             }
             // Prev/next chapter — reuses the prev/next buttons' own handlers via
             // `emit_clicked` rather than duplicating their chapter-boundary logic.
