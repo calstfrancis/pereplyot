@@ -1,8 +1,5 @@
-//! Library-card thumbnails, generated on demand rather than cached to disk — a single
-//! page-1 PDFium render at a small width is cheap enough that regenerating it whenever the
-//! Library page is (re)built avoids needing an image-encoding dependency or a cache-
-//! invalidation story for a feature this size. Worth revisiting (a disk cache, or moving
-//! generation off the main thread) if a real library ever makes this noticeably slow.
+//! Library-card thumbnails: a page-1 PDFium render, cached as a PNG under the user cache
+//! directory keyed by content hash (so the cache never goes stale).
 
 use std::path::Path;
 
@@ -18,7 +15,23 @@ const THUMBNAIL_WIDTH: u32 = 160;
 /// real cover extraction needs a new `fond-doc` function, which needs a Kartoteka release
 /// to reach Pereplyot's pinned tag. Not this task's call to make unilaterally (root
 /// `CLAUDE.md`'s release policy) — EPUBs get a placeholder icon in the card instead.
-pub fn render_thumbnail(kind: DocKind, path: &Path) -> Option<gdk::Texture> {
+pub fn render_thumbnail(kind: DocKind, path: &Path, hash: &str) -> Option<gdk::Texture> {
+    let cached = glib::user_cache_dir()
+        .join("pereplyot")
+        .join("thumbs")
+        .join(format!("{hash}-{THUMBNAIL_WIDTH}.png"));
+    if let Ok(texture) = gdk::Texture::from_filename(&cached) {
+        return Some(texture);
+    }
+    let texture = render_uncached(kind, path)?;
+    if let Some(dir) = cached.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = texture.save_to_png(&cached);
+    Some(texture)
+}
+
+fn render_uncached(kind: DocKind, path: &Path) -> Option<gdk::Texture> {
     match kind {
         DocKind::Pdf => {
             let bytes = std::fs::read(path).ok()?;

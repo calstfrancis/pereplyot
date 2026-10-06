@@ -19,6 +19,9 @@ use crate::{color_swatch, note_edit_widget, popover_button, popover_separator, R
 struct ReaderState {
     pdfium: &'static fond_doc::Pdfium,
     bytes: Vec<u8>,
+    /// The document, parsed once and kept open for rendering and page geometry; every
+    /// `fond_doc` helper that takes `bytes` re-parses the whole file on each call.
+    doc: Option<pdfium_render::prelude::PdfDocument<'static>>,
     page: u16,
     count: u16,
     /// Render width in px = `BASE_WIDTH * zoom`.
@@ -62,6 +65,9 @@ struct ReaderState {
     continuous_pictures: Vec<gtk4::Picture>,
     continuous_offsets: Vec<f64>,
     continuous_rendered: Vec<bool>,
+    /// Inclusive range of pages currently kept rendered in continuous mode; everything else
+    /// is unloaded so a long book at high zoom doesn't hold every page as a texture.
+    continuous_window: (u16, u16),
     /// Each page's document-defined `/PageLabels` printed number (`None` where the PDF
     /// doesn't define one, which is most PDFs) — read once at open, since it's an immutable
     /// property of the file. Index `i` (0-based) matches every other page index in this
@@ -98,7 +104,14 @@ impl ReaderState {
         if let Some(cached) = self.page_geoms.borrow().get(&page) {
             return *cached;
         }
-        let geom = PageGeom::read(self.pdfium, &self.bytes, page);
+        let geom = match &self.doc {
+            Some(doc) => PageGeom::read_doc(doc, page),
+            None => self
+                .pdfium
+                .load_pdf_from_byte_slice(&self.bytes, None)
+                .ok()
+                .and_then(|d| PageGeom::read_doc(&d, page)),
+        };
         self.page_geoms.borrow_mut().insert(page, geom);
         geom
     }
@@ -167,6 +180,34 @@ pub(crate) fn annotation_rgba(hex: Option<&str>) -> [u8; 4] {
 /// otherwise. The preview doesn't try to match the final narrowed underline/strikeout band —
 /// it's just the raw drag rectangle in the current draw colour, which is enough to show what's
 /// about to be created.
+type PreviewRects = Option<Vec<(f64, f64, f64, f64)>>;
+type PreviewCache =
+    Rc<RefCell<Option<((u16, i32, i32, i32, i32), std::time::Instant, PreviewRects)>>>;
+
+/// Selection geometry is a full re-read of the PDF, so the live preview recomputes it at most
+/// this often while the pointer moves.
+const PREVIEW_MIN_INTERVAL: std::time::Duration = std::time::Duration::from_millis(60);
+
+fn paint_preview_rects(cr: &gtk4::cairo::Context, rects: PreviewRects, drag: (f64, f64, f64, f64)) {
+    match rects {
+        Some(rects) if !rects.is_empty() => {
+            for (rx0, ry0, rx1, ry1) in rects {
+                cr.rectangle(
+                    rx0.min(rx1),
+                    ry0.min(ry1),
+                    (rx1 - rx0).abs(),
+                    (ry1 - ry0).abs(),
+                );
+            }
+        }
+        _ => {
+            let (x0, y0, x1, y1) = drag;
+            cr.rectangle(x0.min(x1), y0.min(y1), (x1 - x0).abs(), (y1 - y0).abs());
+        }
+    }
+    let _ = cr.fill();
+}
+
 /// A drag rectangle in a picture's own pixel space: `(x0, y0, x1, y1)`.
 type DragRectCell = Rc<Cell<Option<(f64, f64, f64, f64)>>>;
 /// Self-referential slot for the notes-sidebar rebuild closure — a row's own delete button
@@ -190,6 +231,7 @@ fn build_drag_preview_overlay(
     {
         let live_rect = live_rect.clone();
         let reader = reader.clone();
+        let preview_cache: PreviewCache = Rc::new(RefCell::new(None));
         preview.set_draw_func(move |_area, cr, w, h| {
             let Some((x0, y0, x1, y1)) = live_rect.get() else {
                 return;
@@ -213,6 +255,24 @@ fn build_drag_preview_overlay(
             // what's about to happen. Falls back to the plain rectangle over blank space
             // (a figure, a margin) where there's no text to hug.
             let page = page_of();
+            let key = (
+                page,
+                (x0 / 4.0) as i32,
+                (y0 / 4.0) as i32,
+                (x1 / 4.0) as i32,
+                (y1 / 4.0) as i32,
+            );
+            let reuse = {
+                let c = preview_cache.borrow();
+                c.as_ref().is_some_and(|(k, at, _)| {
+                    *k == key || (k.0 == key.0 && at.elapsed() < PREVIEW_MIN_INTERVAL)
+                })
+            };
+            if reuse {
+                let rects = preview_cache.borrow().as_ref().and_then(|c| c.2.clone());
+                paint_preview_rects(cr, rects, (x0, y0, x1, y1));
+                return;
+            }
             let line_rects = (w > 0 && h > 0)
                 .then(|| {
                     let r = reader.borrow();
@@ -234,24 +294,9 @@ fn build_drag_preview_overlay(
                 })
                 .flatten();
 
-            match line_rects {
-                Some(rects) if !rects.is_empty() => {
-                    for (rx0, ry0, rx1, ry1) in rects {
-                        cr.rectangle(
-                            rx0.min(rx1),
-                            ry0.min(ry1),
-                            (rx1 - rx0).abs(),
-                            (ry1 - ry0).abs(),
-                        );
-                    }
-                }
-                _ => {
-                    let x = x0.min(x1);
-                    let y = y0.min(y1);
-                    cr.rectangle(x, y, (x1 - x0).abs(), (y1 - y0).abs());
-                }
-            }
-            let _ = cr.fill();
+            *preview_cache.borrow_mut() =
+                Some((key, std::time::Instant::now(), line_rects.clone()));
+            paint_preview_rects(cr, line_rects, (x0, y0, x1, y1));
         });
     }
 
@@ -351,6 +396,21 @@ fn invert_rgba(rgba: &mut [u8]) {
     }
 }
 
+fn render_open(r: &ReaderState, page: u16, width: u32) -> Option<fond_doc::RenderedPage> {
+    let Some(doc) = &r.doc else {
+        return fond_doc::render_page(r.pdfium, &r.bytes, page, width).ok();
+    };
+    let pdf_page = doc.pages().get(page).ok()?;
+    let config = pdfium_render::prelude::PdfRenderConfig::new()
+        .set_target_width(width.max(1) as pdfium_render::prelude::Pixels);
+    let bitmap = pdf_page.render_with_config(&config).ok()?;
+    Some(fond_doc::RenderedPage {
+        width: bitmap.width() as u32,
+        height: bitmap.height() as u32,
+        rgba: bitmap.as_rgba_bytes(),
+    })
+}
+
 /// Render `page` (0-based) to a ready-to-display texture, with this entry's saved
 /// annotations — and, if `page` has the current search match, that match's highlight too —
 /// blended in. Shared by both the page-by-page view and continuous-scroll mode so the two
@@ -365,7 +425,7 @@ fn render_pdf_page_texture(r: &ReaderState, page: u16) -> Option<(gdk::Texture, 
         Some(g) => g.quads_to_display(quads),
         None => quads.to_vec(),
     };
-    let mut rp = fond_doc::render_page(r.pdfium, &r.bytes, page, width).ok()?;
+    let mut rp = render_open(r, page, width)?;
     let current_page = page as u32 + 1;
 
     // A freestanding Note (no quadpoints — added via the "Note…" button on blank page) is
@@ -1182,30 +1242,93 @@ fn build_continuous_view(
         r.continuous_rendered = vec![false; count as usize];
     }
 
-    // Render nearest-to-current-page first, so the page the reader actually opened on (or
-    // was showing before the toggle) fills in first — the rest follow outward from it.
-    let mut order: Vec<u16> = (0..count).collect();
-    order.sort_by_key(|&p| (p as i32 - current_page as i32).unsigned_abs());
-    schedule_continuous_render(reader.clone(), order, 0);
+    refresh_continuous_window(reader, continuous_scroll, Some(current_page));
 }
 
-/// Rasterize one page of continuous-scroll mode's `order` list, then yield back to the main
-/// loop before rasterizing the next — spreads the expensive part of `build_continuous_view`
-/// across idle ticks instead of blocking the UI for the whole document at once. Stops early
-/// if the reader closed (`continuous_pictures` cleared, e.g. by a zoom-triggered rebuild)
-/// out from under it, or if a fresher build already restarted from scratch (guarded by
-/// comparing against the picture that's actually installed at this index, so a stale
-/// in-flight schedule from before a rebuild can't render into pictures that no longer exist).
+/// Pages kept rendered on each side of the viewport, in viewports.
+const CONTINUOUS_KEEP_VIEWPORTS: f64 = 1.5;
+
+/// Decide which pages should be rendered (viewport plus a margin), unload the rest, and
+/// render the missing ones one per idle tick, nearest first. `focus_page` overrides the
+/// scroll position for the very first build, before GTK has laid anything out.
+fn refresh_continuous_window(
+    reader: &Rc<RefCell<ReaderState>>,
+    scroll: &gtk4::ScrolledWindow,
+    focus_page: Option<u16>,
+) {
+    let adj = scroll.vadjustment();
+    let viewport = if adj.page_size() > 1.0 {
+        adj.page_size()
+    } else {
+        1000.0
+    };
+    let (lo, hi, center) = {
+        let r = reader.borrow();
+        if r.continuous_offsets.len() < 2 {
+            return;
+        }
+        let (top, center) = match focus_page {
+            Some(p) => {
+                let t = r.continuous_offsets.get(p as usize).copied().unwrap_or(0.0);
+                (t, t + viewport / 2.0)
+            }
+            None => (adj.value(), adj.value() + viewport / 2.0),
+        };
+        let keep = viewport * CONTINUOUS_KEEP_VIEWPORTS;
+        let lo = continuous_page_at(&r.continuous_offsets, (top - keep).max(0.0));
+        let hi = continuous_page_at(&r.continuous_offsets, top + viewport + keep);
+        (lo, hi, center)
+    };
+    let mut missing: Vec<u16> = Vec::new();
+    {
+        let mut r = reader.borrow_mut();
+        r.continuous_window = (lo, hi);
+        for page in 0..r.continuous_pictures.len() as u16 {
+            let in_window = page >= lo && page <= hi;
+            let rendered = r
+                .continuous_rendered
+                .get(page as usize)
+                .copied()
+                .unwrap_or(false);
+            if in_window && !rendered {
+                missing.push(page);
+            } else if !in_window && rendered {
+                r.continuous_pictures[page as usize].set_paintable(gdk::Paintable::NONE);
+                r.continuous_rendered[page as usize] = false;
+            }
+        }
+        let offsets = r.continuous_offsets.clone();
+        missing.sort_by(|a, b| {
+            let da = (offsets[*a as usize] - center).abs();
+            let db = (offsets[*b as usize] - center).abs();
+            da.total_cmp(&db)
+        });
+    }
+    if !missing.is_empty() {
+        schedule_continuous_render(reader.clone(), missing, 0);
+    }
+}
+
+/// Rasterize one page of `order`, then yield to the main loop before the next, so filling
+/// the window never blocks the UI for more than one page's render. Pages that have since
+/// left the window (the user scrolled on) or were already rendered are skipped.
 fn schedule_continuous_render(reader: Rc<RefCell<ReaderState>>, order: Vec<u16>, idx: usize) {
     let Some(&page) = order.get(idx) else {
         return;
     };
-    let still_valid = reader
-        .borrow()
-        .continuous_pictures
-        .get(page as usize)
-        .is_some();
-    if still_valid {
+    let wanted = {
+        let r = reader.borrow();
+        let (lo, hi) = r.continuous_window;
+        r.continuous_pictures.get(page as usize).is_some()
+            && page >= lo
+            && page <= hi
+            && !r
+                .continuous_rendered
+                .get(page as usize)
+                .copied()
+                .unwrap_or(true)
+    };
+    if wanted {
         render_continuous_page(&reader, page);
     }
     glib::idle_add_local_once(move || {
@@ -1274,6 +1397,23 @@ fn render_continuous_page(reader: &Rc<RefCell<ReaderState>>, page: u16) {
         if let Some(flag) = r.continuous_rendered.get_mut(page as usize) {
             *flag = true;
         }
+    }
+}
+
+/// Re-render only the continuous pages that currently hold a texture; the rest pick up the
+/// new state whenever they next scroll into the window.
+fn rerender_loaded_continuous_pages(reader: &Rc<RefCell<ReaderState>>) {
+    let loaded: Vec<u16> = {
+        let r = reader.borrow();
+        r.continuous_rendered
+            .iter()
+            .enumerate()
+            .filter(|(_, rendered)| **rendered)
+            .map(|(i, _)| i as u16)
+            .collect()
+    };
+    for page in loaded {
+        render_continuous_page(reader, page);
     }
 }
 
@@ -1456,9 +1596,11 @@ pub fn show_pdf_reader(
     let start_page = start_page
         .saturating_sub(1)
         .min(count.saturating_sub(1) as u32) as u16;
+    let doc = pdfium.load_pdf_from_byte_vec(bytes.clone(), None).ok();
     let reader = Rc::new(RefCell::new(ReaderState {
         pdfium,
         bytes,
+        doc,
         page: start_page,
         count,
         zoom: 1.0,
@@ -1473,6 +1615,7 @@ pub fn show_pdf_reader(
         continuous_pictures: Vec::new(),
         continuous_offsets: Vec::new(),
         continuous_rendered: Vec::new(),
+        continuous_window: (0, 0),
         page_labels,
         undo_stack: Vec::new(),
         redo_stack: Vec::new(),
@@ -1846,10 +1989,7 @@ pub fn show_pdf_reader(
         let render = render.clone();
         Rc::new(move || {
             render();
-            let count = reader.borrow().count;
-            for page in 0..count {
-                render_continuous_page(&reader, page);
-            }
+            rerender_loaded_continuous_pages(&reader);
         })
     };
     let undo = {
@@ -1945,7 +2085,9 @@ pub fn show_pdf_reader(
         let view_for_focus = view.clone();
         let bookmark_button = bookmark_button.clone();
         crate::reader_host::set_tab_key_handler(&reader_tab, move |keyval, modifiers| {
-            if keyval == gdk::Key::z && modifiers.contains(gdk::ModifierType::CONTROL_MASK) {
+            if (keyval == gdk::Key::z || keyval == gdk::Key::Z)
+                && modifiers.contains(gdk::ModifierType::CONTROL_MASK)
+            {
                 if modifiers.contains(gdk::ModifierType::SHIFT_MASK) {
                     redo();
                 } else {
@@ -2833,10 +2975,7 @@ pub fn show_pdf_reader(
             // Continuous mode has its own per-page Pictures with their own last-rendered
             // textures, so they need their own refresh or an inverted toggle would silently
             // do nothing while Continuous (the default mode) is what's actually on screen.
-            let page_count = reader.borrow().continuous_pictures.len() as u16;
-            for page in 0..page_count {
-                render_continuous_page(&reader, page);
-            }
+            rerender_loaded_continuous_pages(&reader);
         });
     }
     {
@@ -2889,9 +3028,28 @@ pub fn show_pdf_reader(
         let prev = prev.clone();
         let next = next.clone();
         let bookmark_button = bookmark_button.clone();
+        let window_debounce: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
+        let scroll_for_window = continuous_scroll.clone();
+        let reader_for_window = reader.clone();
         continuous_scroll
             .vadjustment()
             .connect_value_changed(move |adj| {
+                if let Some(id) = window_debounce.borrow_mut().take() {
+                    id.remove();
+                }
+                {
+                    let reader = reader_for_window.clone();
+                    let scroll = scroll_for_window.clone();
+                    let slot = window_debounce.clone();
+                    let id = glib::timeout_add_local_once(
+                        std::time::Duration::from_millis(80),
+                        move || {
+                            slot.borrow_mut().take();
+                            refresh_continuous_window(&reader, &scroll, None);
+                        },
+                    );
+                    *window_debounce.borrow_mut() = Some(id);
+                }
                 let mut r = reader.borrow_mut();
                 if r.continuous_offsets.len() < 2 {
                     return;
@@ -3480,7 +3638,7 @@ fn schedule_thumbnail_render(
     };
     if let Some(picture) = pictures.get(page as usize) {
         let r = reader.borrow();
-        if let Ok(rp) = fond_doc::render_page(r.pdfium, &r.bytes, page, THUMBNAIL_GRID_WIDTH) {
+        if let Some(rp) = render_open(&r, page, THUMBNAIL_GRID_WIDTH) {
             let data = glib::Bytes::from(&rp.rgba);
             let texture = gdk::MemoryTexture::new(
                 rp.width as i32,

@@ -22,8 +22,10 @@ pub(crate) struct PageGeom {
 
 impl PageGeom {
     /// Read `index`'s geometry. `None` if the document or page can't be loaded.
-    pub fn read(pdfium: &fond_doc::Pdfium, bytes: &[u8], index: u16) -> Option<Self> {
-        let document = pdfium.load_pdf_from_byte_slice(bytes, None).ok()?;
+    pub fn read_doc(
+        document: &pdfium_render::prelude::PdfDocument<'_>,
+        index: u16,
+    ) -> Option<Self> {
         let page = document.pages().get(index).ok()?;
         let bounds = page.boundaries().bounding().ok()?.bounds;
         let rotation = match page.rotation().unwrap_or(PdfPageRenderRotation::None) {

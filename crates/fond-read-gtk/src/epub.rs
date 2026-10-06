@@ -411,14 +411,20 @@ pub fn show_epub_reader(
 
     let hex = hash.split_once(':').map(|(_, h)| h).unwrap_or(hash);
     let cache_dir = glib::user_cache_dir()
-        .join("kartoteka")
+        .join("pereplyot")
         .join("epub")
         .join(hex);
-    if !cache_dir.exists() {
-        let extracted = std::fs::create_dir_all(&cache_dir)
+    if !cache_dir.join(".complete").exists() {
+        let partial = cache_dir.with_extension("partial");
+        let _ = std::fs::remove_dir_all(&partial);
+        let _ = std::fs::remove_dir_all(&cache_dir);
+        let extracted = std::fs::create_dir_all(&partial)
             .map_err(|e| e.to_string())
-            .and_then(|_| fond_doc::extract_epub(blob, &cache_dir).map_err(|e| e.to_string()));
+            .and_then(|_| fond_doc::extract_epub(blob, &partial).map_err(|e| e.to_string()))
+            .and_then(|_| std::fs::write(partial.join(".complete"), b"").map_err(|e| e.to_string()))
+            .and_then(|_| std::fs::rename(&partial, &cache_dir).map_err(|e| e.to_string()));
         if let Err(e) = extracted {
+            let _ = std::fs::remove_dir_all(&partial);
             gtk4::AlertDialog::builder()
                 .message("Could not open EPUB")
                 .detail(e)
@@ -499,6 +505,47 @@ pub fn show_epub_reader(
     // scales everything, which reads as zooming a picture rather than adjusting font size.
     if let Some(settings) = webkit6::prelude::WebViewExt::settings(&web_view) {
         settings.set_zoom_text_only(true);
+        // Scripts inside the book never run; the reader's own highlight scripts still do
+        // (they go through `evaluate_javascript`, not page markup).
+        settings.set_enable_javascript_markup(false);
+        settings.set_allow_file_access_from_file_urls(false);
+        settings.set_allow_universal_access_from_file_urls(false);
+    }
+    {
+        let cache_root = reader.borrow().cache_dir.clone();
+        web_view.connect_decide_policy(move |_view, decision, kind| {
+            use webkit6::PolicyDecisionType;
+            if kind != PolicyDecisionType::NavigationAction {
+                return false;
+            }
+            let Some(nav) = decision.downcast_ref::<webkit6::NavigationPolicyDecision>() else {
+                return false;
+            };
+            let uri = nav
+                .navigation_action()
+                .and_then(|a| a.request())
+                .and_then(|r| r.uri())
+                .map(|u| u.to_string())
+                .unwrap_or_default();
+            let local = gio::File::for_uri(&uri)
+                .path()
+                .is_some_and(|p| p.starts_with(&cache_root));
+            if local {
+                return false;
+            }
+            if uri.starts_with("http://")
+                || uri.starts_with("https://")
+                || uri.starts_with("mailto:")
+            {
+                gtk4::UriLauncher::new(&uri).launch(
+                    gtk4::Window::NONE,
+                    gio::Cancellable::NONE,
+                    |_| {},
+                );
+            }
+            decision.ignore();
+            true
+        });
     }
 
     let hint = gtk4::Label::new(Some("Select text, choose a kind, then click Apply"));
@@ -1460,7 +1507,9 @@ pub fn show_epub_reader(
         let bookmark_button = bookmark_button.clone();
         let view_for_focus = view.clone();
         crate::reader_host::set_tab_key_handler(&reader_tab, move |keyval, modifiers| {
-            if keyval == gdk::Key::z && modifiers.contains(gdk::ModifierType::CONTROL_MASK) {
+            if (keyval == gdk::Key::z || keyval == gdk::Key::Z)
+                && modifiers.contains(gdk::ModifierType::CONTROL_MASK)
+            {
                 if modifiers.contains(gdk::ModifierType::SHIFT_MASK) {
                     epub_redo();
                 } else {

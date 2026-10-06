@@ -582,7 +582,7 @@ fn build_library_card(widgets: &Rc<Widgets>, entry: &LibraryEntry) -> gtk4::Widg
     cover_slot.set_halign(gtk4::Align::Center);
     cover_slot.set_valign(gtk4::Align::Center);
 
-    match thumbnail::render_thumbnail(entry.kind, &entry.path) {
+    match thumbnail::render_thumbnail(entry.kind, &entry.path, &entry.hash) {
         Some(texture) => {
             let picture = gtk4::Picture::for_paintable(&texture);
             picture.set_content_fit(gtk4::ContentFit::Cover);
