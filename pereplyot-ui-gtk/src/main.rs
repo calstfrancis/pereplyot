@@ -7,6 +7,7 @@ mod about;
 mod changelog;
 mod config;
 mod library;
+mod notes_index;
 mod paths;
 mod reader_host;
 mod thumbnail;
@@ -119,6 +120,7 @@ fn parse_args(args: &[std::ffi::OsString]) -> Result<ParsedArgs, String> {
             host_override,
             title,
             annotations_only,
+            ..ui::window::LaunchOptions::default()
         },
     })
 }

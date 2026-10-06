@@ -17,7 +17,7 @@ use crate::config::{Config, LIBRARY_SIZE_MAX, LIBRARY_SIZE_MIN};
 use crate::library::{Library, LibraryEntry, Sort};
 use crate::reader_host;
 use crate::thumbnail;
-use crate::ui::{menu, toast, Widgets};
+use crate::ui::{menu, notes_page, toast, Widgets};
 
 pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
     let window = adw::ApplicationWindow::builder()
@@ -183,6 +183,8 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
         "document-open-recent-symbolic",
     );
 
+    let notes_page_slot: Rc<RefCell<Option<notes_page::NotesPage>>> = Rc::new(RefCell::new(None));
+
     let switcher = adw::ViewSwitcher::new();
     switcher.set_stack(Some(&view_stack));
     header.set_title_widget(Some(&switcher));
@@ -267,6 +269,25 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
                     rebuild_library_cards(&widgets);
                 });
             *pending.borrow_mut() = Some(id);
+        });
+    }
+
+    {
+        let page = notes_page::build(&widgets);
+        view_stack.add_titled_with_icon(
+            &page.root,
+            Some("notes"),
+            "Notes",
+            "document-edit-symbolic",
+        );
+        *notes_page_slot.borrow_mut() = Some(page);
+        let slot = notes_page_slot.clone();
+        view_stack.connect_visible_child_name_notify(move |stack| {
+            if stack.visible_child_name().as_deref() == Some("notes") {
+                if let Some(page) = slot.borrow().as_ref() {
+                    page.refresh();
+                }
+            }
         });
     }
 
@@ -413,6 +434,10 @@ pub struct LaunchOptions {
     pub title: Option<String>,
     /// Open the document's Annotations dialog instead of the reader.
     pub annotations_only: bool,
+    /// Open a PDF at this page instead of where it was last left.
+    pub start_page: Option<u32>,
+    /// Open an EPUB on this annotation's chapter.
+    pub start_annotation: Option<String>,
 }
 
 /// [`open_path`], but for a document Pereplyot was launched to open on another app's
@@ -430,6 +455,8 @@ pub fn open_path_with_host(
         host_override: override_,
         title: title_override,
         annotations_only,
+        start_page,
+        start_annotation,
     } = options;
     if !path.is_file() {
         toast(widgets, "Not a file");
@@ -548,7 +575,7 @@ pub fn open_path_with_host(
     }
     match kind {
         DocKind::Pdf => {
-            let start_page = saved_progress.map(|p| p.page).unwrap_or(1);
+            let start_page = start_page.or(saved_progress.map(|p| p.page)).unwrap_or(1);
             fond_read_gtk::pdf::show_pdf_reader(
                 &host,
                 &widgets.window,
@@ -565,7 +592,7 @@ pub fn open_path_with_host(
                 &hash,
                 &path,
                 &title,
-                None,
+                start_annotation.as_deref(),
                 saved_progress,
             );
         }
@@ -1037,6 +1064,26 @@ fn build_library_card(widgets: &Rc<Widgets>, entry: &LibraryEntry) -> gtk4::Widg
     title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
     title.set_max_width_chars((size / 8).max(8) as i32);
     card.append(&title);
+
+    let progress_text = match reader_host::saved_progress(&entry.hash) {
+        Some(p) if p.of > 0 => {
+            let unit = match entry.kind {
+                DocKind::Pdf => "p.",
+                DocKind::Epub => "ch.",
+            };
+            format!(
+                "{unit} {} of {} · {}%",
+                p.page,
+                p.of,
+                (p.page * 100 / p.of).min(100)
+            )
+        }
+        _ => "Not started".to_string(),
+    };
+    let progress = gtk4::Label::new(Some(&progress_text));
+    progress.add_css_class("dim-label");
+    progress.add_css_class("caption");
+    card.append(&progress);
 
     let button = gtk4::Button::new();
     button.add_css_class("flat");
