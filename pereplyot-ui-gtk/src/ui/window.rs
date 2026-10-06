@@ -446,10 +446,6 @@ pub fn open_path_with_host(
         .filter(|t| !t.trim().is_empty())
         .or_else(|| sniff_title(kind, &path, &bytes))
         .unwrap_or_else(|| file_stem(&path).unwrap_or_else(|| "Untitled".to_string()));
-    let document_id = match &override_ {
-        Some(reader_host::HostOverride::Vault { key, .. }) => key.clone(),
-        _ => file_stem(&path).unwrap_or_else(|| hash.clone()),
-    };
 
     // Resolve the saved reading position before the host exists — same reason
     // `LocalReaderHost`'s own case reads `reader_host::saved_progress` up front rather than
@@ -486,7 +482,6 @@ pub fn open_path_with_host(
         return fond_read_gtk::annotations::show_annotations_dialog(
             &host,
             &widgets.window,
-            &document_id,
             pdf,
             epub,
             &title,

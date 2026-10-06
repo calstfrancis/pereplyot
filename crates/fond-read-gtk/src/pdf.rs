@@ -3408,7 +3408,7 @@ pub fn show_pdf_reader(
         let title = title.to_string();
         let dialog = reader_window.clone();
         export_button.connect_clicked(move |_| {
-            export_notes_markdown(&host, &reader, &title, &dialog);
+            export_notes(&host, &reader, &title, &dialog);
         });
     }
     // Search: run on Enter (not per-keystroke — PDFium re-searches every page each time, not
@@ -3742,90 +3742,32 @@ fn schedule_thumbnail_render(
     });
 }
 
-/// Write every bookmark and annotation to a Markdown file the user picks — a portable export
-/// independent of the sidecar's own JSON format, for pulling notes into some other document.
-/// Bookmarks list first (they carry no text of their own beyond a page number), then
-/// annotations in page order, each with its kind, quoted snippet (if the annotation carries
-/// one — a drawn highlight/underline/strikeout does, a blank "Note…" doesn't), and note text.
-fn export_notes_markdown(
+/// Export every bookmark and annotation — format, grouping and citation key chosen in a
+/// dialog (see [`crate::export`]).
+fn export_notes(
     host: &Rc<dyn ReaderHost>,
     reader: &Rc<RefCell<ReaderState>>,
     title: &str,
     reader_window: &adw::Window,
 ) {
-    let (bookmarks, mut all, page_labels) = {
+    let (items, bookmarks) = {
         let r = reader.borrow();
-        let all: Vec<fond_bib::Annotation> = r
-            .annotations
-            .annotations
+        let items = crate::export::items_from_sidecar(&r.annotations, &r.page_labels, &|_| None);
+        let bookmarks = r
+            .bookmarks
             .iter()
-            .filter(|a| a.page.is_some())
-            .cloned()
+            .map(|&p| {
+                let label = r
+                    .page_labels
+                    .get((p as usize).saturating_sub(1))
+                    .and_then(|l| l.clone())
+                    .unwrap_or_else(|| p.to_string());
+                format!("p. {label}")
+            })
             .collect();
-        (r.bookmarks.clone(), all, r.page_labels.clone())
+        (items, bookmarks)
     };
-    all.sort_by(|a, b| (a.page, &a.created).cmp(&(b.page, &b.created)));
-
-    if all.is_empty() && bookmarks.is_empty() {
-        host.notify("Nothing to export yet");
-        return;
-    }
-
-    let label_for = |page_num: u32| -> String {
-        page_labels
-            .get((page_num as usize).saturating_sub(1))
-            .and_then(|l| l.clone())
-            .unwrap_or_else(|| page_num.to_string())
-    };
-
-    let mut md = format!("# {title}\n\n");
-    if !bookmarks.is_empty() {
-        md.push_str("## Bookmarks\n\n");
-        for &page_num in &bookmarks {
-            md.push_str(&format!("- p. {}\n", label_for(page_num)));
-        }
-        md.push('\n');
-    }
-    if !all.is_empty() {
-        md.push_str("## Notes & highlights\n\n");
-        for a in &all {
-            let page_num = a.page.unwrap_or(1);
-            md.push_str(&format!(
-                "### p. {} — {:?}\n\n",
-                label_for(page_num),
-                a.kind
-            ));
-            if let Some(snippet) = &a.snippet {
-                for line in snippet.lines() {
-                    md.push_str(&format!("> {line}\n"));
-                }
-                md.push('\n');
-            }
-            if let Some(note) = &a.note {
-                md.push_str(&format!("{note}\n\n"));
-            }
-        }
-    }
-
-    let file_dialog = gtk4::FileDialog::builder()
-        .title("Export notes & highlights")
-        .initial_name(format!("{title} — notes.md"))
-        .build();
-    let host = host.clone();
-    file_dialog.save(
-        Some(reader_window),
-        gtk4::gio::Cancellable::NONE,
-        move |result| {
-            if let Ok(file) = result {
-                if let Some(path) = file.path() {
-                    match std::fs::write(&path, &md) {
-                        Ok(()) => host.notify("Exported notes & highlights"),
-                        Err(e) => host.notify(&format!("Couldn't export: {e}")),
-                    }
-                }
-            }
-        },
-    );
+    crate::export::show_export_dialog(host, reader_window, title, items, bookmarks);
 }
 
 /// A small modal that anchors the reader's *current* physical page to its own printed page

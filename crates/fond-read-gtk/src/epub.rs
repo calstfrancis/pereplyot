@@ -1200,7 +1200,7 @@ pub fn show_epub_reader(
         let title = title.to_string();
         let dialog = reader_window.clone();
         export_button.connect_clicked(move |_| {
-            export_notes_markdown(&host, &reader, &title, &dialog);
+            export_notes(&host, &reader, &title, &dialog);
         });
     }
 
@@ -1892,84 +1892,28 @@ pub fn show_epub_reader(
 /// came from a TOC entry, the prev/next buttons, or the initial chapter-0 load — all three
 /// funnel through here rather than duplicating the URI-building and label/button refresh.
 #[allow(clippy::too_many_arguments)]
-/// Write every bookmark and annotation to a Markdown file the user picks — same shape and
-/// purpose as the PDF reader's `export_notes_markdown`, adapted to chapters instead of pages.
-fn export_notes_markdown(
+/// Export every bookmark and annotation — format, grouping and citation key chosen in a
+/// dialog (see [`crate::export`]), chapters located by spine position.
+fn export_notes(
     host: &Rc<dyn ReaderHost>,
     reader: &Rc<RefCell<EpubReaderState>>,
     title: &str,
     reader_window: &adw::Window,
 ) {
-    let (bookmarks, mut all, spine) = {
+    let (items, bookmarks) = {
         let r = reader.borrow();
-        let all: Vec<fond_bib::Annotation> = r
-            .annotations
-            .annotations
+        let spine = &r.spine;
+        let items = crate::export::items_from_sidecar(&r.annotations, &[], &|c| {
+            spine.iter().position(|p| p == c).map(|i| i + 1)
+        });
+        let bookmarks = r
+            .bookmarks
             .iter()
-            .filter(|a| a.chapter.is_some())
-            .cloned()
+            .map(|&c| format!("ch. {}", c + 1))
             .collect();
-        (r.bookmarks.clone(), all, r.spine.clone())
+        (items, bookmarks)
     };
-    all.sort_by_key(|a| {
-        let spine_pos = a
-            .chapter
-            .as_deref()
-            .and_then(|c| spine.iter().position(|p| p == c))
-            .unwrap_or(usize::MAX);
-        (spine_pos, a.created.clone())
-    });
-
-    if all.is_empty() && bookmarks.is_empty() {
-        host.notify("Nothing to export yet");
-        return;
-    }
-
-    let mut md = format!("# {title}\n\n");
-    if !bookmarks.is_empty() {
-        md.push_str("## Bookmarks\n\n");
-        for &chapter_index in &bookmarks {
-            md.push_str(&format!("- Chapter {}\n", chapter_index + 1));
-        }
-        md.push('\n');
-    }
-    if !all.is_empty() {
-        md.push_str("## Notes & highlights\n\n");
-        for a in &all {
-            let chapter_num = a
-                .chapter
-                .as_deref()
-                .and_then(|c| spine.iter().position(|p| p == c))
-                .map(|i| i + 1)
-                .unwrap_or(0);
-            md.push_str(&format!("### Chapter {chapter_num} — {:?}\n\n", a.kind));
-            if let Some(snippet) = &a.snippet {
-                for line in snippet.lines() {
-                    md.push_str(&format!("> {line}\n"));
-                }
-                md.push('\n');
-            }
-            if let Some(note) = &a.note {
-                md.push_str(&format!("{note}\n\n"));
-            }
-        }
-    }
-
-    let file_dialog = gtk4::FileDialog::builder()
-        .title("Export notes & highlights")
-        .initial_name(format!("{title} — notes.md"))
-        .build();
-    let host = host.clone();
-    file_dialog.save(Some(reader_window), gio::Cancellable::NONE, move |result| {
-        if let Ok(file) = result {
-            if let Some(path) = file.path() {
-                match std::fs::write(&path, &md) {
-                    Ok(()) => host.notify("Exported notes & highlights"),
-                    Err(e) => host.notify(&format!("Couldn't export: {e}")),
-                }
-            }
-        }
-    });
+    crate::export::show_export_dialog(host, reader_window, title, items, bookmarks);
 }
 
 /// Replace the reading-theme/font stylesheet registered on `view`'s `UserContentManager`

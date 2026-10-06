@@ -33,6 +33,8 @@ struct LocalMeta {
     page_label_override: Option<fond_bib::PageLabelOverride>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     bookmarks: Vec<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    citation_key: Option<String>,
 }
 
 impl LocalMeta {
@@ -132,6 +134,16 @@ impl ReaderHost for LocalReaderHost {
     fn save_bookmarks(&self, pages: &[u32]) {
         let mut meta = LocalMeta::load(&self.hash);
         meta.bookmarks = pages.to_vec();
+        meta.save(&self.hash);
+    }
+
+    fn citation_key(&self) -> Option<String> {
+        LocalMeta::load(&self.hash).citation_key
+    }
+
+    fn set_citation_key(&self, key: Option<String>) {
+        let mut meta = LocalMeta::load(&self.hash);
+        meta.citation_key = key;
         meta.save(&self.hash);
     }
 }
@@ -320,6 +332,10 @@ impl ReaderHost for VaultReaderHost {
         meta.bookmarks = pages.to_vec();
         meta.save(&self.hash);
     }
+
+    fn citation_key(&self) -> Option<String> {
+        Some(self.key.clone())
+    }
 }
 
 /// Routes annotations/progress to exact file paths the caller (Sputnik, for a course
@@ -404,6 +420,16 @@ impl ReaderHost for ExternalPathReaderHost {
     fn save_bookmarks(&self, pages: &[u32]) {
         let mut meta = LocalMeta::load(&self.hash);
         meta.bookmarks = pages.to_vec();
+        meta.save(&self.hash);
+    }
+
+    fn citation_key(&self) -> Option<String> {
+        LocalMeta::load(&self.hash).citation_key
+    }
+
+    fn set_citation_key(&self, key: Option<String>) {
+        let mut meta = LocalMeta::load(&self.hash);
+        meta.citation_key = key;
         meta.save(&self.hash);
     }
 }

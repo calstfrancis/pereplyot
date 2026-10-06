@@ -22,6 +22,7 @@ use gtk4::Orientation;
 
 pub mod annotations;
 pub mod epub;
+pub mod export;
 pub mod fsutil;
 pub mod history;
 mod page_geom;
@@ -82,6 +83,14 @@ pub trait ReaderHost {
     /// Persist the full bookmark list. Called on every add/remove, same as
     /// [`Self::save_annotations`] — the reader holds the authoritative in-memory copy.
     fn save_bookmarks(&self, _pages: &[u32]) {}
+
+    /// The bibliography key to cite this document by in exports — Kartoteka's citation key
+    /// when launched from a vault, or whatever the user last entered for a standalone file.
+    fn citation_key(&self) -> Option<String> {
+        None
+    }
+
+    fn set_citation_key(&self, _key: Option<String>) {}
 }
 
 thread_local! {

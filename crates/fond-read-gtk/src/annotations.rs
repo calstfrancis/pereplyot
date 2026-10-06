@@ -9,7 +9,7 @@
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use gtk4::{gio, Orientation};
+use gtk4::Orientation;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
@@ -23,10 +23,6 @@ use crate::{color_swatch, note_edit_widget, ReaderHost};
 pub fn show_annotations_dialog(
     host: &Rc<dyn ReaderHost>,
     parent: &adw::ApplicationWindow,
-    // Filename stem for an exported annotation file, and nothing else — the reader never
-    // interprets it. Kartoteka passes the citation key; Sputnik will pass whatever names
-    // the document on its side.
-    document_id: &str,
     // Independent per-format attachment info (hash, blob path) — an entry can have both a
     // PDF and an EPUB attached, so each annotation row's "Go to" routes to whichever of these
     // matches that specific annotation's anchor (`page` → PDF, `chapter` → EPUB), not a
@@ -81,41 +77,16 @@ pub fn show_annotations_dialog(
     }
     header.pack_start(&close_button);
     let export_button = gtk4::Button::with_label("Export…");
-    export_button.set_tooltip_text(Some("Save these annotations as a portable Markdown file"));
+    export_button.set_tooltip_text(Some("Export these annotations as Typst, Markdown or LaTeX"));
     {
         let host = host.clone();
-        let document_id = document_id.to_string();
         let parent = parent.clone();
         let reader_title = reader_title.to_string();
         let page_labels = page_labels.clone();
         export_button.connect_clicked(move |_| {
-            // Reload fresh rather than reuse the dialog's own `sidecar` capture — the list
-            // above can go stale if a note was edited or an annotation deleted earlier in
-            // this same dialog session (each of those reloads independently, not through
-            // this closure's binding), so an export should reflect what's actually on disk.
             let sidecar = host.load_annotations();
-            if sidecar.annotations.is_empty() {
-                host.notify("No annotations for this entry");
-                return;
-            }
-            let markdown = sidecar.to_markdown(&reader_title, Some(&page_labels));
-
-            let default_name = format!("{document_id}-annotations.md");
-            let save = gtk4::FileDialog::builder()
-                .title("Export annotations")
-                .initial_name(&default_name)
-                .build();
-            let host = host.clone();
-            save.save(Some(&parent), gio::Cancellable::NONE, move |result| {
-                if let Ok(file) = result {
-                    if let Some(path) = file.path() {
-                        match std::fs::write(&path, &markdown) {
-                            Ok(()) => host.notify(&format!("Exported to {}", path.display())),
-                            Err(e) => host.notify(&format!("Could not write file: {e}")),
-                        }
-                    }
-                }
-            });
+            let items = crate::export::items_from_sidecar(&sidecar, &page_labels, &|_| None);
+            crate::export::show_export_dialog(&host, &parent, &reader_title, items, Vec::new());
         });
     }
     header.pack_end(&export_button);
