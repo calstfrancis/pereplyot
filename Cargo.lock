@@ -352,7 +352,7 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 [[package]]
 name = "fond-annot"
 version = "0.1.0"
-source = "git+https://github.com/calstfrancis/fond-core?rev=d519cc2#d519cc2d6829a239c9e3595f3ab2ed428a54e1ee"
+source = "git+https://github.com/calstfrancis/fond-core?rev=847e13e75#847e13e75b257c291308a32ccc3e99dc44d02c31"
 dependencies = [
  "blake3",
  "serde",
@@ -363,7 +363,7 @@ dependencies = [
 [[package]]
 name = "fond-bib"
 version = "0.1.0"
-source = "git+https://github.com/calstfrancis/kartoteka?rev=03ce76f9a#03ce76f9a25f610f7a71d45efe043fe7ce8f4928"
+source = "git+https://github.com/calstfrancis/kartoteka?rev=e71731c14#e71731c142ae7bf4c03b994cae491d031240967a"
 dependencies = [
  "biblatex 0.11.0",
  "blake3",
@@ -380,7 +380,7 @@ dependencies = [
 [[package]]
 name = "fond-doc"
 version = "0.1.0"
-source = "git+https://github.com/calstfrancis/fond-core?rev=d519cc2#d519cc2d6829a239c9e3595f3ab2ed428a54e1ee"
+source = "git+https://github.com/calstfrancis/fond-core?rev=847e13e75#847e13e75b257c291308a32ccc3e99dc44d02c31"
 dependencies = [
  "pdfium-render",
  "quick-xml 0.41.0",

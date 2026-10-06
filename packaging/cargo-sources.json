@@ -2,14 +2,14 @@
     {
         "type": "git",
         "url": "https://github.com/calstfrancis/fond-core",
-        "commit": "d519cc2d6829a239c9e3595f3ab2ed428a54e1ee",
-        "dest": "flatpak-cargo/git/fond-core-d519cc2"
+        "commit": "847e13e75b257c291308a32ccc3e99dc44d02c31",
+        "dest": "flatpak-cargo/git/fond-core-847e13e"
     },
     {
         "type": "git",
         "url": "https://github.com/calstfrancis/kartoteka",
-        "commit": "03ce76f9a25f610f7a71d45efe043fe7ce8f4928",
-        "dest": "flatpak-cargo/git/kartoteka-03ce76f"
+        "commit": "e71731c142ae7bf4c03b994cae491d031240967a",
+        "dest": "flatpak-cargo/git/kartoteka-e71731c"
     },
     {
         "type": "archive",
@@ -547,7 +547,7 @@
     {
         "type": "shell",
         "commands": [
-            "cp -r --reflink=auto \"flatpak-cargo/git/fond-core-d519cc2/crates/fond-annot\" \"cargo/vendor/fond-annot\""
+            "cp -r --reflink=auto \"flatpak-cargo/git/fond-core-847e13e/crates/fond-annot\" \"cargo/vendor/fond-annot\""
         ]
     },
     {
@@ -565,12 +565,12 @@
     {
         "type": "shell",
         "commands": [
-            "cp -r --reflink=auto \"flatpak-cargo/git/kartoteka-03ce76f/crates/fond-bib\" \"cargo/vendor/fond-bib\""
+            "cp -r --reflink=auto \"flatpak-cargo/git/kartoteka-e71731c/crates/fond-bib\" \"cargo/vendor/fond-bib\""
         ]
     },
     {
         "type": "inline",
-        "contents": "[package]\nname = \"fond-bib\"\nversion = \"0.1.0\"\ndescription = \"Hayagriva bibliography model, on-disk vault layout, citation keys \u2014 shared Fond crate\"\nlicense = \"MIT\"\nedition = \"2021\"\nrust-version = \"1.80\"\nauthors = [\"Cal St Francis <calstfrancis@gmail.com>\"]\nrepository = \"https://github.com/calstfrancis/kartoteka\"\n\n[dependencies]\nhayagriva = \"0.10\"\nbiblatex = \"0.11\"\nserde_yaml_ng = \"0.10\"\nserde_json = \"1\"\nblake3 = \"1\"\nwalkdir = \"2\"\nthiserror = \"2\"\n\n[dependencies.fond-annot]\ngit = \"https://github.com/calstfrancis/fond-core\"\nrev = \"d519cc2\"\n\n[dependencies.rusqlite]\nversion = \"0.40\"\nfeatures = [\"bundled\"]\n\n[dependencies.serde]\nversion = \"1\"\nfeatures = [\"derive\"]\n\n[dependencies.reqwest]\noptional = true\nversion = \"0.12\"\ndefault-features = false\nfeatures = [\"blocking\", \"rustls-tls\", \"json\"]\n\n[features]\nacquire = [\"dep:reqwest\"]\n\n[dev-dependencies]\ntempfile = \"3\"\nblake3 = \"1\"\n\n[dev-dependencies.rusqlite]\nversion = \"0.40\"\nfeatures = [\"bundled\"]\n",
+        "contents": "[package]\nname = \"fond-bib\"\nversion = \"0.1.0\"\ndescription = \"Hayagriva bibliography model, on-disk vault layout, citation keys \u2014 shared Fond crate\"\nlicense = \"MIT\"\nedition = \"2021\"\nrust-version = \"1.80\"\nauthors = [\"Cal St Francis <calstfrancis@gmail.com>\"]\nrepository = \"https://github.com/calstfrancis/kartoteka\"\n\n[dependencies]\nhayagriva = \"0.10\"\nbiblatex = \"0.11\"\nserde_yaml_ng = \"0.10\"\nserde_json = \"1\"\nblake3 = \"1\"\nwalkdir = \"2\"\nthiserror = \"2\"\n\n[dependencies.fond-annot]\ngit = \"https://github.com/calstfrancis/fond-core\"\nrev = \"847e13e75\"\n\n[dependencies.rusqlite]\nversion = \"0.40\"\nfeatures = [\"bundled\"]\n\n[dependencies.serde]\nversion = \"1\"\nfeatures = [\"derive\"]\n\n[dependencies.reqwest]\noptional = true\nversion = \"0.12\"\ndefault-features = false\nfeatures = [\"blocking\", \"rustls-tls\", \"json\"]\n\n[features]\nacquire = [\"dep:reqwest\"]\n\n[dev-dependencies]\ntempfile = \"3\"\nblake3 = \"1\"\n\n[dev-dependencies.rusqlite]\nversion = \"0.40\"\nfeatures = [\"bundled\"]\n",
         "dest": "cargo/vendor/fond-bib",
         "dest-filename": "Cargo.toml"
     },
@@ -583,7 +583,7 @@
     {
         "type": "shell",
         "commands": [
-            "cp -r --reflink=auto \"flatpak-cargo/git/fond-core-d519cc2/crates/fond-doc\" \"cargo/vendor/fond-doc\""
+            "cp -r --reflink=auto \"flatpak-cargo/git/fond-core-847e13e/crates/fond-doc\" \"cargo/vendor/fond-doc\""
         ]
     },
     {
@@ -2823,7 +2823,7 @@
     },
     {
         "type": "inline",
-        "contents": "[source.vendored-sources]\ndirectory = \"cargo/vendor\"\n\n[source.crates-io]\nreplace-with = \"vendored-sources\"\n\n[source.\"https://github.com/calstfrancis/fond-core\"]\ngit = \"https://github.com/calstfrancis/fond-core\"\nreplace-with = \"vendored-sources\"\nrev = \"d519cc2\"\n\n[source.\"https://github.com/calstfrancis/kartoteka\"]\ngit = \"https://github.com/calstfrancis/kartoteka\"\nreplace-with = \"vendored-sources\"\nrev = \"03ce76f9a\"\n",
+        "contents": "[source.vendored-sources]\ndirectory = \"cargo/vendor\"\n\n[source.crates-io]\nreplace-with = \"vendored-sources\"\n\n[source.\"https://github.com/calstfrancis/fond-core\"]\ngit = \"https://github.com/calstfrancis/fond-core\"\nreplace-with = \"vendored-sources\"\nrev = \"847e13e75\"\n\n[source.\"https://github.com/calstfrancis/kartoteka\"]\ngit = \"https://github.com/calstfrancis/kartoteka\"\nreplace-with = \"vendored-sources\"\nrev = \"e71731c14\"\n",
         "dest": "cargo",
         "dest-filename": "config"
     }
