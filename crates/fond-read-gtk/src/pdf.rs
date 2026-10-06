@@ -65,6 +65,11 @@ struct ReaderState {
     continuous_pictures: Vec<gtk4::Picture>,
     continuous_offsets: Vec<f64>,
     continuous_rendered: Vec<bool>,
+    /// Jump to a page because a link was followed (records where we came from); set once the
+    /// widgets it drives exist.
+    link_goto: Option<Rc<dyn Fn(u16)>>,
+    /// Pages we followed links away from, most recent last, for the Back button.
+    nav_back: Vec<u16>,
     /// Inclusive range of pages currently kept rendered in continuous mode; everything else
     /// is unloaded so a long book at high zoom doesn't hold every page as a texture.
     continuous_window: (u16, u16),
@@ -210,6 +215,80 @@ fn paint_preview_rects(cr: &gtk4::cairo::Context, rects: PreviewRects, drag: (f6
 
 /// A drag rectangle in a picture's own pixel space: `(x0, y0, x1, y1)`.
 type DragRectCell = Rc<Cell<Option<(f64, f64, f64, f64)>>>;
+enum LinkTarget {
+    Page(u16),
+    Uri(String),
+}
+
+fn link_at(r: &ReaderState, page: u16, x: f64, y: f64) -> Option<LinkTarget> {
+    use pdfium_render::prelude::{PdfActionType, PdfPoints};
+    let doc = r.doc.as_ref()?;
+    let pdf_page = doc.pages().get(page).ok()?;
+    let links = pdf_page.links();
+    let link = links.link_at_point(PdfPoints::new(x as f32), PdfPoints::new(y as f32))?;
+    if let Some(dest) = link.destination() {
+        return dest.page_index().ok().map(LinkTarget::Page);
+    }
+    let action = link.action()?;
+    match action.action_type() {
+        PdfActionType::GoToDestinationInSameDocument => action
+            .as_local_destination_action()?
+            .destination()
+            .ok()?
+            .page_index()
+            .ok()
+            .map(LinkTarget::Page),
+        PdfActionType::Uri => action.as_uri_action()?.uri().ok().map(LinkTarget::Uri),
+        _ => None,
+    }
+}
+
+/// If a click at pixel `(px, py)` of a `render_w`×`render_h` render of `page` landed on a
+/// link, follow it and report true. Internal links jump (remembering where we were); web
+/// links open in the default handler.
+fn follow_link(
+    reader: &Rc<RefCell<ReaderState>>,
+    page: u16,
+    px: f64,
+    py: f64,
+    render_w: f64,
+    render_h: f64,
+) -> bool {
+    let (target, goto) = {
+        let r = reader.borrow();
+        if r.rotation != 0 || render_w < 1.0 || render_h < 1.0 {
+            return false;
+        }
+        let Some(geom) = r.geom(page) else {
+            return false;
+        };
+        let (x, y) = geom.px_to_pdf(px, py, render_w, render_h);
+        (link_at(&r, page, x, y), r.link_goto.clone())
+    };
+    match target {
+        Some(LinkTarget::Page(p)) => {
+            if let Some(goto) = goto {
+                goto(p);
+            }
+            true
+        }
+        Some(LinkTarget::Uri(uri)) => {
+            if uri.starts_with("http://")
+                || uri.starts_with("https://")
+                || uri.starts_with("mailto:")
+            {
+                gtk4::UriLauncher::new(&uri).launch(
+                    gtk4::Window::NONE,
+                    gtk4::gio::Cancellable::NONE,
+                    |_| {},
+                );
+            }
+            true
+        }
+        None => false,
+    }
+}
+
 /// Late-bound "mark the current selection with colour N" action, filled in once the notes
 /// sidebar it refreshes exists.
 type QuickMarkSlot = Rc<RefCell<Option<Rc<dyn Fn(usize)>>>>;
@@ -1424,6 +1503,10 @@ fn build_continuous_view(
                         return;
                     }
                     let w = this_picture.width().max(1) as f64;
+                    let h = this_picture.height().max(1) as f64;
+                    if follow_link(&reader, page, x, y, w, h) {
+                        return;
+                    }
                     if x < w * 0.2 {
                         let target = page.saturating_sub(1);
                         scroll_continuous_to_page(&reader, &continuous_scroll, target);
@@ -1822,6 +1905,8 @@ pub fn show_pdf_reader(
         continuous_offsets: Vec::new(),
         continuous_rendered: Vec::new(),
         continuous_window: (0, 0),
+        link_goto: None,
+        nav_back: Vec::new(),
         page_labels,
         undo_stack: Vec::new(),
         redo_stack: Vec::new(),
@@ -2078,7 +2163,12 @@ pub fn show_pdf_reader(
     let search_count = gtk4::Label::new(None);
     search_count.add_css_class("dim-label");
 
+    let link_back = gtk4::Button::new();
+    link_back.add_css_class("flat");
+    link_back.set_visible(false);
+    link_back.set_tooltip_text(Some("Return to where you followed a link from (Alt+Left)"));
     statusbar.append(&nav);
+    statusbar.append(&link_back);
     statusbar.append(&search_entry);
     statusbar.append(&search_count);
     statusbar.append(&search_prev);
@@ -2324,6 +2414,7 @@ pub fn show_pdf_reader(
         let continuous_scroll = continuous_scroll.clone();
         let view_for_focus = view.clone();
         let bookmark_button = bookmark_button.clone();
+        let link_back_key = link_back.clone();
         let zoom_in_key = zoom_in.clone();
         let zoom_out_key = zoom_out.clone();
         let zoom_fit_key = zoom_fit_width.clone();
@@ -2339,6 +2430,13 @@ pub fn show_pdf_reader(
                 } else {
                     undo();
                 }
+                return glib::Propagation::Stop;
+            }
+            if modifiers.contains(gdk::ModifierType::ALT_MASK)
+                && matches!(keyval, gdk::Key::Left | gdk::Key::KP_Left)
+                && link_back_key.is_visible()
+            {
+                link_back_key.emit_clicked();
                 return glib::Propagation::Stop;
             }
             if modifiers.contains(gdk::ModifierType::CONTROL_MASK) {
@@ -2857,6 +2955,52 @@ pub fn show_pdf_reader(
         }));
     }
 
+    {
+        let reader_for_goto = reader.clone();
+        let render = render.clone();
+        let continuous_toggle = continuous_toggle.clone();
+        let continuous_scroll = continuous_scroll.clone();
+        let link_back = link_back.clone();
+        let jump_to = {
+            let reader = reader.clone();
+            Rc::new(move |page: u16| {
+                if continuous_toggle.is_active() {
+                    scroll_continuous_to_page(&reader, &continuous_scroll, page);
+                } else {
+                    reader.borrow_mut().page = page;
+                    render();
+                }
+            })
+        };
+        {
+            let jump_to = jump_to.clone();
+            let link_back = link_back.clone();
+            reader.borrow_mut().link_goto = Some(Rc::new(move |page| {
+                let from = {
+                    let mut r = reader_for_goto.borrow_mut();
+                    let from = r.page;
+                    r.nav_back.push(from);
+                    from
+                };
+                link_back.set_label(&format!("← Back to p. {}", from + 1));
+                link_back.set_visible(true);
+                jump_to(page);
+            }));
+        }
+        let reader = reader.clone();
+        let link_back_inner = link_back.clone();
+        link_back.connect_clicked(move |_| {
+            let dest = reader.borrow_mut().nav_back.pop();
+            if let Some(page) = dest {
+                jump_to(page);
+            }
+            match reader.borrow().nav_back.last() {
+                Some(p) => link_back_inner.set_label(&format!("← Back to p. {}", p + 1)),
+                None => link_back_inner.set_visible(false),
+            }
+        });
+    }
+
     // Contents (left, itself split into Outline/Thumbnails tabs — built above) and Notes
     // (right) are two independent sidebars rather than a shared Stack behind one toggle slot
     // — Cal asked for Notes on its own right-hand sidebar so it can stay open alongside
@@ -3112,6 +3256,7 @@ pub fn show_pdf_reader(
         }
         {
             let picture_for_nav = picture.clone();
+            let reader_for_nav = reader.clone();
             let prev = prev.clone();
             let next = next.clone();
             click_nav.connect_released(move |_, _, x, y| {
@@ -3122,6 +3267,11 @@ pub fn show_pdf_reader(
                     return;
                 }
                 let w = picture_for_nav.width().max(1) as f64;
+                let h = picture_for_nav.height().max(1) as f64;
+                let page = reader_for_nav.borrow().page;
+                if follow_link(&reader_for_nav, page, x, y, w, h) {
+                    return;
+                }
                 if x < w * 0.2 {
                     prev.emit_clicked();
                 } else if x > w * 0.8 {
