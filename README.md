@@ -16,7 +16,7 @@ matches.
 
 **v0.9.0 "True Register".** Opening a PDF or EPUB (via Open,
 drag-and-drop, a file manager's "Open With", or **launched by Kartoteka/Sputnik** — see
-below); a Library (cover-grid, opt-in) and History (every document opened, automatic,
+below); a Library (cover-grid, opt-in, with named shelves, adjustable card size and sorting), a Notes tab that searches every annotation across documents, and History (every document opened, automatic,
 **shared across Kartoteka and Sputnik too**) shelf; and the reader itself —
 highlighting/underline/strike/multi-line notes in a four-colour reading scheme (key idea,
 evidence, connection, problem — labels editable under "Highlight labels…"; colour swatches

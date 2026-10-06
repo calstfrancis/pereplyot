@@ -53,6 +53,17 @@ Kartoteka's own `docs/READER-EXTRACTION.md` for the `ReaderHost` boundary this a
   With" argument) funnels through the single `ui::window::open_path` — don't duplicate the
   hash/title-sniffing/reader-dispatch logic at a new call site.
 
+- Persistence goes through `fond_read_gtk::fsutil` (atomic write + `.bak`, corrupt files set
+  aside) and `store::SidecarSync` (merges annotations added elsewhere). Don't `fs::write`
+  user data directly.
+- Export (`export.rs`) is pure string rendering plus one dialog; Typst output is the house
+  format. Its escaping has tests, and Typst output has been compiled against a real
+  bibliography — keep it compiling.
+- The PDF Text view (`pdf_text.rs`) is the accessible/keyboard path; navigation funnels through
+  `scroll_continuous_to_page` precisely so the text view can take it over.
+- Headless checking: Xvfb + `PDFIUM_LIB_PATH` (any libpdfium.so) + xdotool is enough to
+  drive the real app; set `XDG_DATA_HOME`/`XDG_CONFIG_HOME`/`XDG_CACHE_HOME` to a scratch dir.
+
 ## Not yet built (fast-follows, not oversights)
 
 Welcome/What's New window, command palette, `capture-screenshots.sh`, a real app icon (the

@@ -1,5 +1,54 @@
 # Changelog
 
+## [Unreleased]
+
+- **Typst, LaTeX and Markdown export, grouped by what your colours mean.** The export dialog
+  (Typst is the default) lays quotes out under "Key idea / thesis", "Evidence / support",
+  "Connection / implication" and "Problem / question" headings — or in document order — and
+  cites them against a bibliography key: `#quote(block: true, attribution: [@key[p. 42]])` in
+  Typst, `\autocite[p.~42]{key}` in LaTeX, `[@key, p. 42]` in Markdown. Launched from
+  Kartoteka the key is the vault's citation key; otherwise you type it once and it's
+  remembered for that document. Printed page labels are used for the page. "Copy with
+  citation" in the selection popover does the same for a single quote.
+- **Select first, then mark.** The PDF reader now starts in text-selection mode; releasing a
+  selection offers the four colours, underline, strike-out, a note, copy, and copy with
+  citation. The EPUB reader gets the same popover. Keys `1`–`4` mark the current selection
+  (or switch the paint colour when nothing is selected). A note made from a selection now
+  stores the quote as the quote instead of pasting it into the note text.
+- **Library shelves.** Create named shelves, move documents between them from the card's
+  right-click (or Menu key) menu, rename or delete a shelf (its documents are kept), sort by
+  recently added or title, and resize the cards with a slider. Cards show reading progress.
+- **Notes tab:** search every note and highlight across all documents, or show only one
+  colour's meaning (all your "Problem / question" highlights, say); activating a result opens
+  the document at that spot.
+- **PDF Text view** for screen readers, low vision and keyboard-only reading: the document's
+  text reflowed into a real text widget you can resize (Ctrl+plus/minus), select with
+  Shift+arrows, and mark with `1`–`4`. Marks made there also appear on the page.
+- **PDF links work** — footnotes, cross-references and web links — with a Back button
+  (Alt+Left) to return to where you were.
+- **Scanned PDFs:** a warning when a PDF has no text layer, and, if `ocrmypdf` is installed,
+  a one-click OCR that writes a searchable copy next to the original.
+- **Notes follow a changed file.** If a file is re-saved or OCR'd, Pereplyot offers to bring
+  its annotations, bookmarks and reading position over to the new version.
+- **Safer saving.** Annotations, progress, library and settings are written atomically with a
+  backup; a damaged file is set aside and the backup restored instead of being silently
+  replaced by an empty one; annotations added by another window or app are merged rather than
+  overwritten. Reading position is saved every few seconds, and the EPUB reader saves it
+  before quitting.
+- **Faster, lighter PDF reading.** The document is parsed once; continuous mode keeps only
+  nearby pages in memory; undo, redo and invert-colours no longer redraw the whole book;
+  Library thumbnails are cached.
+- **Accessibility:** icon-only buttons have names; colour swatches carry their number; page
+  keys no longer steal Space and the arrow keys from focused buttons; sidebar entries and EPUB
+  search results are reachable by keyboard; Ctrl+plus/minus/0, Ctrl+scroll and pinch zoom;
+  Ctrl+F searches a PDF.
+- **Fixed:** Ctrl+Shift+Z never redid; messages ("Highlight added") appeared in the hidden
+  launcher instead of the reader; EPUB undo stayed disabled after marking; closing the
+  selection popover dropped keyboard focus into the page-number box; the reader now has the
+  app menu (theme, highlight labels, about) even when launched by Kartoteka or Sputnik.
+- EPUB: book scripts no longer run, external links open in your browser, and an interrupted
+  first open no longer leaves a half-extracted cache.
+
 ## [0.9.0] "True Register" — 2026-10-03
 
 - **Fixed: PDF text selection and highlighting missing the text under the pointer.** On many
