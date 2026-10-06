@@ -70,6 +70,10 @@ struct ReaderState {
     link_goto: Option<Rc<dyn Fn(u16)>>,
     /// Pages we followed links away from, most recent last, for the Back button.
     nav_back: Vec<u16>,
+    /// While the Text view is showing: where "go to page" navigation is redirected, and how
+    /// zoom steps are applied (to the text size instead of the page render).
+    text_goto: Option<Rc<dyn Fn(u16)>>,
+    text_zoom: Option<Rc<dyn Fn(f64)>>,
     /// Inclusive range of pages currently kept rendered in continuous mode; everything else
     /// is unloaded so a long book at high zoom doesn't hold every page as a texture.
     continuous_window: (u16, u16),
@@ -308,6 +312,32 @@ fn warn_if_no_text_layer(
             });
         }),
     );
+}
+
+/// Repaint the Text view's marks from the reader's annotations.
+fn paint_text_marks(reader: &Rc<RefCell<ReaderState>>, view: &Rc<crate::pdf_text::ReflowView>) {
+    use crate::pdf_text::{MarkStyle, TextMark};
+    let marks: Vec<TextMark> = reader
+        .borrow()
+        .annotations
+        .annotations
+        .iter()
+        .filter_map(|a| {
+            let page = a.page?.checked_sub(1)? as u16;
+            let quote = a.snippet.clone()?;
+            Some(TextMark {
+                page,
+                quote,
+                rgba: annotation_rgba(a.color.as_deref()),
+                style: match a.kind {
+                    fond_bib::AnnotationKind::Underline => MarkStyle::Underline,
+                    fond_bib::AnnotationKind::Strikeout => MarkStyle::Strikeout,
+                    _ => MarkStyle::Highlight,
+                },
+            })
+        })
+        .collect();
+    view.apply_marks(&marks);
 }
 
 enum LinkTarget {
@@ -836,9 +866,20 @@ struct MarkCtx {
 
 /// Turn the current selection into a mark of `kind`, in `color` (hex). Consumes the selection.
 fn apply_selection_mark(ctx: &MarkCtx, kind: fond_bib::AnnotationKind, color: &str) -> bool {
-    let Some((page, text, quads)) = ctx.reader.borrow_mut().last_selection.take() else {
+    let Some((page, text, mut quads)) = ctx.reader.borrow_mut().last_selection.take() else {
         return false;
     };
+    if quads.is_empty() {
+        // A selection made in the Text view has no page geometry yet; find the quote on the
+        // page so the mark also shows on the page image.
+        let r = ctx.reader.borrow();
+        quads = fond_doc::search_document(r.pdfium, &r.bytes, &text)
+            .unwrap_or_default()
+            .into_iter()
+            .find(|m| m.page == page)
+            .map(|m| m.quads)
+            .unwrap_or_default();
+    }
     let annotation = fond_bib::Annotation::drawn(
         kind,
         page as u32 + 1,
@@ -906,9 +947,16 @@ fn copy_selection(ctx: &MarkCtx, with_citation: bool) {
 
 /// The popover offered when a text selection ends: the four colours, underline, strikeout, a
 /// note, and copy / copy-with-citation.
-fn show_selection_popover(ctx: &MarkCtx, parent: &gtk4::Picture, x: f64, y: f64, page: u16) {
+fn show_selection_popover(
+    ctx: &MarkCtx,
+    parent: &impl IsA<gtk4::Widget>,
+    x: f64,
+    y: f64,
+    page: u16,
+) {
+    let parent: gtk4::Widget = parent.as_ref().clone();
     let popover = gtk4::Popover::new();
-    popover.set_parent(parent);
+    popover.set_parent(&parent);
     popover.set_pointing_to(Some(&gdk::Rectangle::new(
         x.round() as i32,
         y.round() as i32,
@@ -1007,7 +1055,10 @@ fn show_selection_popover(ctx: &MarkCtx, parent: &gtk4::Picture, x: f64, y: f64,
     let _ = page;
 
     popover.set_child(Some(&rows));
-    popover.connect_closed(|p| p.unparent());
+    popover.connect_closed(move |p| {
+        p.unparent();
+        parent.grab_focus();
+    });
     popover.popup();
 }
 
@@ -1812,6 +1863,11 @@ fn scroll_continuous_to_page(
     scroll: &gtk4::ScrolledWindow,
     page: u16,
 ) {
+    let text_goto = reader.borrow().text_goto.clone();
+    if let Some(goto) = text_goto {
+        goto(page);
+        return;
+    }
     let offset = {
         let r = reader.borrow();
         r.continuous_offsets
@@ -2007,6 +2063,8 @@ pub fn show_pdf_reader(
         continuous_window: (0, 0),
         link_goto: None,
         nav_back: Vec::new(),
+        text_goto: None,
+        text_zoom: None,
         page_labels,
         undo_stack: Vec::new(),
         redo_stack: Vec::new(),
@@ -2161,6 +2219,19 @@ pub fn show_pdf_reader(
     // `view_stack` child and `render()` (extended to also fill `right_picture`) rather than
     // being a separate mode with its own render path, so navigation/zoom/search/outline/
     // notes-sidebar jumps all stay in sync with two-page mode for free.
+    let text_toggle = gtk4::ToggleButton::new();
+    crate::set_icon_with_fallback(
+        &text_toggle,
+        &[
+            "format-justify-left-symbolic",
+            "view-reader-symbolic",
+            "text-x-generic-symbolic",
+        ],
+    );
+    text_toggle.set_tooltip_text(Some(
+        "Text view — the document's text reflowed: readable by screen readers, resizable, \
+         and selectable with the keyboard (Shift+arrows, then 1–4 to mark)",
+    ));
     let two_page_toggle = gtk4::ToggleButton::new();
     crate::set_icon_with_fallback(
         &two_page_toggle,
@@ -2203,6 +2274,7 @@ pub fn show_pdf_reader(
     let header_end = gtk4::Box::new(Orientation::Horizontal, 6);
     header_end.append(&two_page_toggle);
     header_end.append(&continuous_toggle);
+    header_end.append(&text_toggle);
     header_end.append(&palette);
     header_end.append(&style_drop);
     let more_button = gtk4::MenuButton::new();
@@ -2347,6 +2419,7 @@ pub fn show_pdf_reader(
     let reader_tab = crate::reader_host::open_reader_tab(window, title, &view);
     let reader_window = reader_tab.host_window.clone();
     let quick_mark: QuickMarkSlot = Rc::new(RefCell::new(None));
+    let reflow_popover: RebuildNotesCell = Rc::new(RefCell::new(None));
     crate::register_reader(pdf_hash, &reader_tab);
     crate::label_icon_buttons(&header_start);
     crate::label_icon_buttons(&header_end);
@@ -2521,6 +2594,7 @@ pub fn show_pdf_reader(
         let zoom_fit_key = zoom_fit_width.clone();
         let palette_for_keys = palette.clone();
         let quick_mark_for_keys = quick_mark.clone();
+        let reflow_popover_for_keys = reflow_popover.clone();
         let search_for_keys = search_entry.clone();
         crate::reader_host::set_tab_key_handler(&reader_tab, move |keyval, modifiers| {
             if (keyval == gdk::Key::z || keyval == gdk::Key::Z)
@@ -2560,6 +2634,37 @@ pub fn show_pdf_reader(
                     }
                     _ => {}
                 }
+            }
+            let in_reflow = view_for_focus
+                .root()
+                .and_then(|root| root.focus())
+                .is_some_and(|w| w.widget_name() == "fond-reflow");
+            if in_reflow {
+                if modifiers.is_empty() {
+                    let index = match keyval {
+                        gdk::Key::_1 => Some(0),
+                        gdk::Key::_2 => Some(1),
+                        gdk::Key::_3 => Some(2),
+                        gdk::Key::_4 => Some(3),
+                        _ => None,
+                    };
+                    if let Some(i) = index {
+                        if let Some(mark) = quick_mark_for_keys.borrow().as_ref() {
+                            mark(i);
+                        }
+                        return glib::Propagation::Stop;
+                    }
+                }
+                if matches!(
+                    keyval,
+                    gdk::Key::Menu | gdk::Key::Return | gdk::Key::KP_Enter
+                ) {
+                    if let Some(open) = reflow_popover_for_keys.borrow().as_ref() {
+                        open();
+                        return glib::Propagation::Stop;
+                    }
+                }
+                return glib::Propagation::Proceed;
             }
             let focus_in_text_entry = view_for_focus
                 .root()
@@ -3102,6 +3207,282 @@ pub fn show_pdf_reader(
         });
     }
 
+    // Text view: the document's text reflowed into a text widget (see `pdf_text`).
+    {
+        let reflow: Rc<RefCell<Option<Rc<crate::pdf_text::ReflowView>>>> =
+            Rc::new(RefCell::new(None));
+        let host = host.clone();
+        let reader = reader.clone();
+        let render = render.clone();
+        let pdf_hash = pdf_hash.to_string();
+        let view_stack = view_stack.clone();
+        let continuous_toggle = continuous_toggle.clone();
+        let continuous_scroll = continuous_scroll.clone();
+        let undo_button = undo_button.clone();
+        let redo_button = redo_button.clone();
+        let rebuild_notes = rebuild_notes.clone();
+        let reader_window = reader_window.clone();
+        let hint = hint.clone();
+        let page_entry = page_entry.clone();
+        let page_of_label = page_of_label.clone();
+        let prev = prev.clone();
+        let next = next.clone();
+        let bookmark_button = bookmark_button.clone();
+        let reflow_popover = reflow_popover.clone();
+        text_toggle.connect_toggled(move |btn| {
+            if !btn.is_active() {
+                {
+                    let mut r = reader.borrow_mut();
+                    r.text_goto = None;
+                    r.text_zoom = None;
+                }
+                view_stack.set_visible_child_name("continuous");
+                let page = reader.borrow().page;
+                let reader = reader.clone();
+                let continuous_scroll = continuous_scroll.clone();
+                glib::idle_add_local_once(move || {
+                    scroll_continuous_to_page(&reader, &continuous_scroll, page);
+                });
+                hint.set_text("Drag over text to select it, then choose a colour (or press 1–4)");
+                return;
+            }
+            // Page navigation everywhere funnels through the continuous view's scroller, so it
+            // stays the mode underneath and the text view takes over its showing.
+            if !continuous_toggle.is_active() {
+                continuous_toggle.set_active(true);
+            }
+            let (count, page_labels) = {
+                let r = reader.borrow();
+                (r.count, r.page_labels.clone())
+            };
+            let existing = reflow.borrow().clone();
+            let view = match existing {
+                Some(v) => v,
+                None => {
+                    let view = crate::pdf_text::ReflowView::new(count);
+                    view_stack.add_named(&view.scroll, Some("text"));
+                    *reflow.borrow_mut() = Some(view.clone());
+
+                    let make_ctx: Rc<dyn Fn() -> MarkCtx> = {
+                        let host = host.clone();
+                        let reader = reader.clone();
+                        let pdf_hash = pdf_hash.clone();
+                        let undo_button = undo_button.clone();
+                        let redo_button = redo_button.clone();
+                        let rebuild_notes = rebuild_notes.clone();
+                        let reader_window = reader_window.clone();
+                        let view = view.clone();
+                        let render = render.clone();
+                        Rc::new(move || MarkCtx {
+                            host: host.clone(),
+                            reader: reader.clone(),
+                            pdf_hash: pdf_hash.clone(),
+                            undo_button: undo_button.clone(),
+                            redo_button: redo_button.clone(),
+                            rebuild_notes: rebuild_notes.clone(),
+                            reader_window: reader_window.clone(),
+                            refresh: {
+                                let reader = reader.clone();
+                                let view = view.clone();
+                                let render = render.clone();
+                                Rc::new(move || {
+                                    paint_text_marks(&reader, &view);
+                                    render();
+                                    rerender_loaded_continuous_pages(&reader);
+                                })
+                            },
+                        })
+                    };
+
+                    // Follow the user's scrolling so the page counter, bookmarks and
+                    // sidebars stay in step.
+                    {
+                        let reader = reader.clone();
+                        let view_for_scroll = view.clone();
+                        let page_entry = page_entry.clone();
+                        let page_of_label = page_of_label.clone();
+                        let prev = prev.clone();
+                        let next = next.clone();
+                        let bookmark_button = bookmark_button.clone();
+                        view.scroll.vadjustment().connect_value_changed(move |_| {
+                            if view_for_scroll.loaded_pages() == 0 {
+                                return;
+                            }
+                            let page = view_for_scroll.visible_page();
+                            let mut r = reader.borrow_mut();
+                            if r.page != page && r.text_goto.is_some() {
+                                r.page = page;
+                                update_page_display(
+                                    &page_entry,
+                                    &page_of_label,
+                                    &prev,
+                                    &next,
+                                    &bookmark_button,
+                                    page,
+                                    r.count,
+                                    &r.page_labels,
+                                    &r.bookmarks,
+                                );
+                            }
+                        });
+                    }
+                    // A selection in the text becomes the thing the 1–4 keys and the popover act
+                    // on; refreshed on every cursor move so extending it with Shift+arrows counts.
+                    {
+                        let reader = reader.clone();
+                        let view_for_sel = view.clone();
+                        let sync: Rc<dyn Fn()> = Rc::new(move || {
+                            if reader.borrow().text_goto.is_none() {
+                                return;
+                            }
+                            let selection = view_for_sel.selection();
+                            reader.borrow_mut().last_selection =
+                                selection.map(|(page, text)| (page, text, Vec::new()));
+                        });
+                        let buffer = view.text_view.buffer();
+                        {
+                            let sync = sync.clone();
+                            buffer.connect_has_selection_notify(move |_| sync());
+                        }
+                        buffer.connect_cursor_position_notify(move |_| sync());
+                    }
+                    // Mouse: popover when a drag-selection ends. Keyboard: Menu or Enter.
+                    {
+                        let pointer: Rc<Cell<(f64, f64)>> = Rc::new(Cell::new((0.0, 0.0)));
+                        let motion = gtk4::EventControllerMotion::new();
+                        motion.set_propagation_phase(gtk4::PropagationPhase::Capture);
+                        {
+                            let pointer = pointer.clone();
+                            motion.connect_motion(move |_, x, y| pointer.set((x, y)));
+                        }
+                        view.text_view.add_controller(motion);
+
+                        let drag = gtk4::GestureDrag::new();
+                        drag.set_button(gdk::BUTTON_PRIMARY);
+                        drag.set_propagation_phase(gtk4::PropagationPhase::Capture);
+                        let make_ctx_drag = make_ctx.clone();
+                        let view_drag = view.clone();
+                        drag.connect_drag_end(move |_, _, _| {
+                            let (x, y) = pointer.get();
+                            let make_ctx = make_ctx_drag.clone();
+                            let view = view_drag.clone();
+                            glib::timeout_add_local_once(
+                                std::time::Duration::from_millis(60),
+                                move || {
+                                    if let Some((page, _)) = view.selection() {
+                                        show_selection_popover(
+                                            &make_ctx(),
+                                            &view.text_view,
+                                            x,
+                                            y,
+                                            page,
+                                        );
+                                    }
+                                },
+                            );
+                        });
+                        view.text_view.add_controller(drag);
+
+                        let make_ctx_key = make_ctx.clone();
+                        let view_key = view.clone();
+                        *reflow_popover.borrow_mut() = Some(Rc::new(move || {
+                            if let Some((page, _)) = view_key.selection() {
+                                let (x, y) = view_key.selection_anchor();
+                                show_selection_popover(
+                                    &make_ctx_key(),
+                                    &view_key.text_view,
+                                    x as f64,
+                                    y as f64,
+                                    page,
+                                );
+                            }
+                        }));
+                    }
+                    view
+                }
+            };
+
+            // Zoom steps resize the text instead of re-rendering pages; navigation redirects here.
+            {
+                let view_zoom = view.clone();
+                let view_goto = view.clone();
+                let reader_for_goto = reader.clone();
+                let page_entry = page_entry.clone();
+                let page_of_label = page_of_label.clone();
+                let prev = prev.clone();
+                let next = next.clone();
+                let bookmark_button = bookmark_button.clone();
+                let mut r = reader.borrow_mut();
+                r.text_zoom = Some(Rc::new(move |factor| view_zoom.scale_font(factor)));
+                r.text_goto = Some(Rc::new(move |page| {
+                    view_goto.scroll_to_page(page);
+                    let mut r = reader_for_goto.borrow_mut();
+                    r.page = page;
+                    update_page_display(
+                        &page_entry,
+                        &page_of_label,
+                        &prev,
+                        &next,
+                        &bookmark_button,
+                        page,
+                        r.count,
+                        &r.page_labels,
+                        &r.bookmarks,
+                    );
+                }));
+            }
+            hint.set_text(
+                "Text view: Shift+arrows select, then 1–4 mark it; Ctrl+plus/minus resize the text",
+            );
+
+            let reader_for_text = reader.clone();
+            let page_labels_text = page_labels.clone();
+            view.start_loading(
+                Rc::new({
+                    let reader = reader_for_text.clone();
+                    move |page| {
+                        let r = reader.borrow();
+                        r.doc
+                            .as_ref()
+                            .and_then(|d| {
+                                let page = d.pages().get(page).ok()?;
+                                let text = page.text().ok()?.all();
+                                Some(text)
+                            })
+                            .unwrap_or_default()
+                    }
+                }),
+                Rc::new(move |page| {
+                    page_labels_text
+                        .get(page as usize)
+                        .and_then(|l| l.clone())
+                        .unwrap_or_else(|| (page + 1).to_string())
+                }),
+                Rc::new({
+                    let view = view.clone();
+                    let reader = reader.clone();
+                    move |loaded| {
+                        if loaded == count {
+                            paint_text_marks(&reader, &view);
+                        }
+                    }
+                }),
+            );
+            view_stack.set_visible_child_name("text");
+            let start_page = reader.borrow().page;
+            let view_jump = view.clone();
+            glib::timeout_add_local(std::time::Duration::from_millis(40), move || {
+                if view_jump.loaded_pages() > start_page {
+                    view_jump.scroll_to_page(start_page);
+                    glib::ControlFlow::Break
+                } else {
+                    glib::ControlFlow::Continue
+                }
+            });
+            view.text_view.grab_focus();
+        });
+    }
+
     // Contents (left, itself split into Outline/Thumbnails tabs — built above) and Notes
     // (right) are two independent sidebars rather than a shared Stack behind one toggle slot
     // — Cal asked for Notes on its own right-hand sidebar so it can stay open alongside
@@ -3464,6 +3845,12 @@ pub fn show_pdf_reader(
         let pending_zoom = pending_zoom.clone();
         let zoom_debounce = zoom_debounce.clone();
         Rc::new(move |target: f64| {
+            let text_zoom = reader.borrow().text_zoom.clone();
+            if let Some(text_zoom) = text_zoom {
+                let base = reader.borrow().zoom.max(0.01);
+                text_zoom(target / base);
+                return;
+            }
             pending_zoom.set(Some(target.clamp(0.35, 4.0)));
             if let Some(id) = zoom_debounce.borrow_mut().take() {
                 id.remove();
