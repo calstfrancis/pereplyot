@@ -13,7 +13,7 @@ repository = "https://github.com/calstfrancis/pereplyot"
 # UI-agnostic). fond-bib (the vault Library/Note, for the Kartoteka launch mode) still comes
 # from Kartoteka and re-exports the same fond-annot types, so both must stay on one
 # fond-annot revision. Pinned by rev; bump deliberately.
-fond-bib = { git = "https://github.com/calstfrancis/kartoteka", rev = "e71731c14" }
+fond-bib = { git = "https://github.com/calstfrancis/kartoteka", rev = "ecfe711c3464b0be7f069738553fb61518848fcf" }
 fond-annot = { git = "https://github.com/calstfrancis/fond-core", rev = "847e13e75" }
 fond-doc = { git = "https://github.com/calstfrancis/fond-core", rev = "847e13e75" }
 # Same version/features fond-doc builds it with, so the two unify into one crate — only
