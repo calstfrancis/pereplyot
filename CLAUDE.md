@@ -42,9 +42,8 @@ Kartoteka's own `docs/READER-EXTRACTION.md` for the `ReaderHost` boundary this a
 - Raw gtk4-rs/libadwaita (0.11 / 0.9, `v4_10`/`v1_4` features), matching `fond-read-gtk`'s
   own pins exactly — this has to stay version-aligned with the reader crate, not with
   whatever the rest of the suite happens to be on.
-- Deliberately minimal chrome: a plain `gio::Menu` hamburger (`src/ui/menu.rs`), not the
-  wider house style's hand-built popover — justified by scale (four menu items total), not
-  a house-style opt-out in general. Still keeps the System/Light/Dark theme toggle and the
+- Deliberately minimal chrome: a small hand-built popover hamburger (`src/ui/menu.rs`) —
+  scale-justified (few items), not a house-style opt-out in general. Still keeps the System/Light/Dark theme toggle and the
   `CHANGELOG.md`-backed changelog viewer the house standard expects everywhere.
 - The launcher window (`src/ui/window.rs`) never toggles into "reader mode" itself —
   `fond_read_gtk::pdf::show_pdf_reader`/`epub::show_epub_reader` open their own shared

@@ -401,6 +401,12 @@ pub fn open_path_with_host(
         }
     };
 
+    // A reader already open on this document holds the live copy of its annotations; a
+    // second editor beside it would have its changes overwritten by the reader's next save.
+    if annotations_only && fond_read_gtk::present_existing(&hash) {
+        return None;
+    }
+
     // A document with no annotations yet has nothing to list, so it opens in the reader
     // instead of leaving the launch with no visible window at all.
     if annotations_only && !host.load_annotations().annotations.is_empty() {

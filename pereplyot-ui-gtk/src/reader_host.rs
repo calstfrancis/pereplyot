@@ -14,6 +14,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use fond_read_gtk::fsutil;
+use fond_read_gtk::store::SidecarSync;
 use fond_read_gtk::ReaderHost;
 use serde::{Deserialize, Serialize};
 
@@ -46,21 +48,26 @@ impl LocalMeta {
     }
 
     fn save(&self, hash: &str) {
-        let path = Self::path(hash);
-        if let Some(dir) = path.parent() {
-            if fs::create_dir_all(dir).is_err() {
-                return;
-            }
-        }
         if let Ok(json) = serde_json::to_string_pretty(self) {
-            let _ = fs::write(path, json);
+            let _ = fsutil::write_atomic(&Self::path(hash), json.as_bytes());
         }
+    }
+}
+
+fn merged_notice(n: usize) -> String {
+    format!("{n} annotation(s) added elsewhere were kept; reopen the document to see them")
+}
+
+fn toast_anywhere(widgets: &Rc<Widgets>, message: &str) {
+    if !fond_read_gtk::reader_host::toast_in_readers(message) {
+        toast(widgets, message);
     }
 }
 
 pub struct LocalReaderHost {
     widgets: Rc<Widgets>,
     hash: String,
+    sync: SidecarSync,
 }
 
 impl LocalReaderHost {
@@ -68,6 +75,7 @@ impl LocalReaderHost {
         Rc::new(LocalReaderHost {
             widgets: widgets.clone(),
             hash: hash.to_string(),
+            sync: SidecarSync::default(),
         })
     }
 
@@ -80,20 +88,21 @@ impl LocalReaderHost {
 
 impl ReaderHost for LocalReaderHost {
     fn load_annotations(&self) -> fond_bib::AnnotationSidecar {
-        let path = self.annotations_path();
-        fs::read_to_string(&path)
-            .ok()
-            .and_then(|text| fond_bib::AnnotationSidecar::parse(&text, &path).ok())
-            .unwrap_or_else(|| fond_bib::AnnotationSidecar::new(&self.hash))
+        let report = self.sync.load(&self.annotations_path(), || {
+            fond_bib::AnnotationSidecar::new(&self.hash)
+        });
+        if let Some(w) = report.warning {
+            self.notify(&w);
+        }
+        report.sidecar
     }
 
     fn save_annotations(&self, sidecar: &fond_bib::AnnotationSidecar) -> Result<(), String> {
-        let path = self.annotations_path();
-        if let Some(dir) = path.parent() {
-            fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        let extra = self.sync.save(&self.annotations_path(), sidecar)?;
+        if extra > 0 {
+            self.notify(&merged_notice(extra));
         }
-        let json = sidecar.to_json().map_err(|e| e.to_string())?;
-        fs::write(path, json).map_err(|e| e.to_string())
+        Ok(())
     }
 
     fn save_progress(&self, progress: fond_bib::Progress) {
@@ -113,7 +122,7 @@ impl ReaderHost for LocalReaderHost {
     }
 
     fn notify(&self, message: &str) {
-        toast(&self.widgets, message);
+        toast_anywhere(&self.widgets, message);
     }
 
     fn load_bookmarks(&self) -> Vec<u32> {
@@ -219,8 +228,10 @@ pub fn saved_progress_for_override(override_: &HostOverride) -> Option<fond_bib:
 struct VaultReaderHost {
     widgets: Rc<Widgets>,
     library: fond_bib::Library,
+    root: PathBuf,
     key: String,
     hash: String,
+    sync: SidecarSync,
 }
 
 impl VaultReaderHost {
@@ -230,13 +241,19 @@ impl VaultReaderHost {
         key: String,
         hash: String,
     ) -> Result<Rc<dyn ReaderHost>, String> {
-        let library = fond_bib::Library::open(root).map_err(|e| e.to_string())?;
+        let library = fond_bib::Library::open(&root).map_err(|e| e.to_string())?;
         Ok(Rc::new(VaultReaderHost {
             widgets: widgets.clone(),
             library,
+            root,
             key,
             hash,
+            sync: SidecarSync::default(),
         }))
+    }
+
+    fn annotations_path(&self) -> PathBuf {
+        self.root.join("annots").join(format!("{}.json", self.key))
     }
 
     /// Read-modify-write the note's frontmatter — the only two fields the reader touches,
@@ -257,18 +274,21 @@ impl VaultReaderHost {
 
 impl ReaderHost for VaultReaderHost {
     fn load_annotations(&self) -> fond_bib::AnnotationSidecar {
-        self.library
-            .load_annotations(&self.key)
-            .ok()
-            .flatten()
-            .unwrap_or_else(|| fond_bib::AnnotationSidecar::new(&self.key))
+        let report = self.sync.load(&self.annotations_path(), || {
+            fond_bib::AnnotationSidecar::new(&self.key)
+        });
+        if let Some(w) = report.warning {
+            self.notify(&w);
+        }
+        report.sidecar
     }
 
     fn save_annotations(&self, sidecar: &fond_bib::AnnotationSidecar) -> Result<(), String> {
-        self.library
-            .write_annotations(sidecar)
-            .map(|_| ())
-            .map_err(|e| e.to_string())
+        let extra = self.sync.save(&self.annotations_path(), sidecar)?;
+        if extra > 0 {
+            self.notify(&merged_notice(extra));
+        }
+        Ok(())
     }
 
     fn save_progress(&self, progress: fond_bib::Progress) {
@@ -288,7 +308,7 @@ impl ReaderHost for VaultReaderHost {
     }
 
     fn notify(&self, message: &str) {
-        toast(&self.widgets, message);
+        toast_anywhere(&self.widgets, message);
     }
 
     fn load_bookmarks(&self) -> Vec<u32> {
@@ -319,6 +339,7 @@ struct ExternalPathReaderHost {
     annotations_path: PathBuf,
     progress_path: Option<PathBuf>,
     hash: String,
+    sync: SidecarSync,
 }
 
 impl ExternalPathReaderHost {
@@ -333,37 +354,36 @@ impl ExternalPathReaderHost {
             annotations_path,
             progress_path,
             hash,
+            sync: SidecarSync::default(),
         })
     }
 }
 
 impl ReaderHost for ExternalPathReaderHost {
     fn load_annotations(&self) -> fond_bib::AnnotationSidecar {
-        fs::read_to_string(&self.annotations_path)
-            .ok()
-            .and_then(|text| fond_bib::AnnotationSidecar::parse(&text, &self.annotations_path).ok())
-            .unwrap_or_else(|| fond_bib::AnnotationSidecar::new(&self.hash))
+        let report = self.sync.load(&self.annotations_path, || {
+            fond_bib::AnnotationSidecar::new(&self.hash)
+        });
+        if let Some(w) = report.warning {
+            self.notify(&w);
+        }
+        report.sidecar
     }
 
     fn save_annotations(&self, sidecar: &fond_bib::AnnotationSidecar) -> Result<(), String> {
-        if let Some(dir) = self.annotations_path.parent() {
-            fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        let extra = self.sync.save(&self.annotations_path, sidecar)?;
+        if extra > 0 {
+            self.notify(&merged_notice(extra));
         }
-        let json = sidecar.to_json().map_err(|e| e.to_string())?;
-        fs::write(&self.annotations_path, json).map_err(|e| e.to_string())
+        Ok(())
     }
 
     fn save_progress(&self, progress: fond_bib::Progress) {
         let Some(path) = &self.progress_path else {
             return;
         };
-        if let Some(dir) = path.parent() {
-            if fs::create_dir_all(dir).is_err() {
-                return;
-            }
-        }
         if let Ok(json) = serde_json::to_string_pretty(&progress) {
-            let _ = fs::write(path, json);
+            let _ = fsutil::write_atomic(path, json.as_bytes());
         }
     }
 
@@ -374,7 +394,7 @@ impl ReaderHost for ExternalPathReaderHost {
     fn set_page_label_override(&self, _value: Option<fond_bib::PageLabelOverride>) {}
 
     fn notify(&self, message: &str) {
-        toast(&self.widgets, message);
+        toast_anywhere(&self.widgets, message);
     }
 
     fn load_bookmarks(&self) -> Vec<u32> {

@@ -36,6 +36,9 @@ const HEADER_CONTENT_DATA_KEY: &str = "fond-reader-header-content";
 const HEADER_SLOTS_DATA_KEY: &str = "fond-reader-header-slots";
 
 /// `TabPage` data key for the tab's keyboard shortcut handler — see `set_tab_key_handler`.
+/// `TabPage`/window data key for the host window's `adw::ToastOverlay`.
+const TOAST_DATA_KEY: &str = "fond-reader-toasts";
+
 const KEY_HANDLER_DATA_KEY: &str = "fond-reader-key-handler";
 
 type KeyHandler = Rc<dyn Fn(gtk4::gdk::Key, gtk4::gdk::ModifierType) -> glib::Propagation>;
@@ -290,7 +293,12 @@ fn new_tab_view(parent: &adw::ApplicationWindow) -> (adw::Window, adw::TabView) 
         });
     }
 
-    toolbar.set_content(Some(&tab_view));
+    let toasts = adw::ToastOverlay::new();
+    toasts.set_child(Some(&tab_view));
+    unsafe {
+        host.set_data(TOAST_DATA_KEY, toasts.clone());
+    }
+    toolbar.set_content(Some(&toasts));
     host.set_content(Some(&toolbar));
 
     // No `create-window` handler: dragging a tab out of the bar is left as GTK's default
@@ -456,5 +464,34 @@ pub fn set_tab_header(
                 apply_selected_header(&tab.tab_view, slots.as_ref());
             }
         }
+    }
+}
+
+/// Show a toast in the reader host window the user is looking at (the active one, else any).
+/// Returns false when no reader window is open, so the caller can fall back to its own.
+pub fn toast_in_readers(message: &str) -> bool {
+    let mut fallback: Option<adw::ToastOverlay> = None;
+    for toplevel in gtk4::Window::list_toplevels() {
+        let Some(window) = toplevel.downcast_ref::<adw::Window>() else {
+            continue;
+        };
+        let overlay = unsafe {
+            window
+                .data::<adw::ToastOverlay>(TOAST_DATA_KEY)
+                .map(|o| o.as_ref().clone())
+        };
+        let Some(overlay) = overlay else { continue };
+        if window.is_active() {
+            overlay.add_toast(adw::Toast::new(message));
+            return true;
+        }
+        fallback.get_or_insert(overlay);
+    }
+    match fallback {
+        Some(o) => {
+            o.add_toast(adw::Toast::new(message));
+            true
+        }
+        None => false,
     }
 }

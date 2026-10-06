@@ -1724,34 +1724,92 @@ pub fn show_epub_reader(
     // (`evaluate_javascript`), so this returns `Propagation::Proceed` immediately and writes
     // the note in the callback — nothing after that write depends on the dialog still being
     // open, it just needs `state`/`key`, both cheap `Rc`/`String` clones.
+    const SCROLL_PERCENT_JS: &str = "(function() {\n  var el = document.documentElement;\n  var range = el.scrollHeight - el.clientHeight;\n  return range > 0 ? Math.round((el.scrollTop / range) * 100) : 0;\n})()";
+    let last_percent: Rc<Cell<u8>> = Rc::new(Cell::new(start_percent.unwrap_or(0)));
+    let closed = Rc::new(Cell::new(false));
+    {
+        let host = host.clone();
+        let reader = reader.clone();
+        let web_view = web_view.clone();
+        let last_percent = last_percent.clone();
+        let closed = closed.clone();
+        glib::timeout_add_local(std::time::Duration::from_secs(5), move || {
+            if closed.get() {
+                return glib::ControlFlow::Break;
+            }
+            let host = host.clone();
+            let reader = reader.clone();
+            let last_percent = last_percent.clone();
+            web_view.evaluate_javascript(
+                SCROLL_PERCENT_JS,
+                None,
+                None,
+                gio::Cancellable::NONE,
+                move |result| {
+                    if let Ok(v) = result {
+                        last_percent.set(v.to_int32().clamp(0, 100) as u8);
+                        let r = reader.borrow();
+                        host.save_progress(fond_bib::Progress {
+                            page: r.index as u32 + 1,
+                            of: r.spine.len() as u32,
+                            chapter_percent: Some(last_percent.get()),
+                        });
+                    }
+                },
+            );
+            glib::ControlFlow::Continue
+        });
+    }
+    // Saved synchronously from the last known scroll position first, then refreshed from the
+    // WebView and only then unregistered: unregistering the last reader can quit the app, and
+    // the WebView's answer arrives asynchronously.
     {
         let host = host.clone();
         let hash = hash.to_string();
         let reader = reader.clone();
         let web_view = web_view.clone();
         crate::reader_host::on_tab_closed(&reader_tab, move || {
-            crate::unregister_window(&hash);
+            closed.set(true);
             let (chapter_num, chapter_count) = {
                 let r = reader.borrow();
                 (r.index as u32 + 1, r.spine.len() as u32)
             };
+            host.save_progress(fond_bib::Progress {
+                page: chapter_num,
+                of: chapter_count,
+                chapter_percent: Some(last_percent.get()),
+            });
+            let unregistered = Rc::new(Cell::new(false));
+            let finish = {
+                let hash = hash.clone();
+                let unregistered = unregistered.clone();
+                Rc::new(move || {
+                    if !unregistered.replace(true) {
+                        crate::unregister_window(&hash);
+                    }
+                })
+            };
+            {
+                let finish = finish.clone();
+                glib::timeout_add_local_once(std::time::Duration::from_millis(1500), move || {
+                    finish()
+                });
+            }
             let host = host.clone();
-            let script = "(function() {\n  var el = document.documentElement;\n  var range = el.scrollHeight - el.clientHeight;\n  return range > 0 ? Math.round((el.scrollTop / range) * 100) : 0;\n})()";
             web_view.evaluate_javascript(
-                script,
+                SCROLL_PERCENT_JS,
                 None,
                 None,
                 gio::Cancellable::NONE,
                 move |result| {
-                    let percent: u8 = result
-                        .ok()
-                        .map(|v| v.to_int32().clamp(0, 100) as u8)
-                        .unwrap_or(0);
-                    host.save_progress(fond_bib::Progress {
-                        page: chapter_num,
-                        of: chapter_count,
-                        chapter_percent: Some(percent),
-                    });
+                    if let Ok(v) = result {
+                        host.save_progress(fond_bib::Progress {
+                            page: chapter_num,
+                            of: chapter_count,
+                            chapter_percent: Some(v.to_int32().clamp(0, 100) as u8),
+                        });
+                    }
+                    finish();
                 },
             );
         });

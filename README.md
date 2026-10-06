@@ -8,13 +8,13 @@ binding, in the bookbinding sense.
 
 Unlike those two apps, Pereplyot has no git-backed vault behind it — it just opens a file.
 Annotations and reading progress are stored locally, keyed by the file's content hash, under
-`~/.local/share/pereplyot/`. A document's annotation sidecar is byte-compatible with what
+`$XDG_DATA_HOME/pereplyot/` (`~/.var/app/io.github.calstfrancis.Pereplyot/data/pereplyot/` under flatpak). A document's annotation sidecar is byte-compatible with what
 Kartoteka and Sputnik write, so it's portable between all three as long as the file's hash
 matches.
 
 ## Status
 
-**v0.6.0 "Wide Margin", released 2026-09-24.** Opening a PDF or EPUB (via Open,
+**v0.9.0 "True Register".** Opening a PDF or EPUB (via Open,
 drag-and-drop, a file manager's "Open With", or **launched by Kartoteka/Sputnik** — see
 below); a Library (cover-grid, opt-in) and History (every document opened, automatic,
 **shared across Kartoteka and Sputnik too**) shelf; and the reader itself —

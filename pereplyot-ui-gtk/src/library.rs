@@ -39,12 +39,8 @@ impl Library {
     }
 
     pub fn save(&self) {
-        let dir = data_dir();
-        if fs::create_dir_all(&dir).is_err() {
-            return;
-        }
         if let Ok(json) = serde_json::to_string_pretty(self) {
-            let _ = fs::write(library_path(), json);
+            let _ = fond_read_gtk::fsutil::write_atomic(&library_path(), json.as_bytes());
         }
     }
 

@@ -245,3 +245,73 @@ fn main() -> glib::ExitCode {
 
     app.run()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsString;
+
+    fn args(a: &[&str]) -> Vec<OsString> {
+        a.iter().map(OsString::from).collect()
+    }
+
+    fn temp_file() -> PathBuf {
+        let p = std::env::temp_dir().join(format!("pereplyot-cli-{}.pdf", std::process::id()));
+        std::fs::write(&p, b"x").unwrap();
+        p
+    }
+
+    #[test]
+    fn no_args_shows_launcher() {
+        assert!(matches!(parse_args(&[]), Ok(ParsedArgs::Launcher)));
+    }
+
+    #[test]
+    fn bare_file_opens_standalone() {
+        match parse_args(&args(&["a.pdf"])) {
+            Ok(ParsedArgs::Open { file, options }) => {
+                assert_eq!(file, PathBuf::from("a.pdf"));
+                assert!(options.host_override.is_none() && !options.annotations_only);
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn vault_mode_with_title_and_annotations() {
+        let f = temp_file();
+        let f = f.to_string_lossy().to_string();
+        match parse_args(&args(&[
+            "--vault=/v",
+            "--key=smith2020",
+            "--title=T",
+            "--annotations",
+            &f,
+        ])) {
+            Ok(ParsedArgs::Open { options, .. }) => {
+                assert!(options.annotations_only);
+                assert_eq!(options.title.as_deref(), Some("T"));
+                assert!(matches!(
+                    options.host_override,
+                    Some(HostOverride::Vault { ref key, .. }) if key == "smith2020"
+                ));
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn unknown_options_are_ignored() {
+        assert!(matches!(
+            parse_args(&args(&["--from-the-future=1", "a.pdf"])),
+            Ok(ParsedArgs::Open { .. })
+        ));
+    }
+
+    #[test]
+    fn mixed_or_fileless_modes_are_rejected() {
+        assert!(parse_args(&args(&["--vault=/v", "--key=k"])).is_err());
+        assert!(parse_args(&args(&["--vault=/v", "--annotations-file=/a", "a.pdf"])).is_err());
+        assert!(parse_args(&args(&["a.pdf", "b.pdf"])).is_err());
+    }
+}

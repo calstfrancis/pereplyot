@@ -22,11 +22,13 @@ use gtk4::Orientation;
 
 pub mod annotations;
 pub mod epub;
+pub mod fsutil;
 pub mod history;
 mod page_geom;
 pub mod palette;
 pub mod pdf;
 pub mod reader_host;
+pub mod store;
 
 /// A slot holding a "rebuild this list" closure, filled in after the widgets it rebuilds
 /// exist. Shared by both readers' notes sidebars.

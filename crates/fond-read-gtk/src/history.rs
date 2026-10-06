@@ -8,10 +8,8 @@
 //! per-app directories rather than one shared file. This instead resolves an explicit, real
 //! path under the actual home directory — the same pattern Kartoteka/Sputnik already rely
 //! on to share a Kartoteka library between their own sandboxes (a plain path reachable
-//! because both hold `--filesystem=home`, not an XDG-portal-scoped location). Pereplyot
-//! itself deliberately avoids `--filesystem=home` (root `CLAUDE.md`'s packaging notes) —
-//! it grants a narrow `--filesystem=~/.local/share/pereplyot:create` specifically for this
-//! file instead of the broader permission.
+//! because all three hold `--filesystem=home` (Pereplyot's manifest was broadened to match
+//! when Kartoteka/Sputnik started launching it).
 //!
 //! One known limitation, accepted rather than solved here: clicking a history entry that
 //! another app recorded, from inside Pereplyot's own (portal-restricted) sandbox, can fail
@@ -56,14 +54,8 @@ pub fn load() -> Vec<HistoryEntry> {
 }
 
 fn save(entries: &[HistoryEntry]) {
-    let path = history_path();
-    if let Some(dir) = path.parent() {
-        if fs::create_dir_all(dir).is_err() {
-            return;
-        }
-    }
     if let Ok(json) = serde_json::to_string_pretty(entries) {
-        let _ = fs::write(path, json);
+        let _ = crate::fsutil::write_atomic(&history_path(), json.as_bytes());
     }
 }
 
