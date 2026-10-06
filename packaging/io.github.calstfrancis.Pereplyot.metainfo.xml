@@ -17,7 +17,11 @@
     <p>Features:</p>
     <ul>
       <li>Open a PDF or EPUB by file picker, drag-and-drop, or "Open With".</li>
-      <li>Highlights, underlines, strikes, notes, and bookmarks, with export to Markdown.</li>
+      <li>Highlights, underlines, strikes, notes, and bookmarks, marked from a popover that
+      appears when you select text.</li>
+      <li>Export your notes as Typst, LaTeX or Markdown, grouped by what each highlight
+      colour means, with citations.</li>
+      <li>A Text view for PDFs that screen readers can read and the keyboard can select.</li>
       <li>In-document search, continuous scroll, facing-pages view, and zoom-to-fit for
       PDFs.</li>
       <li>Rotate and invert-colours (night reading) for PDF; Light/Sepia/Dark reading
@@ -25,8 +29,8 @@
       <li>A page-thumbnail grid, click-to-turn page zones, and keyboard/mouse page and
       chapter navigation.</li>
       <li>Reading position and annotations remembered per document automatically.</li>
-      <li>A Library shelf for documents you keep, separate from History's record of
-      everything you've opened.</li>
+      <li>A Library with named shelves for documents you keep, separate from History's
+      record of everything you've opened, and a Notes tab that searches every annotation.</li>
     </ul>
   </description>
 
@@ -51,6 +55,16 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.10.0" date="2026-10-06">
+      <description>
+        <p>0.10.0 "Fair Copy" — export notes as Typst, LaTeX or Markdown grouped by colour
+        meaning, with citations. Select text first, then mark it from a popover. Library
+        shelves, adjustable card size, and a Notes tab that searches every annotation. A Text
+        view for PDFs usable with a screen reader or keyboard alone, working PDF links,
+        OCR for scanned PDFs, and much safer saving. Large PDFs use a fraction of the
+        memory.</p>
+      </description>
+    </release>
     <release version="0.9.0" date="2026-10-03">
       <description>
         <p>0.9.0 "True Register" — fixed PDF selection and highlighting missing the text under

@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.10.0] "Fair Copy" — 2026-10-06
 
 - **Typst, LaTeX and Markdown export, grouped by what your colours mean.** The export dialog
   (Typst is the default) lays quotes out under "Key idea / thesis", "Evidence / support",

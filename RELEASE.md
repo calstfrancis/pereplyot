@@ -1,4 +1,4 @@
-# Pereplyot v0.9.0 "True Register"
+# Pereplyot v0.10.0 "Fair Copy"
 
 Install via Flatpak:
 
@@ -18,19 +18,26 @@ flatpak update io.github.calstfrancis.Pereplyot
 
 ### What's new
 
-**Selecting and highlighting PDF text now lands on the text you dragged over.** On many
-publisher and scanned PDFs, a drag could select a different line from the one under the
-pointer, draw the highlight in the wrong place, or select nothing at all. The cause was page
-layouts and page rotations the reader didn't account for; it now handles both, so selections,
-highlights, search matches and right-clicks all line up with the page.
+**Export your notes as Typst, LaTeX or Markdown, grouped by what your colours mean** — key
+ideas, evidence, connections and problems under their own headings — with citations against a
+bibliography key (`@key[p. 42]` in Typst). "Copy with citation" does the same for a single quote.
 
-**Copying text works properly.** Text copied from a PDF keeps its spaces instead of running
-every word together, and right-clicking now offers "Copy selected text" after a selection and
-"Copy highlighted text" on any existing highlight, underline or note.
+**Select first, then mark.** Releasing a text selection offers the four colours, underline,
+strike-out, a note, copy and copy-with-citation, in both PDF and EPUB. The keys 1–4 mark the
+current selection.
 
-**Page-turn keys work from anywhere in the reader window**, not only when the page itself has
-focus. Menus and text fields keep their usual keys, and the numeric keypad's arrow and Page
-Up/Down keys work too.
+**Organise your Library:** named shelves, adjustable card size, sorting, reading progress on
+each card — and a new Notes tab that searches every highlight and note across all your
+documents, optionally one colour at a time.
+
+**A Text view for PDFs** that screen readers can read and that you can select and mark from
+the keyboard alone, with resizable text. PDF links now work, with a Back button.
+
+**Safer, lighter.** Your annotations, progress and settings are saved atomically with a
+backup, and damaged files are set aside instead of overwritten. A 300-page PDF now stays
+around 360 MB while you scroll it, down from over 1.7 GB. Scanned PDFs get a warning and a
+one-click OCR (with ocrmypdf installed), and if a file is re-saved or OCR'd Pereplyot offers
+to carry its notes over.
 
 ---
 
