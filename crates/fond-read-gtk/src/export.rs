@@ -381,6 +381,57 @@ pub fn items_from_sidecar(
     keyed.into_iter().map(|(_, i)| i).collect()
 }
 
+/// A quotation plus its citation, ready to paste into a document in `format`.
+pub fn cite_snippet(
+    format: Format,
+    quote: &str,
+    locator: &str,
+    is_chapter: bool,
+    cite_key: Option<&str>,
+) -> String {
+    let item = Item {
+        locator: locator.to_string(),
+        is_chapter,
+        kind: AnnotationKind::Highlight,
+        color: None,
+        quote: None,
+        note: None,
+    };
+    let quote = quote.split_whitespace().collect::<Vec<_>>().join(" ");
+    match (format, cite_key) {
+        (Format::Typst, Some(k)) => format!(
+            "#quote(block: true, attribution: [@{k}[{}]])[{}]",
+            item.locator_text(),
+            typst_escape(&quote)
+        ),
+        (Format::Typst, None) => format!(
+            "#quote(block: true, attribution: [{}])[{}]",
+            typst_escape(&item.locator_text()),
+            typst_escape(&quote)
+        ),
+        (Format::Latex, Some(k)) => format!(
+            "\\enquote{{{}}}\\autocite[{}{}]{{{k}}}",
+            latex_escape(&quote),
+            if is_chapter { "ch.~" } else { "p.~" },
+            latex_escape(locator)
+        ),
+        (Format::Latex, None) => format!(
+            "\\enquote{{{}}} ({})",
+            latex_escape(&quote),
+            latex_escape(&item.locator_text())
+        ),
+        (Format::Markdown, Some(k)) => {
+            format!("\"{quote}\" [@{k}, {}]", item.locator_text())
+        }
+        (Format::Markdown, None) => format!("\"{quote}\" ({})", item.locator_text()),
+    }
+}
+
+/// The format last chosen in the export dialog (Typst until the user picks another).
+pub fn preferred_format() -> Format {
+    Format::ALL[(LAST_FORMAT.with(|f| f.get()) as usize).min(Format::ALL.len() - 1)]
+}
+
 thread_local! {
     static LAST_FORMAT: Cell<u32> = const { Cell::new(0) };
     static LAST_GROUPED: Cell<bool> = const { Cell::new(true) };
@@ -571,6 +622,21 @@ mod tests {
         assert!(out.contains("50\\% of \\$x\\_i\\$ \\& more"));
         assert!(out.contains("\\autocite[p.~7]{k}"));
         assert!(out.contains("\\section*{T\\_1}"));
+    }
+
+    #[test]
+    fn cite_snippets() {
+        let t = cite_snippet(Format::Typst, "a  b\nc #", "42", false, Some("k"));
+        assert_eq!(
+            t,
+            "#quote(block: true, attribution: [@k[p. 42]])[a b c \\#]"
+        );
+        let l = cite_snippet(Format::Latex, "x", "3", true, Some("k"));
+        assert_eq!(l, "\\enquote{x}\\autocite[ch.~3]{k}");
+        assert_eq!(
+            cite_snippet(Format::Markdown, "x", "7", false, None),
+            "\"x\" (p. 7)"
+        );
     }
 
     #[test]

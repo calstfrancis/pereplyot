@@ -99,6 +99,7 @@ thread_local! {
     static MAIN_HOST: RefCell<Option<(adw::Window, adw::TabView)>> = const { RefCell::new(None) };
     // Optional bottom-right status-bar widget an embedding app can ask every reader host
     // window (the shared one and any popped-out ones) to carry — see `set_host_footer`.
+    static HOST_MENU: RefCell<Option<Rc<dyn Fn() -> gtk4::Widget>>> = const { RefCell::new(None) };
     static HOST_FOOTER: RefCell<Option<Rc<dyn Fn() -> gtk4::Widget>>> = const { RefCell::new(None) };
 }
 
@@ -114,6 +115,14 @@ thread_local! {
 /// its bottom bar isn't rebuilt afterward.
 pub fn set_host_footer(factory: impl Fn() -> gtk4::Widget + 'static) {
     HOST_FOOTER.with(|cell| *cell.borrow_mut() = Some(Rc::new(factory)));
+}
+
+/// Reserve a widget (typically a menu button) for the far end of every reader host window's
+/// header, built fresh per window. Lets the embedding app offer its settings from the reader
+/// itself, which matters when the reader was launched by another app and the app's own window
+/// was never shown.
+pub fn set_host_menu(factory: impl Fn() -> gtk4::Widget + 'static) {
+    HOST_MENU.with(|cell| *cell.borrow_mut() = Some(Rc::new(factory)));
 }
 
 /// Build a fresh instance of the reserved footer widget (see `set_host_footer`), if the
@@ -193,6 +202,10 @@ fn new_tab_view(parent: &adw::ApplicationWindow) -> (adw::Window, adw::TabView) 
     let toolbar = adw::ToolbarView::new();
     let header = adw::HeaderBar::new();
     header.add_css_class("fond-chrome");
+
+    if let Some(menu) = HOST_MENU.with(|cell| cell.borrow().as_ref().map(|f| f())) {
+        header.pack_end(&menu);
+    }
 
     let maximize_button = gtk4::Button::from_icon_name("window-maximize-symbolic");
     maximize_button.add_css_class("flat");

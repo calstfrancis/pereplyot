@@ -227,6 +227,17 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
         version_button.connect_clicked(move |_| show_changelog(&widgets.window));
     }
     menu_button.set_popover(Some(&menu::build(&widgets)));
+    {
+        let widgets = widgets.clone();
+        fond_read_gtk::reader_host::set_host_menu(move || {
+            let button = gtk4::MenuButton::new();
+            button.set_icon_name("open-menu-symbolic");
+            button.set_tooltip_text(Some("Main Menu"));
+            button.add_css_class("flat");
+            button.set_popover(Some(&menu::build(&widgets)));
+            button.upcast()
+        });
+    }
 
     {
         let widgets = widgets.clone();

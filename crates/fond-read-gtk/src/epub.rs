@@ -895,14 +895,13 @@ pub fn show_epub_reader(
                     remove_button.set_tooltip_text(Some("Remove bookmark"));
                     row.append(&remove_button);
                     {
-                        let jump = gtk4::GestureClick::new();
                         let reader = reader.clone();
                         let view = view.clone();
                         let prev = prev.clone();
                         let next = next.clone();
                         let chapter_label = chapter_label.clone();
                         let bookmark_button = bookmark_button.clone();
-                        jump.connect_released(move |_gesture, _n, _x, _y| {
+                        crate::make_jump(&label, move || {
                             let target = reader
                                 .borrow()
                                 .spine
@@ -919,7 +918,6 @@ pub fn show_epub_reader(
                                 &target,
                             );
                         });
-                        label.add_controller(jump);
                     }
                     {
                         let host = host.clone();
@@ -993,7 +991,6 @@ pub fn show_epub_reader(
                 outer.append(&header_box);
 
                 {
-                    let jump = gtk4::GestureClick::new();
                     let reader = reader.clone();
                     let view = view.clone();
                     let prev = prev.clone();
@@ -1003,7 +1000,7 @@ pub fn show_epub_reader(
                     let pending_scroll = pending_scroll.clone();
                     let id = annotation.id.clone();
                     let chapter = chapter.clone();
-                    jump.connect_released(move |_gesture, _n, _x, _y| {
+                    crate::make_jump(&header_label, move || {
                         *pending_scroll.borrow_mut() = Some(id.clone());
                         epub_go_to(
                             &reader,
@@ -1015,7 +1012,6 @@ pub fn show_epub_reader(
                             &chapter,
                         );
                     });
-                    header_label.add_controller(jump);
                 }
 
                 if let Some(snippet) = &annotation.snippet {
@@ -1416,7 +1412,7 @@ pub fn show_epub_reader(
                     let pending_search = pending_search.clone();
                     let query = text.to_string();
                     let chapter_idx = m.chapter;
-                    click.connect_released(move |_, _n_press, _x, _y| {
+                    let go: Rc<dyn Fn()> = Rc::new(move || {
                         let target = {
                             let r = reader.borrow();
                             r.spine.get(chapter_idx).cloned()
@@ -1433,6 +1429,17 @@ pub fn show_epub_reader(
                             &target,
                         );
                     });
+                    {
+                        let go = go.clone();
+                        click.connect_released(move |_, _, _, _| go());
+                    }
+                    row.connect_activate(move |_| go());
+                    row.set_activatable(true);
+                    row.update_property(&[gtk4::accessible::Property::Label(&format!(
+                        "Chapter {}: {}",
+                        m.chapter + 1,
+                        m.snippet
+                    ))]);
                     row.add_controller(click);
                     results_list.append(&row);
                 }

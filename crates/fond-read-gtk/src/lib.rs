@@ -351,3 +351,21 @@ pub fn focus_owns_activation_keys(root: &impl IsA<gtk4::Widget>) -> bool {
     }
     false
 }
+
+/// Turn `label` (already appended to a horizontal/vertical `Box`) into the content of a flat,
+/// keyboard-focusable button in the same place, running `on_click` on click, Enter or Space.
+/// Sidebar jump targets used to be bare labels with a click gesture, unreachable without a mouse.
+pub fn make_jump(label: &gtk4::Label, on_click: impl Fn() + 'static) {
+    let Some(parent) = label.parent().and_then(|p| p.downcast::<gtk4::Box>().ok()) else {
+        return;
+    };
+    let prev = label.prev_sibling();
+    let hexpand = gtk4::prelude::WidgetExt::hexpands(label);
+    parent.remove(label);
+    let button = gtk4::Button::new();
+    button.add_css_class("flat");
+    button.set_hexpand(hexpand);
+    button.set_child(Some(label));
+    parent.insert_child_after(&button, prev.as_ref());
+    button.connect_clicked(move |_| on_click());
+}

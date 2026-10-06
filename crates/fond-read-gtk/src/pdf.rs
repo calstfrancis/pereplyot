@@ -210,6 +210,9 @@ fn paint_preview_rects(cr: &gtk4::cairo::Context, rects: PreviewRects, drag: (f6
 
 /// A drag rectangle in a picture's own pixel space: `(x0, y0, x1, y1)`.
 type DragRectCell = Rc<Cell<Option<(f64, f64, f64, f64)>>>;
+/// Late-bound "mark the current selection with colour N" action, filled in once the notes
+/// sidebar it refreshes exists.
+type QuickMarkSlot = Rc<RefCell<Option<Rc<dyn Fn(usize)>>>>;
 /// Self-referential slot for the notes-sidebar rebuild closure — a row's own delete button
 /// needs to trigger a fresh rebuild of the list it lives in.
 type RebuildNotesCell = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
@@ -603,13 +606,11 @@ fn copy_to_clipboard(host: &Rc<dyn ReaderHost>, text: &str) {
     host.notify("Copied to clipboard");
 }
 
-/// Copies the text under a "Select text" mode drag to the clipboard instead of saving an
-/// annotation — the drag-to-annotate gesture's other mode. Remembers the selection (page,
-/// text, and quadpoints) on `reader` so it stays visibly highlighted on the page (the caller
-/// re-renders after this returns) and so a note added right after can quote it and carry the
-/// real on-page region — see `last_selection`. Returns whether a selection was actually made,
-/// so the caller knows whether a re-render is worth doing.
-fn copy_drag_selection(
+/// Selects the text under a "Select text" mode drag, remembering it (page, text, quadpoints)
+/// on `reader` so it stays visibly marked on the page and so the selection popover — and a
+/// note added right after — can act on it; see `last_selection`. Returns whether anything was
+/// selected, so the caller knows whether to re-render and show the popover.
+fn select_drag_text(
     host: &Rc<dyn ReaderHost>,
     reader: &Rc<RefCell<ReaderState>>,
     page: u16,
@@ -635,7 +636,6 @@ fn copy_drag_selection(
     match selection {
         Some(sel) if !sel.text.trim().is_empty() => {
             let text = selection_text(&reader.borrow(), page, &sel.quads).unwrap_or(sel.text);
-            copy_to_clipboard(host, &text);
             reader.borrow_mut().last_selection = Some((page, text, sel.quads));
             true
         }
@@ -644,6 +644,197 @@ fn copy_drag_selection(
             false
         }
     }
+}
+
+/// Everything the selection popover and the 1–4 quick-mark keys need to save a mark.
+#[derive(Clone)]
+struct MarkCtx {
+    host: Rc<dyn ReaderHost>,
+    reader: Rc<RefCell<ReaderState>>,
+    pdf_hash: String,
+    undo_button: gtk4::Button,
+    redo_button: gtk4::Button,
+    rebuild_notes: Rc<dyn Fn()>,
+    reader_window: adw::Window,
+    /// Re-render whatever shows the page that was just marked.
+    refresh: Rc<dyn Fn()>,
+}
+
+/// Turn the current selection into a mark of `kind`, in `color` (hex). Consumes the selection.
+fn apply_selection_mark(ctx: &MarkCtx, kind: fond_bib::AnnotationKind, color: &str) -> bool {
+    let Some((page, text, quads)) = ctx.reader.borrow_mut().last_selection.take() else {
+        return false;
+    };
+    let annotation = fond_bib::Annotation::drawn(
+        kind,
+        page as u32 + 1,
+        quads,
+        Some(text),
+        None,
+        Some(color.to_string()),
+    );
+    push_undo_snapshot(&ctx.reader);
+    {
+        let mut r = ctx.reader.borrow_mut();
+        r.annotations.pdf_hash = Some(ctx.pdf_hash.clone());
+        r.annotations.upsert(annotation);
+    }
+    let result = ctx.host.save_annotations(&ctx.reader.borrow().annotations);
+    match result {
+        Ok(()) => {
+            (ctx.refresh)();
+            sync_undo_redo_buttons(&ctx.reader, &ctx.undo_button, &ctx.redo_button);
+            (ctx.rebuild_notes)();
+            ctx.host.notify(match kind {
+                fond_bib::AnnotationKind::Underline => "Underline added",
+                fond_bib::AnnotationKind::Strikeout => "Strikeout added",
+                _ => "Highlight added",
+            });
+            true
+        }
+        Err(e) => {
+            ctx.host.notify(&e);
+            false
+        }
+    }
+}
+
+/// Copy the current selection, optionally as a quotation with its citation in the format last
+/// used for export (Typst by default).
+fn copy_selection(ctx: &MarkCtx, with_citation: bool) {
+    let (page, text) = {
+        let r = ctx.reader.borrow();
+        match &r.last_selection {
+            Some((p, t, _)) => (*p, t.clone()),
+            None => return,
+        }
+    };
+    if !with_citation {
+        copy_to_clipboard(&ctx.host, &text);
+        return;
+    }
+    let locator = {
+        let r = ctx.reader.borrow();
+        r.page_labels
+            .get(page as usize)
+            .and_then(|l| l.clone())
+            .unwrap_or_else(|| (page + 1).to_string())
+    };
+    let snippet = crate::export::cite_snippet(
+        crate::export::preferred_format(),
+        &text,
+        &locator,
+        false,
+        ctx.host.citation_key().as_deref(),
+    );
+    copy_to_clipboard(&ctx.host, &snippet);
+}
+
+/// The popover offered when a text selection ends: the four colours, underline, strikeout, a
+/// note, and copy / copy-with-citation.
+fn show_selection_popover(ctx: &MarkCtx, parent: &gtk4::Picture, x: f64, y: f64, page: u16) {
+    let popover = gtk4::Popover::new();
+    popover.set_parent(parent);
+    popover.set_pointing_to(Some(&gdk::Rectangle::new(
+        x.round() as i32,
+        y.round() as i32,
+        1,
+        1,
+    )));
+
+    let rows = gtk4::Box::new(Orientation::Vertical, 4);
+    rows.set_margin_top(6);
+    rows.set_margin_bottom(6);
+    rows.set_margin_start(6);
+    rows.set_margin_end(6);
+
+    let colours = gtk4::Box::new(Orientation::Horizontal, 4);
+    colours.set_halign(gtk4::Align::Center);
+    for (i, color) in crate::palette::HIGHLIGHT_COLORS.iter().enumerate() {
+        let button = gtk4::Button::new();
+        button.add_css_class("flat");
+        button.set_child(Some(&crate::palette::numbered_swatch(color.hex, i + 1)));
+        button.set_tooltip_text(Some(&format!(
+            "Highlight: {} ({})",
+            crate::palette::highlight_label(i),
+            i + 1
+        )));
+        button.update_property(&[gtk4::accessible::Property::Label(&format!(
+            "Highlight as {}",
+            crate::palette::highlight_label(i)
+        ))]);
+        let ctx = ctx.clone();
+        let popover = popover.clone();
+        let hex = color.hex;
+        button.connect_clicked(move |_| {
+            popover.popdown();
+            apply_selection_mark(&ctx, fond_bib::AnnotationKind::Highlight, hex);
+        });
+        colours.append(&button);
+    }
+    rows.append(&colours);
+
+    let action = |label: &str, run: Rc<dyn Fn()>| {
+        let button = popover_button(label, false);
+        let popover = popover.clone();
+        button.connect_clicked(move |_| {
+            popover.popdown();
+            run();
+        });
+        button
+    };
+    let default_hex = ctx.reader.borrow().draw_color.clone();
+    for (label, kind) in [
+        ("Underline", fond_bib::AnnotationKind::Underline),
+        ("Strike out", fond_bib::AnnotationKind::Strikeout),
+    ] {
+        let ctx = ctx.clone();
+        let hex = default_hex.clone();
+        rows.append(&action(
+            label,
+            Rc::new(move || {
+                apply_selection_mark(&ctx, kind, &hex);
+            }),
+        ));
+    }
+    {
+        let ctx = ctx.clone();
+        rows.append(&action(
+            "Add note…",
+            Rc::new(move || {
+                show_pdf_note_dialog(
+                    &ctx.host,
+                    &ctx.reader,
+                    &ctx.pdf_hash,
+                    &ctx.undo_button,
+                    &ctx.redo_button,
+                    ctx.rebuild_notes.clone(),
+                    &ctx.reader_window,
+                    ctx.refresh.clone(),
+                );
+            }),
+        ));
+    }
+    rows.append(&popover_separator());
+    {
+        let ctx = ctx.clone();
+        rows.append(&action(
+            "Copy",
+            Rc::new(move || copy_selection(&ctx, false)),
+        ));
+    }
+    {
+        let ctx = ctx.clone();
+        rows.append(&action(
+            "Copy with citation",
+            Rc::new(move || copy_selection(&ctx, true)),
+        ));
+    }
+    let _ = page;
+
+    popover.set_child(Some(&rows));
+    popover.connect_closed(|p| p.unparent());
+    popover.popup();
 }
 
 fn save_drag_annotation(
@@ -1078,6 +1269,7 @@ fn build_continuous_view(
             let drag = gtk4::GestureDrag::new();
             let host = host.clone();
             let reader = reader.clone();
+            let reader_window = reader_window.clone();
             let pdf_hash = pdf_hash.to_string();
             let this_picture = picture.clone();
             let undo_button = undo_button.clone();
@@ -1133,8 +1325,22 @@ fn build_continuous_view(
                         end_y,
                     };
                     if reader.borrow().draw_kind.is_none() {
-                        if copy_drag_selection(&host, &reader, page, &geom) {
+                        if select_drag_text(&host, &reader, page, &geom) {
                             render_continuous_page(&reader, page);
+                            let ctx = MarkCtx {
+                                host: host.clone(),
+                                reader: reader.clone(),
+                                pdf_hash: pdf_hash.clone(),
+                                undo_button: undo_button.clone(),
+                                redo_button: redo_button.clone(),
+                                rebuild_notes: rebuild_notes.clone(),
+                                reader_window: reader_window.clone(),
+                                refresh: {
+                                    let reader = reader.clone();
+                                    Rc::new(move || render_continuous_page(&reader, page))
+                                },
+                            };
+                            show_selection_popover(&ctx, &this_picture, end_x, end_y, page);
                         }
                         return;
                     }
@@ -1607,7 +1813,7 @@ pub fn show_pdf_reader(
         annotations,
         render_px: (0, 0),
         page_geoms: RefCell::new(std::collections::HashMap::new()),
-        draw_kind: Some(fond_bib::AnnotationKind::Highlight),
+        draw_kind: None,
         last_selection: None,
         search_matches: Vec::new(),
         search_current: 0,
@@ -1717,11 +1923,12 @@ pub fn show_pdf_reader(
     let style_labels: Vec<&str> = MARK_KIND_OPTIONS.iter().map(|(l, _)| *l).collect();
     let style_drop = gtk4::DropDown::from_strings(&style_labels);
     style_drop.set_tooltip_text(Some("What kind of mark a drag draws"));
-    let palette_choice: Rc<Cell<Option<usize>>> = Rc::new(Cell::new(Some(0)));
+    style_drop.set_sensitive(false);
+    let palette_choice: Rc<Cell<Option<usize>>> = Rc::new(Cell::new(None));
     let palette = {
         let palette_choice = palette_choice.clone();
         let mode_change = mode_change.clone();
-        crate::palette::palette_widget(true, Some(0), move |choice| {
+        crate::palette::palette_widget(true, None, move |choice| {
             palette_choice.set(choice);
             if let Some(f) = mode_change.borrow().as_ref() {
                 f();
@@ -1813,10 +2020,36 @@ pub fn show_pdf_reader(
     header_end.append(&continuous_toggle);
     header_end.append(&palette);
     header_end.append(&style_drop);
-    header_end.append(&note_button);
-    header_end.append(&page_num_button);
-    header_end.append(&export_button);
-    header_end.append(&popout_button);
+    let more_button = gtk4::MenuButton::new();
+    more_button.set_icon_name("view-more-symbolic");
+    more_button.set_tooltip_text(Some("More: note, page numbering, export, new window"));
+    more_button.add_css_class("flat");
+    {
+        let rows = gtk4::Box::new(Orientation::Vertical, 2);
+        rows.set_margin_top(6);
+        rows.set_margin_bottom(6);
+        rows.set_margin_start(6);
+        rows.set_margin_end(6);
+        let more_popover = gtk4::Popover::new();
+        for (label, target) in [
+            ("Add note on this page…", note_button.clone()),
+            ("Set page numbering…", page_num_button.clone()),
+            ("Export notes…", export_button.clone()),
+            ("Open in a new window", popout_button.clone()),
+        ] {
+            let row = popover_button(label, false);
+            row.set_sensitive(target.is_sensitive());
+            let popover = more_popover.clone();
+            row.connect_clicked(move |_| {
+                popover.popdown();
+                target.emit_clicked();
+            });
+            rows.append(&row);
+        }
+        more_popover.set_child(Some(&rows));
+        more_button.set_popover(Some(&more_popover));
+    }
+    header_end.append(&more_button);
     header_end.append(&notes_toggle);
 
     // Status bar (house style, same classes as the main window's): page nav and search on
@@ -1861,7 +2094,9 @@ pub fn show_pdf_reader(
     }
     view.add_bottom_bar(&statusbar);
 
-    let hint = gtk4::Label::new(Some("Drag over the page to add a highlight"));
+    let hint = gtk4::Label::new(Some(
+        "Drag over text to select it, then choose a colour (or press 1–4)",
+    ));
     hint.add_css_class("dim-label");
     hint.add_css_class("caption");
     hint.set_margin_top(4);
@@ -1871,6 +2106,7 @@ pub fn show_pdf_reader(
     picture.set_halign(gtk4::Align::Center);
     picture.set_valign(gtk4::Align::Start);
     picture.set_can_target(true);
+    picture.set_cursor(cursor_for_select_mode(true).as_ref());
     let (picture_overlay, drag_preview, drag_live_rect) = {
         let reader_for_page = reader.clone();
         build_drag_preview_overlay(&picture, &reader, move || reader_for_page.borrow().page)
@@ -1919,6 +2155,7 @@ pub fn show_pdf_reader(
     // `Paned::set_end_child` asserts its child has no existing parent.
     let reader_tab = crate::reader_host::open_reader_tab(window, title, &view);
     let reader_window = reader_tab.host_window.clone();
+    let quick_mark: QuickMarkSlot = Rc::new(RefCell::new(None));
     crate::register_reader(pdf_hash, &reader_tab);
     crate::label_icon_buttons(&header_start);
     crate::label_icon_buttons(&header_end);
@@ -2091,6 +2328,7 @@ pub fn show_pdf_reader(
         let zoom_out_key = zoom_out.clone();
         let zoom_fit_key = zoom_fit_width.clone();
         let palette_for_keys = palette.clone();
+        let quick_mark_for_keys = quick_mark.clone();
         let search_for_keys = search_entry.clone();
         crate::reader_host::set_tab_key_handler(&reader_tab, move |keyval, modifiers| {
             if (keyval == gdk::Key::z || keyval == gdk::Key::Z)
@@ -2154,6 +2392,12 @@ pub fn show_pdf_reader(
                     _ => None,
                 };
                 if let Some(i) = index {
+                    if reader.borrow().last_selection.is_some() {
+                        if let Some(mark) = quick_mark_for_keys.borrow().as_ref() {
+                            mark(i);
+                            return glib::Propagation::Stop;
+                        }
+                    }
                     crate::palette::select_color(&palette_for_keys, true, i);
                     return glib::Propagation::Stop;
                 }
@@ -2387,12 +2631,11 @@ pub fn show_pdf_reader(
                     remove_button.set_tooltip_text(Some("Remove bookmark"));
                     row.append(&remove_button);
                     {
-                        let jump = gtk4::GestureClick::new();
                         let reader = reader.clone();
                         let render = render.clone();
                         let continuous_toggle = continuous_toggle.clone();
                         let continuous_scroll = continuous_scroll.clone();
-                        jump.connect_released(move |_gesture, _n, _x, _y| {
+                        crate::make_jump(&label, move || {
                             let target = (page_num.saturating_sub(1))
                                 .min(reader.borrow().count.saturating_sub(1) as u32)
                                 as u16;
@@ -2403,7 +2646,6 @@ pub fn show_pdf_reader(
                                 render();
                             }
                         });
-                        label.add_controller(jump);
                     }
                     {
                         let host = host.clone();
@@ -2461,12 +2703,11 @@ pub fn show_pdf_reader(
                 outer.append(&header_box);
 
                 {
-                    let jump = gtk4::GestureClick::new();
                     let reader = reader.clone();
                     let render = render.clone();
                     let continuous_toggle = continuous_toggle.clone();
                     let continuous_scroll = continuous_scroll.clone();
-                    jump.connect_released(move |_gesture, _n, _x, _y| {
+                    crate::make_jump(&header_label, move || {
                         let target = (page_num.saturating_sub(1))
                             .min(reader.borrow().count.saturating_sub(1) as u32)
                             as u16;
@@ -2477,7 +2718,6 @@ pub fn show_pdf_reader(
                             render();
                         }
                     });
-                    header_label.add_controller(jump);
                 }
 
                 if let Some(snippet) = &annotation.snippet {
@@ -2581,6 +2821,42 @@ pub fn show_pdf_reader(
         })
     };
 
+    {
+        let host = host.clone();
+        let reader = reader.clone();
+        let render = render.clone();
+        let pdf_hash = pdf_hash.to_string();
+        let undo_button = undo_button.clone();
+        let redo_button = redo_button.clone();
+        let rebuild_notes = rebuild_notes.clone();
+        let reader_window = reader_window.clone();
+        *quick_mark.borrow_mut() = Some(Rc::new(move |i: usize| {
+            let page = reader.borrow().last_selection.as_ref().map(|(p, _, _)| *p);
+            let ctx = MarkCtx {
+                host: host.clone(),
+                reader: reader.clone(),
+                pdf_hash: pdf_hash.clone(),
+                undo_button: undo_button.clone(),
+                redo_button: redo_button.clone(),
+                rebuild_notes: rebuild_notes.clone(),
+                reader_window: reader_window.clone(),
+                refresh: {
+                    let reader = reader.clone();
+                    let render = render.clone();
+                    Rc::new(move || {
+                        render();
+                        if let Some(p) = page {
+                            render_continuous_page(&reader, p);
+                        }
+                    })
+                },
+            };
+            if let Some(color) = crate::palette::HIGHLIGHT_COLORS.get(i) {
+                apply_selection_mark(&ctx, fond_bib::AnnotationKind::Highlight, color.hex);
+            }
+        }));
+    }
+
     // Contents (left, itself split into Outline/Thumbnails tabs — built above) and Notes
     // (right) are two independent sidebars rather than a shared Stack behind one toggle slot
     // — Cal asked for Notes on its own right-hand sidebar so it can stay open alongside
@@ -2654,6 +2930,8 @@ pub fn show_pdf_reader(
         let drag = gtk4::GestureDrag::new();
         let reader = reader.clone();
         let render = render.clone();
+        let reader_window_for_drag = reader_window.clone();
+        let picture_for_popover = picture.clone();
         let host = host.clone();
         let pdf_hash = pdf_hash.to_string();
         let undo_button = undo_button.clone();
@@ -2721,9 +2999,27 @@ pub fn show_pdf_reader(
                     end_y,
                 };
                 if reader.borrow().draw_kind.is_none() {
-                    if copy_drag_selection(&host, &reader, page, &geom) {
+                    if select_drag_text(&host, &reader, page, &geom) {
                         render();
                         render_continuous_page(&reader, page);
+                        let ctx = MarkCtx {
+                            host: host.clone(),
+                            reader: reader.clone(),
+                            pdf_hash: pdf_hash.clone(),
+                            undo_button: undo_button.clone(),
+                            redo_button: redo_button.clone(),
+                            rebuild_notes: rebuild_notes.clone(),
+                            reader_window: reader_window_for_drag.clone(),
+                            refresh: {
+                                let reader = reader.clone();
+                                let render = render.clone();
+                                Rc::new(move || {
+                                    render();
+                                    render_continuous_page(&reader, page);
+                                })
+                            },
+                        };
+                        show_selection_popover(&ctx, &picture_for_popover, end_x, end_y, page);
                     }
                     return;
                 }
@@ -3305,7 +3601,7 @@ pub fn show_pdf_reader(
                 p.set_cursor(cursor.as_ref());
             }
             let text = match kind {
-                None => "Drag over text to copy it",
+                None => "Drag over text to select it, then choose a colour (or press 1–4)",
                 Some(fond_bib::AnnotationKind::Highlight) => "Drag over text to highlight it",
                 Some(fond_bib::AnnotationKind::Underline) => "Drag over text to underline it",
                 Some(fond_bib::AnnotationKind::Strikeout) => "Drag over text to strike it out",
@@ -3947,24 +4243,32 @@ fn show_pdf_note_dialog(
     // linger into some later, unrelated note. Its quadpoints (if any) carry over onto the
     // created annotation too, so the note anchors to — and stays visibly marked at — the
     // actual selected text on the page, rather than being a page-only marginal note.
-    let selection_quads = {
+    let (selection_quads, selection_quote) = {
         let mut r = reader.borrow_mut();
         match r.last_selection.take() {
-            Some((sel_page, text, quads)) if sel_page == r.page => {
-                let buffer = text_view.buffer();
-                buffer.set_text(&format!("p. {current_page}: \"{text}\"\n\n"));
-                let end = buffer.end_iter();
-                buffer.place_cursor(&end);
-                quads
-            }
-            _ => Vec::new(),
+            Some((sel_page, text, quads)) if sel_page == r.page => (quads, Some(text)),
+            _ => (Vec::new(), None),
         }
     };
 
     let scrolled = gtk4::ScrolledWindow::new();
     scrolled.set_vexpand(true);
     scrolled.set_child(Some(&text_view));
-    view.set_content(Some(&scrolled));
+    let body = gtk4::Box::new(Orientation::Vertical, 0);
+    if let Some(quote) = &selection_quote {
+        let quote_label = gtk4::Label::new(Some(quote));
+        quote_label.set_wrap(true);
+        quote_label.set_xalign(0.0);
+        quote_label.set_selectable(true);
+        quote_label.add_css_class("dim-label");
+        quote_label.set_margin_top(8);
+        quote_label.set_margin_start(12);
+        quote_label.set_margin_end(12);
+        body.append(&quote_label);
+    }
+    body.append(&scrolled);
+    view.set_content(Some(&body));
+    text_view.grab_focus();
     dialog.set_content(Some(&view));
 
     {
@@ -3996,7 +4300,7 @@ fn show_pdf_note_dialog(
                 fond_bib::AnnotationKind::Note,
                 current_page,
                 selection_quads.clone(),
-                None,
+                selection_quote.clone(),
                 Some(text),
                 None,
             );

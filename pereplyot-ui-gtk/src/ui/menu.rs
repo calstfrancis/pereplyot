@@ -32,6 +32,7 @@ fn popover_separator() -> gtk4::Separator {
 /// A row that activates a `win.*` action and closes the popover — the same
 /// `activate_row` shape Kartoteka's hamburger uses.
 fn activate_row(
+    widgets: &Rc<Widgets>,
     rows: &gtk4::Box,
     popover: &gtk4::Popover,
     label: &str,
@@ -40,9 +41,14 @@ fn activate_row(
     let row = popover_button(label);
     let popover = popover.clone();
     let action = action.to_string();
-    row.connect_clicked(move |b| {
+    let window = widgets.window.clone();
+    row.connect_clicked(move |_| {
         popover.popdown();
-        let _ = b.activate_action(&action, None);
+        gio::prelude::ActionGroupExt::activate_action(
+            &window,
+            action.strip_prefix("win.").unwrap_or(&action),
+            None,
+        );
     });
     rows.append(&row);
     row
@@ -59,7 +65,7 @@ pub fn build(widgets: &Rc<Widgets>) -> gtk4::Popover {
     let popover = gtk4::Popover::new();
     popover.set_child(Some(&rows));
 
-    activate_row(&rows, &popover, "Open…", "win.open");
+    activate_row(widgets, &rows, &popover, "Open…", "win.open");
     rows.append(&popover_separator());
 
     // Theme: three inline rows, not a submenu — state shown by the same
@@ -79,9 +85,14 @@ pub fn build(widgets: &Rc<Widgets>) -> gtk4::Popover {
         let popover = popover.clone();
         let name = name.clone();
         let all = theme_buttons.clone();
-        row.connect_clicked(move |b| {
+        let window = widgets.window.clone();
+        row.connect_clicked(move |_| {
             popover.popdown();
-            let _ = b.activate_action("win.theme", Some(&name.to_variant()));
+            gio::prelude::ActionGroupExt::activate_action(
+                &window,
+                "theme",
+                Some(&name.to_variant()),
+            );
             for (n, btn) in all.borrow().iter() {
                 if *n == name {
                     btn.add_css_class("fond-toggle-active");
@@ -93,8 +104,14 @@ pub fn build(widgets: &Rc<Widgets>) -> gtk4::Popover {
     }
     rows.append(&popover_separator());
 
-    activate_row(&rows, &popover, "Highlight labels…", "win.highlight-labels");
-    activate_row(&rows, &popover, "About Pereplyot", "win.about");
+    activate_row(
+        widgets,
+        &rows,
+        &popover,
+        "Highlight labels…",
+        "win.highlight-labels",
+    );
+    activate_row(widgets, &rows, &popover, "About Pereplyot", "win.about");
 
     popover
 }
