@@ -78,9 +78,9 @@ Kartoteka; see that repo's `docs/READER-EXTRACTION.md` for the boundary survey (
 `ReaderHost` trait, now eight methods including bookmarks, no citation keys, no vault) that
 made pulling it out into its own app possible. Neither Kartoteka nor Sputnik depends on it
 any more — the launch modes above are the whole interface, so there's no version pin to
-keep in step. `fond-bib`/`fond-doc` (the document/annotation primitives `fond-read-gtk`
-itself depends on) stay in Kartoteka, MIT-licensed, consumed here as an ordinary git
-dependency.
+keep in step. `fond-doc` and `fond-annot` (the document and annotation primitives `fond-read-gtk`
+itself depends on) live in [fond-core](https://github.com/calstfrancis/fond-core),
+MIT-licensed; only the app's vault mode still uses `fond-bib` from Kartoteka.
 
 `fond_read_gtk::history` backs the History shelf. Because Kartoteka and Sputnik open
 documents through Pereplyot, what's read from either lands there too. See that module's own

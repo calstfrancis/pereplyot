@@ -350,12 +350,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
+name = "fond-annot"
+version = "0.1.0"
+source = "git+https://github.com/calstfrancis/fond-core?rev=847e13e75#847e13e75b257c291308a32ccc3e99dc44d02c31"
+dependencies = [
+ "blake3",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "fond-bib"
 version = "0.1.0"
-source = "git+https://github.com/calstfrancis/kartoteka?tag=v0.16.0#9a0167a737b2af60d3a4da5da45825e0df23f534"
+source = "git+https://github.com/calstfrancis/kartoteka?rev=e71731c14#e71731c142ae7bf4c03b994cae491d031240967a"
 dependencies = [
  "biblatex 0.11.0",
  "blake3",
+ "fond-annot",
  "hayagriva",
  "rusqlite",
  "serde",
@@ -368,7 +380,7 @@ dependencies = [
 [[package]]
 name = "fond-doc"
 version = "0.1.0"
-source = "git+https://github.com/calstfrancis/kartoteka?tag=v0.16.0#9a0167a737b2af60d3a4da5da45825e0df23f534"
+source = "git+https://github.com/calstfrancis/fond-core?rev=847e13e75#847e13e75b257c291308a32ccc3e99dc44d02c31"
 dependencies = [
  "pdfium-render",
  "quick-xml 0.41.0",
@@ -380,7 +392,7 @@ dependencies = [
 name = "fond-read-gtk"
 version = "0.1.0"
 dependencies = [
- "fond-bib",
+ "fond-annot",
  "fond-doc",
  "glib",
  "gtk4",
@@ -1216,6 +1228,7 @@ version = "0.10.0"
 dependencies = [
  "blake3",
  "chrono",
+ "fond-annot",
  "fond-bib",
  "fond-doc",
  "fond-read-gtk",

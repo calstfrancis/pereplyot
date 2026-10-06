@@ -71,7 +71,7 @@ pub fn search(library: &Library, query: &str, color_hex: Option<&str>) -> Vec<No
         let Ok(text) = fs::read_to_string(&path) else {
             continue;
         };
-        let Ok(sidecar) = fond_bib::AnnotationSidecar::parse(&text, &path) else {
+        let Ok(sidecar) = fond_annot::AnnotationSidecar::parse(&text, &path) else {
             continue;
         };
         let doc = docs.get(&hash);

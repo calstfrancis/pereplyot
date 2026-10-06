@@ -49,23 +49,23 @@ pub trait ReaderHost {
     /// host, because a sidecar is born knowing the key it will be written back to, and that
     /// key is exactly what the reader must not know. A reader that built its own fallback
     /// would save it to the wrong file.
-    fn load_annotations(&self) -> fond_bib::AnnotationSidecar;
+    fn load_annotations(&self) -> fond_annot::AnnotationSidecar;
 
     /// Persist the sidecar. Called on every annotation add, edit, and delete — the reader
     /// holds the authoritative in-memory copy for the session and rewrites the whole
     /// sidecar each time.
-    fn save_annotations(&self, sidecar: &fond_bib::AnnotationSidecar) -> Result<(), String>;
+    fn save_annotations(&self, sidecar: &fond_annot::AnnotationSidecar) -> Result<(), String>;
 
     /// Persist reading position, on reader close. Best-effort: a failure is not surfaced,
     /// since losing a resume position is not worth interrupting a close for.
-    fn save_progress(&self, progress: fond_bib::Progress);
+    fn save_progress(&self, progress: fond_annot::Progress);
 
     /// The manual printed-page-numbering override, if the user has set one. Consulted only
     /// when the PDF declares no `/PageLabels` of its own, which the reader decides.
-    fn page_label_override(&self) -> Option<fond_bib::PageLabelOverride>;
+    fn page_label_override(&self) -> Option<fond_annot::PageLabelOverride>;
 
     /// Record (or, with `None`, clear) the manual page-numbering override.
-    fn set_page_label_override(&self, value: Option<fond_bib::PageLabelOverride>);
+    fn set_page_label_override(&self, value: Option<fond_annot::PageLabelOverride>);
 
     /// Show a transient confirmation or error, however the host shows those.
     fn notify(&self, message: &str);
