@@ -369,3 +369,73 @@ pub fn make_jump(label: &gtk4::Label, on_click: impl Fn() + 'static) {
     parent.insert_child_after(&button, prev.as_ref());
     button.connect_clicked(move |_| on_click());
 }
+
+/// A small modal for typing a note, optionally showing the quoted text it's about.
+pub fn note_dialog(
+    parent: &impl IsA<gtk4::Window>,
+    quote: Option<&str>,
+    on_save: impl Fn(String) + 'static,
+) {
+    use libadwaita as adw;
+    use libadwaita::prelude::*;
+    let dialog = adw::Window::new();
+    dialog.set_title(Some("Add note"));
+    dialog.set_modal(true);
+    dialog.set_transient_for(Some(parent));
+    dialog.set_default_size(420, 280);
+    let view = adw::ToolbarView::new();
+    let header = adw::HeaderBar::new();
+    header.set_show_start_title_buttons(false);
+    header.set_show_end_title_buttons(false);
+    let cancel = gtk4::Button::with_label("Cancel");
+    let save = gtk4::Button::with_label("Save");
+    save.add_css_class("suggested-action");
+    header.pack_start(&cancel);
+    header.pack_end(&save);
+    view.add_top_bar(&header);
+    let body = gtk4::Box::new(Orientation::Vertical, 0);
+    if let Some(q) = quote {
+        let label = gtk4::Label::new(Some(q));
+        label.set_wrap(true);
+        label.set_xalign(0.0);
+        label.set_selectable(true);
+        label.add_css_class("dim-label");
+        label.set_margin_top(8);
+        label.set_margin_start(12);
+        label.set_margin_end(12);
+        body.append(&label);
+    }
+    let text_view = gtk4::TextView::new();
+    text_view.set_wrap_mode(gtk4::WrapMode::Word);
+    text_view.set_margin_top(8);
+    text_view.set_margin_bottom(8);
+    text_view.set_margin_start(8);
+    text_view.set_margin_end(8);
+    let scrolled = gtk4::ScrolledWindow::new();
+    scrolled.set_vexpand(true);
+    scrolled.set_child(Some(&text_view));
+    body.append(&scrolled);
+    view.set_content(Some(&body));
+    dialog.set_content(Some(&view));
+    {
+        let dialog = dialog.clone();
+        cancel.connect_clicked(move |_| dialog.close());
+    }
+    {
+        let dialog = dialog.clone();
+        let text_view = text_view.clone();
+        save.connect_clicked(move |_| {
+            let buffer = text_view.buffer();
+            let text = buffer
+                .text(&buffer.start_iter(), &buffer.end_iter(), false)
+                .trim()
+                .to_string();
+            if !text.is_empty() {
+                on_save(text);
+                dialog.close();
+            }
+        });
+    }
+    dialog.present();
+    text_view.grab_focus();
+}

@@ -357,6 +357,144 @@ fn epub_apply_highlights(
     view.evaluate_javascript(&script, None, None, gio::Cancellable::NONE, |_| {});
 }
 
+/// `(kind, colour hex, note)` -> mark the current browser selection.
+type EpubMarkFn = Rc<dyn Fn(fond_bib::AnnotationKind, Option<String>, Option<String>)>;
+
+/// The selection-capture script; `clear` drops the selection once read (used when marking).
+fn epub_selection_js(clear: bool) -> String {
+    if clear {
+        EPUB_CAPTURE_SELECTION_JS.to_string()
+    } else {
+        EPUB_CAPTURE_SELECTION_JS.replace("sel.removeAllRanges();", "")
+    }
+}
+
+struct EpubSelection {
+    text: String,
+    chapter_number: usize,
+}
+
+fn show_epub_selection_popover(
+    view: &webkit6::WebView,
+    at: (f64, f64),
+    selection: EpubSelection,
+    host: &Rc<dyn ReaderHost>,
+    apply_mark: &EpubMarkFn,
+    reader_window: &adw::Window,
+) {
+    let popover = gtk4::Popover::new();
+    popover.set_parent(view);
+    popover.set_pointing_to(Some(&gdk::Rectangle::new(
+        at.0.round() as i32,
+        at.1.round() as i32,
+        1,
+        1,
+    )));
+    let rows = gtk4::Box::new(Orientation::Vertical, 4);
+    rows.set_margin_top(6);
+    rows.set_margin_bottom(6);
+    rows.set_margin_start(6);
+    rows.set_margin_end(6);
+
+    let colours = gtk4::Box::new(Orientation::Horizontal, 4);
+    colours.set_halign(gtk4::Align::Center);
+    for (i, color) in crate::palette::HIGHLIGHT_COLORS.iter().enumerate() {
+        let button = gtk4::Button::new();
+        button.add_css_class("flat");
+        button.set_child(Some(&crate::palette::numbered_swatch(color.hex, i + 1)));
+        button.set_tooltip_text(Some(&format!(
+            "Highlight: {} ({})",
+            crate::palette::highlight_label(i),
+            i + 1
+        )));
+        button.update_property(&[gtk4::accessible::Property::Label(&format!(
+            "Highlight as {}",
+            crate::palette::highlight_label(i)
+        ))]);
+        let apply_mark = apply_mark.clone();
+        let popover = popover.clone();
+        let hex = color.hex.to_string();
+        button.connect_clicked(move |_| {
+            popover.popdown();
+            apply_mark(fond_bib::AnnotationKind::Highlight, Some(hex.clone()), None);
+        });
+        colours.append(&button);
+    }
+    rows.append(&colours);
+
+    let row = |label: &str, run: Rc<dyn Fn()>| {
+        let button = popover_button(label, false);
+        let popover = popover.clone();
+        button.connect_clicked(move |_| {
+            popover.popdown();
+            run();
+        });
+        rows.append(&button);
+    };
+    let first = crate::palette::HIGHLIGHT_COLORS[0].hex.to_string();
+    for (label, kind) in [
+        ("Underline", fond_bib::AnnotationKind::Underline),
+        ("Strike out", fond_bib::AnnotationKind::Strikeout),
+    ] {
+        let apply_mark = apply_mark.clone();
+        let hex = first.clone();
+        row(
+            label,
+            Rc::new(move || apply_mark(kind, Some(hex.clone()), None)),
+        );
+    }
+    {
+        let apply_mark = apply_mark.clone();
+        let reader_window = reader_window.clone();
+        let quote = selection.text.clone();
+        let hex = first.clone();
+        row(
+            "Add note…",
+            Rc::new(move || {
+                let apply_mark = apply_mark.clone();
+                let hex = hex.clone();
+                crate::note_dialog(&reader_window, Some(&quote), move |note| {
+                    apply_mark(
+                        fond_bib::AnnotationKind::Highlight,
+                        Some(hex.clone()),
+                        Some(note),
+                    );
+                });
+            }),
+        );
+    }
+    rows.append(&popover_separator());
+    for (label, with_citation) in [("Copy", false), ("Copy with citation", true)] {
+        let host = host.clone();
+        let text = selection.text.clone();
+        let chapter = selection.chapter_number;
+        row(
+            label,
+            Rc::new(move || {
+                let out = if with_citation {
+                    crate::export::cite_snippet(
+                        crate::export::preferred_format(),
+                        &text,
+                        &chapter.to_string(),
+                        true,
+                        host.citation_key().as_deref(),
+                    )
+                } else {
+                    text.clone()
+                };
+                if let Some(display) = gdk::Display::default() {
+                    display.clipboard().set_text(&out);
+                }
+                host.notify("Copied to clipboard");
+            }),
+        );
+    }
+
+    popover.set_child(Some(&rows));
+    popover.connect_closed(|p| p.unparent());
+    popover.popup();
+}
+
 /// A built-in EPUB reader: renders each chapter with WebKitGTK (`webkit6`), which — unlike
 /// PDFium for the PDF reader — handles an XHTML+CSS chapter's layout, images, and text
 /// selection natively, so this only has to handle chapter/TOC navigation plus highlighting.
@@ -548,7 +686,7 @@ pub fn show_epub_reader(
         });
     }
 
-    let hint = gtk4::Label::new(Some("Select text, choose a kind, then click Apply"));
+    let hint = gtk4::Label::new(Some("Select text, then choose a colour or action"));
     hint.add_css_class("dim-label");
     hint.add_css_class("caption");
     hint.set_margin_top(4);
@@ -1709,27 +1847,24 @@ pub fn show_epub_reader(
         });
     }
 
-    {
+    // Marks the current selection. Shared by the header's Apply button and the popover that
+    // appears when a selection ends. `clear` drops the browser selection once it's marked.
+    let apply_mark: EpubMarkFn = {
         let reader = reader.clone();
         let view = web_view.clone();
         let host = host.clone();
-        let mode_drop = mode_drop.clone();
-        let palette_choice = palette_choice.clone();
         let rebuild_notes = rebuild_notes.clone();
-        apply_button.connect_clicked(move |_| {
+        let undo_button = undo_button.clone();
+        let redo_button = redo_button.clone();
+        Rc::new(move |kind, color, note| {
             let reader = reader.clone();
             let view_for_apply = view.clone();
             let host = host.clone();
-            let kind = MARK_KIND_OPTIONS
-                .get(mode_drop.selected() as usize)
-                .map(|(_, k)| *k)
-                .unwrap_or(fond_bib::AnnotationKind::Highlight);
-            let color = crate::palette::HIGHLIGHT_COLORS
-                .get(palette_choice.get())
-                .map(|c| c.hex.to_string());
             let rebuild_notes = rebuild_notes.clone();
+            let undo_button = undo_button.clone();
+            let redo_button = redo_button.clone();
             view.evaluate_javascript(
-                EPUB_CAPTURE_SELECTION_JS,
+                &epub_selection_js(true),
                 None,
                 None,
                 gio::Cancellable::NONE,
@@ -1741,19 +1876,15 @@ pub fn show_epub_reader(
                             return;
                         }
                     };
-                    let capture: EpubSelectionCapture = match serde_json::from_str(&raw) {
-                        Ok(c) => c,
-                        Err(_) => {
-                            host.notify("Could not read selection");
-                            return;
-                        }
+                    let Ok(capture) = serde_json::from_str::<EpubSelectionCapture>(&raw) else {
+                        host.notify("Could not read selection");
+                        return;
                     };
                     let snippet = capture.text.filter(|t| !t.trim().is_empty());
                     let Some(snippet) = (!capture.empty).then_some(snippet).flatten() else {
                         host.notify("Select some text first");
                         return;
                     };
-
                     let chapter = {
                         let r = reader.borrow();
                         r.spine.get(r.index).cloned()
@@ -1761,26 +1892,23 @@ pub fn show_epub_reader(
                     let Some(chapter) = chapter else {
                         return;
                     };
-
                     let mut annotation = fond_bib::Annotation::drawn_epub(
                         kind,
                         chapter,
                         snippet,
                         capture.prefix,
                         capture.suffix,
-                        None,
+                        note,
                     );
-                    if kind == fond_bib::AnnotationKind::Highlight {
-                        annotation.color = color.clone();
-                    }
+                    annotation.color = color;
                     let id = annotation.id.clone();
                     push_epub_undo_snapshot(&reader);
                     reader.borrow_mut().annotations.upsert(annotation);
-
                     let write_result = host.save_annotations(&reader.borrow().annotations);
                     match write_result {
                         Ok(()) => {
                             epub_apply_highlights(&view_for_apply, &reader, Some(&id));
+                            sync_epub_undo_redo_buttons(&reader, &undo_button, &redo_button);
                             host.notify("Added");
                             rebuild_notes();
                         }
@@ -1788,7 +1916,86 @@ pub fn show_epub_reader(
                     }
                 },
             );
+        })
+    };
+    {
+        let apply_mark = apply_mark.clone();
+        let mode_drop = mode_drop.clone();
+        let palette_choice = palette_choice.clone();
+        apply_button.connect_clicked(move |_| {
+            let kind = MARK_KIND_OPTIONS
+                .get(mode_drop.selected() as usize)
+                .map(|(_, k)| *k)
+                .unwrap_or(fond_bib::AnnotationKind::Highlight);
+            let color = crate::palette::HIGHLIGHT_COLORS
+                .get(palette_choice.get())
+                .map(|c| c.hex.to_string());
+            apply_mark(kind, color, None);
         });
+    }
+
+    // Select first, then mark: when the pointer is released over a selection, offer the same
+    // actions as the PDF reader's selection popover.
+    {
+        let click = gtk4::GestureDrag::new();
+        click.set_button(gdk::BUTTON_PRIMARY);
+        click.set_propagation_phase(gtk4::PropagationPhase::Capture);
+        let view = web_view.clone();
+        let host = host.clone();
+        let reader = reader.clone();
+        let apply_mark = apply_mark.clone();
+        let reader_window = reader_window.clone();
+        let pointer: Rc<Cell<(f64, f64)>> = Rc::new(Cell::new((0.0, 0.0)));
+        {
+            let motion = gtk4::EventControllerMotion::new();
+            motion.set_propagation_phase(gtk4::PropagationPhase::Capture);
+            let pointer = pointer.clone();
+            motion.connect_motion(move |_, x, y| pointer.set((x, y)));
+            web_view.add_controller(motion);
+        }
+        click.connect_drag_end(move |_, _, _| {
+            let (x, y) = pointer.get();
+            let view = view.clone();
+            let host = host.clone();
+            let reader = reader.clone();
+            let apply_mark = apply_mark.clone();
+            let reader_window = reader_window.clone();
+            glib::timeout_add_local_once(std::time::Duration::from_millis(80), move || {
+                let view_for_popover = view.clone();
+                view.evaluate_javascript(
+                    &epub_selection_js(false),
+                    None,
+                    None,
+                    gio::Cancellable::NONE,
+                    move |result| {
+                        let Ok(v) = result else { return };
+                        let Ok(capture) = serde_json::from_str::<EpubSelectionCapture>(&v.to_str())
+                        else {
+                            return;
+                        };
+                        let Some(text) = capture
+                            .text
+                            .filter(|t| !capture.empty && !t.trim().is_empty())
+                        else {
+                            return;
+                        };
+                        let chapter_number = reader.borrow().index + 1;
+                        show_epub_selection_popover(
+                            &view_for_popover,
+                            (x, y),
+                            EpubSelection {
+                                text,
+                                chapter_number,
+                            },
+                            &host,
+                            &apply_mark,
+                            &reader_window,
+                        );
+                    },
+                );
+            });
+        });
+        web_view.add_controller(click);
     }
 
     // Save the current chapter+scroll-percent back to the entry's Progress on close, so the
