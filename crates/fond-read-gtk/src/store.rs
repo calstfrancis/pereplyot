@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::path::Path;
 
-use fond_bib::AnnotationSidecar;
+use fond_annot::AnnotationSidecar;
 
 use crate::fsutil::{self, Loaded};
 
@@ -105,7 +105,7 @@ impl SidecarSync {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fond_bib::{Annotation, AnnotationKind};
+    use fond_annot::{Annotation, AnnotationKind};
 
     fn ann(text: &str) -> Annotation {
         Annotation::drawn(

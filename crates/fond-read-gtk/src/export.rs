@@ -4,7 +4,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use fond_bib::AnnotationKind;
+use fond_annot::AnnotationKind;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
@@ -335,7 +335,7 @@ fn latex(title: &str, items: &[Item], bookmarks: &[String], opts: &Options) -> S
 /// printed page label (falling back to the file page); EPUB ones by `chapter_number` (spine
 /// position), falling back to the chapter's file name.
 pub fn items_from_sidecar(
-    sidecar: &fond_bib::AnnotationSidecar,
+    sidecar: &fond_annot::AnnotationSidecar,
     page_labels: &[Option<String>],
     chapter_number: &dyn Fn(&str) -> Option<usize>,
 ) -> Vec<Item> {

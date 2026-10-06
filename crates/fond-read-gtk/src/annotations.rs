@@ -141,7 +141,7 @@ pub fn show_annotations_dialog(
         });
     }
 
-    let mut annotations: Vec<fond_bib::Annotation> = sidecar.annotations.clone();
+    let mut annotations: Vec<fond_annot::Annotation> = sidecar.annotations.clone();
     annotations.sort_by_key(|a| a.page);
     let last = annotations.len().saturating_sub(1);
 

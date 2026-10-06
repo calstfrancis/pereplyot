@@ -2,7 +2,7 @@
 //! into a WebKit view.
 //!
 //! An EPUB has no fixed page grid, so positions are chapter index plus a scroll fraction
-//! within it (`fond_bib::Progress`). Persistence goes through [`ReaderHost`].
+//! within it (`fond_annot::Progress`). Persistence goes through [`ReaderHost`].
 
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
@@ -29,12 +29,12 @@ struct EpubReaderState {
     /// `fond_doc::EpubBook::spine`).
     spine: Vec<String>,
     index: usize,
-    annotations: fond_bib::AnnotationSidecar,
+    annotations: fond_annot::AnnotationSidecar,
     /// Snapshot-based undo/redo, same idiom as the PDF reader's `ReaderState` (see
     /// `push_undo_snapshot`/`UNDO_HISTORY_LIMIT`) — a full clone of `annotations` taken
     /// immediately before each mutation (add/edit/delete a mark).
-    undo_stack: Vec<fond_bib::AnnotationSidecar>,
-    redo_stack: Vec<fond_bib::AnnotationSidecar>,
+    undo_stack: Vec<fond_annot::AnnotationSidecar>,
+    redo_stack: Vec<fond_annot::AnnotationSidecar>,
     /// Whole-book plain-text search index, one entry per `spine` chapter — built lazily
     /// (see `epub_chapter_texts`) the first time whole-book search is used, from the
     /// chapters already sitting in `cache_dir` (no re-opening the EPUB zip needed). `None`
@@ -168,7 +168,7 @@ struct EpubHighlightPayload<'a> {
     /// Serializes lowercase (`"highlight"`/`"underline"`/`"strikeout"`) via
     /// `AnnotationKind`'s own `Serialize` impl — `EPUB_APPLY_HIGHLIGHTS_FN` switches on
     /// this to decide which CSS treatment to apply.
-    kind: fond_bib::AnnotationKind,
+    kind: fond_annot::AnnotationKind,
     /// Highlight colour (hex, e.g. `#f6c344`) — meaningless for underline/strikeout,
     /// which always use the current text colour so they read correctly in dark mode too.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -314,7 +314,7 @@ const EPUB_CAPTURE_SELECTION_JS: &str = r#"(function() {
 /// `EPUB_APPLY_HIGHLIGHTS_FN` expects. An annotation with no `snippet` (shouldn't happen for
 /// an EPUB one — `drawn_epub` always sets it — but the field is `Option` since the type is
 /// shared with PDF annotations) is skipped rather than sent as an unfindable empty search.
-fn epub_highlight_payload_json(sidecar: &fond_bib::AnnotationSidecar, chapter: &str) -> String {
+fn epub_highlight_payload_json(sidecar: &fond_annot::AnnotationSidecar, chapter: &str) -> String {
     let items: Vec<EpubHighlightPayload> = sidecar
         .annotations
         .iter()
@@ -358,7 +358,7 @@ fn epub_apply_highlights(
 }
 
 /// `(kind, colour hex, note)` -> mark the current browser selection.
-type EpubMarkFn = Rc<dyn Fn(fond_bib::AnnotationKind, Option<String>, Option<String>)>;
+type EpubMarkFn = Rc<dyn Fn(fond_annot::AnnotationKind, Option<String>, Option<String>)>;
 
 /// The selection-capture script; `clear` drops the selection once read (used when marking).
 fn epub_selection_js(clear: bool) -> String {
@@ -416,7 +416,11 @@ fn show_epub_selection_popover(
         let hex = color.hex.to_string();
         button.connect_clicked(move |_| {
             popover.popdown();
-            apply_mark(fond_bib::AnnotationKind::Highlight, Some(hex.clone()), None);
+            apply_mark(
+                fond_annot::AnnotationKind::Highlight,
+                Some(hex.clone()),
+                None,
+            );
         });
         colours.append(&button);
     }
@@ -433,8 +437,8 @@ fn show_epub_selection_popover(
     };
     let first = crate::palette::HIGHLIGHT_COLORS[0].hex.to_string();
     for (label, kind) in [
-        ("Underline", fond_bib::AnnotationKind::Underline),
-        ("Strike out", fond_bib::AnnotationKind::Strikeout),
+        ("Underline", fond_annot::AnnotationKind::Underline),
+        ("Strike out", fond_annot::AnnotationKind::Strikeout),
     ] {
         let apply_mark = apply_mark.clone();
         let hex = first.clone();
@@ -455,7 +459,7 @@ fn show_epub_selection_popover(
                 let hex = hex.clone();
                 crate::note_dialog(&reader_window, Some(&quote), move |note| {
                     apply_mark(
-                        fond_bib::AnnotationKind::Highlight,
+                        fond_annot::AnnotationKind::Highlight,
                         Some(hex.clone()),
                         Some(note),
                     );
@@ -509,7 +513,7 @@ fn show_epub_selection_popover(
 ///
 /// Highlighting (M5-SPEC.md 5C) reuses the `WebView`'s own native text selection — the user
 /// drags to select the ordinary browser way, then "Highlight" captures it via
-/// `EPUB_CAPTURE_SELECTION_JS` and saves a `fond_bib::Annotation::drawn_epub` (chapter +
+/// `EPUB_CAPTURE_SELECTION_JS` and saves a `fond_annot::Annotation::drawn_epub` (chapter +
 /// snippet + context; no page/quadpoints — there's no fixed page grid to hang those on) into
 /// the same `annots/<key>.json` sidecar the PDF reader writes. Applying saved highlights back
 /// onto the page is a live DOM search-and-wrap (`epub_apply_highlights`) run after every
@@ -522,7 +526,7 @@ fn show_epub_selection_popover(
 /// always wins), resumes at the entry's saved reading position: `progress.page - 1` as the
 /// starting chapter index, then `progress.chapter_percent` (if set) as a scroll-fraction
 /// restore once that chapter finishes loading. The EPUB equivalent of the PDF reader's own
-/// `start_page` resume, using the chapter+percent shape `fond_bib::Progress` gained for it.
+/// `start_page` resume, using the chapter+percent shape `fond_annot::Progress` gained for it.
 #[allow(clippy::too_many_arguments)]
 pub fn show_epub_reader(
     host: &Rc<dyn ReaderHost>,
@@ -531,7 +535,7 @@ pub fn show_epub_reader(
     blob: &std::path::Path,
     title: &str,
     start_annotation_id: Option<&str>,
-    start_progress: Option<fond_bib::Progress>,
+    start_progress: Option<fond_annot::Progress>,
 ) {
     // Already open? Surface it instead of opening a duplicate reader on the same file — see
     // the identical check (and `crate::OPEN_READERS`'s doc comment) in `show_pdf_reader`.
@@ -994,7 +998,7 @@ pub fn show_epub_reader(
             while let Some(child) = notes_rows.first_child() {
                 notes_rows.remove(&child);
             }
-            let mut all: Vec<fond_bib::Annotation> = reader
+            let mut all: Vec<fond_annot::Annotation> = reader
                 .borrow()
                 .annotations
                 .annotations
@@ -1108,10 +1112,10 @@ pub fn show_epub_reader(
                     .map(|i| i + 1)
                     .unwrap_or(0);
                 let kind_label = match annotation.kind {
-                    fond_bib::AnnotationKind::Highlight => "Highlight",
-                    fond_bib::AnnotationKind::Underline => "Underline",
-                    fond_bib::AnnotationKind::Strikeout => "Strikeout",
-                    fond_bib::AnnotationKind::Note => "Note",
+                    fond_annot::AnnotationKind::Highlight => "Highlight",
+                    fond_annot::AnnotationKind::Underline => "Underline",
+                    fond_annot::AnnotationKind::Strikeout => "Strikeout",
+                    fond_annot::AnnotationKind::Note => "Note",
                 };
                 let outer = gtk4::Box::new(Orientation::Vertical, 2);
 
@@ -1896,7 +1900,7 @@ pub fn show_epub_reader(
                     let Some(chapter) = chapter else {
                         return;
                     };
-                    let mut annotation = fond_bib::Annotation::drawn_epub(
+                    let mut annotation = fond_annot::Annotation::drawn_epub(
                         kind,
                         chapter,
                         snippet,
@@ -1930,7 +1934,7 @@ pub fn show_epub_reader(
             let kind = MARK_KIND_OPTIONS
                 .get(mode_drop.selected() as usize)
                 .map(|(_, k)| *k)
-                .unwrap_or(fond_bib::AnnotationKind::Highlight);
+                .unwrap_or(fond_annot::AnnotationKind::Highlight);
             let color = crate::palette::HIGHLIGHT_COLORS
                 .get(palette_choice.get())
                 .map(|c| c.hex.to_string());
@@ -2034,7 +2038,7 @@ pub fn show_epub_reader(
                     if let Ok(v) = result {
                         last_percent.set(v.to_int32().clamp(0, 100) as u8);
                         let r = reader.borrow();
-                        host.save_progress(fond_bib::Progress {
+                        host.save_progress(fond_annot::Progress {
                             page: r.index as u32 + 1,
                             of: r.spine.len() as u32,
                             chapter_percent: Some(last_percent.get()),
@@ -2059,7 +2063,7 @@ pub fn show_epub_reader(
                 let r = reader.borrow();
                 (r.index as u32 + 1, r.spine.len() as u32)
             };
-            host.save_progress(fond_bib::Progress {
+            host.save_progress(fond_annot::Progress {
                 page: chapter_num,
                 of: chapter_count,
                 chapter_percent: Some(last_percent.get()),
@@ -2088,7 +2092,7 @@ pub fn show_epub_reader(
                 gio::Cancellable::NONE,
                 move |result| {
                     if let Ok(v) = result {
-                        host.save_progress(fond_bib::Progress {
+                        host.save_progress(fond_annot::Progress {
                             page: chapter_num,
                             of: chapter_count,
                             chapter_percent: Some(v.to_int32().clamp(0, 100) as u8),

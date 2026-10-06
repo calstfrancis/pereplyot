@@ -3,7 +3,7 @@
 //! hash `fond-read-gtk`'s own open-reader dedup registry already keys on. Two files per
 //! document under `~/.local/share/pereplyot/`:
 //!
-//! - `annotations/<hash>.json` — the [`fond_bib::AnnotationSidecar`], byte-compatible with
+//! - `annotations/<hash>.json` — the [`fond_annot::AnnotationSidecar`], byte-compatible with
 //!   what Kartoteka/Sputnik write, so a sidecar is portable between all three as long as
 //!   the file's blob hash matches.
 //! - `meta/<hash>.json` — `{ progress, page_label_override, bookmarks }`, the fields
@@ -28,9 +28,9 @@ fn data_dir() -> PathBuf {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct LocalMeta {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    progress: Option<fond_bib::Progress>,
+    progress: Option<fond_annot::Progress>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    page_label_override: Option<fond_bib::PageLabelOverride>,
+    page_label_override: Option<fond_annot::PageLabelOverride>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     bookmarks: Vec<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -99,9 +99,9 @@ impl LocalReaderHost {
 }
 
 impl ReaderHost for LocalReaderHost {
-    fn load_annotations(&self) -> fond_bib::AnnotationSidecar {
+    fn load_annotations(&self) -> fond_annot::AnnotationSidecar {
         let report = self.sync.load(&self.annotations_path(), || {
-            fond_bib::AnnotationSidecar::new(&self.hash)
+            fond_annot::AnnotationSidecar::new(&self.hash)
         });
         if let Some(w) = report.warning {
             self.notify(&w);
@@ -109,7 +109,7 @@ impl ReaderHost for LocalReaderHost {
         report.sidecar
     }
 
-    fn save_annotations(&self, sidecar: &fond_bib::AnnotationSidecar) -> Result<(), String> {
+    fn save_annotations(&self, sidecar: &fond_annot::AnnotationSidecar) -> Result<(), String> {
         let extra = self.sync.save(&self.annotations_path(), sidecar)?;
         if extra > 0 {
             self.notify(&merged_notice(extra));
@@ -117,17 +117,17 @@ impl ReaderHost for LocalReaderHost {
         Ok(())
     }
 
-    fn save_progress(&self, progress: fond_bib::Progress) {
+    fn save_progress(&self, progress: fond_annot::Progress) {
         let mut meta = LocalMeta::load(&self.hash);
         meta.progress = Some(progress);
         meta.save(&self.hash);
     }
 
-    fn page_label_override(&self) -> Option<fond_bib::PageLabelOverride> {
+    fn page_label_override(&self) -> Option<fond_annot::PageLabelOverride> {
         LocalMeta::load(&self.hash).page_label_override
     }
 
-    fn set_page_label_override(&self, value: Option<fond_bib::PageLabelOverride>) {
+    fn set_page_label_override(&self, value: Option<fond_annot::PageLabelOverride>) {
         let mut meta = LocalMeta::load(&self.hash);
         meta.page_label_override = value;
         meta.save(&self.hash);
@@ -171,7 +171,7 @@ pub fn local_annotation_count(hash: &str) -> usize {
     let path = data_dir().join("annotations").join(format!("{hash}.json"));
     fs::read_to_string(&path)
         .ok()
-        .and_then(|t| fond_bib::AnnotationSidecar::parse(&t, &path).ok())
+        .and_then(|t| fond_annot::AnnotationSidecar::parse(&t, &path).ok())
         .map_or(0, |s| s.annotations.len())
 }
 
@@ -182,7 +182,8 @@ pub fn reattach_local(old_hash: &str, new_hash: &str) -> Result<(), String> {
         .join("annotations")
         .join(format!("{old_hash}.json"));
     let text = fs::read_to_string(&old).map_err(|e| e.to_string())?;
-    let mut sidecar = fond_bib::AnnotationSidecar::parse(&text, &old).map_err(|e| e.to_string())?;
+    let mut sidecar =
+        fond_annot::AnnotationSidecar::parse(&text, &old).map_err(|e| e.to_string())?;
     sidecar.key = new_hash.to_string();
     if sidecar.pdf_hash.is_some() {
         sidecar.pdf_hash = Some(new_hash.to_string());
@@ -209,7 +210,7 @@ pub fn reattach_local(old_hash: &str, new_hash: &str) -> Result<(), String> {
 /// The saved progress/page for a document, if any — used to pick `show_pdf_reader`'s
 /// `start_page` and `show_epub_reader`'s `start_progress` before the reader (and thus its
 /// own `LocalReaderHost`) has been constructed.
-pub fn saved_progress(hash: &str) -> Option<fond_bib::Progress> {
+pub fn saved_progress(hash: &str) -> Option<fond_annot::Progress> {
     LocalMeta::load(hash).progress
 }
 
@@ -272,7 +273,7 @@ pub fn build_host(
 /// exists. Kartoteka/Sputnik's own vault-linked "Read" already computes this the same way
 /// today (loading the note first); this just does the same lookup from a bare vault root +
 /// key, or a bare progress file path, with no in-memory vault/library object to reuse.
-pub fn saved_progress_for_override(override_: &HostOverride) -> Option<fond_bib::Progress> {
+pub fn saved_progress_for_override(override_: &HostOverride) -> Option<fond_annot::Progress> {
     match override_ {
         HostOverride::Vault { root, key, .. } => {
             let library = fond_bib::Library::open(root).ok()?;
@@ -343,9 +344,9 @@ impl VaultReaderHost {
 }
 
 impl ReaderHost for VaultReaderHost {
-    fn load_annotations(&self) -> fond_bib::AnnotationSidecar {
+    fn load_annotations(&self) -> fond_annot::AnnotationSidecar {
         let report = self.sync.load(&self.annotations_path(), || {
-            fond_bib::AnnotationSidecar::new(&self.key)
+            fond_annot::AnnotationSidecar::new(&self.key)
         });
         if let Some(w) = report.warning {
             self.notify(&w);
@@ -353,7 +354,7 @@ impl ReaderHost for VaultReaderHost {
         report.sidecar
     }
 
-    fn save_annotations(&self, sidecar: &fond_bib::AnnotationSidecar) -> Result<(), String> {
+    fn save_annotations(&self, sidecar: &fond_annot::AnnotationSidecar) -> Result<(), String> {
         let extra = self.sync.save(&self.annotations_path(), sidecar)?;
         if extra > 0 {
             self.notify(&merged_notice(extra));
@@ -361,11 +362,11 @@ impl ReaderHost for VaultReaderHost {
         Ok(())
     }
 
-    fn save_progress(&self, progress: fond_bib::Progress) {
+    fn save_progress(&self, progress: fond_annot::Progress) {
         self.edit_note(|note| note.frontmatter.progress = Some(progress));
     }
 
-    fn page_label_override(&self) -> Option<fond_bib::PageLabelOverride> {
+    fn page_label_override(&self) -> Option<fond_annot::PageLabelOverride> {
         self.library
             .load_note(&self.key)
             .ok()
@@ -373,7 +374,7 @@ impl ReaderHost for VaultReaderHost {
             .and_then(|note| note.frontmatter.page_label_override)
     }
 
-    fn set_page_label_override(&self, value: Option<fond_bib::PageLabelOverride>) {
+    fn set_page_label_override(&self, value: Option<fond_annot::PageLabelOverride>) {
         self.edit_note(|note| note.frontmatter.page_label_override = value);
     }
 
@@ -442,9 +443,9 @@ impl ExternalPathReaderHost {
 }
 
 impl ReaderHost for ExternalPathReaderHost {
-    fn load_annotations(&self) -> fond_bib::AnnotationSidecar {
+    fn load_annotations(&self) -> fond_annot::AnnotationSidecar {
         let report = self.sync.load(&self.annotations_path, || {
-            fond_bib::AnnotationSidecar::new(&self.hash)
+            fond_annot::AnnotationSidecar::new(&self.hash)
         });
         if let Some(w) = report.warning {
             self.notify(&w);
@@ -452,7 +453,7 @@ impl ReaderHost for ExternalPathReaderHost {
         report.sidecar
     }
 
-    fn save_annotations(&self, sidecar: &fond_bib::AnnotationSidecar) -> Result<(), String> {
+    fn save_annotations(&self, sidecar: &fond_annot::AnnotationSidecar) -> Result<(), String> {
         let extra = self.sync.save(&self.annotations_path, sidecar)?;
         if extra > 0 {
             self.notify(&merged_notice(extra));
@@ -460,7 +461,7 @@ impl ReaderHost for ExternalPathReaderHost {
         Ok(())
     }
 
-    fn save_progress(&self, progress: fond_bib::Progress) {
+    fn save_progress(&self, progress: fond_annot::Progress) {
         let Some(path) = &self.progress_path else {
             return;
         };
@@ -469,11 +470,11 @@ impl ReaderHost for ExternalPathReaderHost {
         }
     }
 
-    fn page_label_override(&self) -> Option<fond_bib::PageLabelOverride> {
+    fn page_label_override(&self) -> Option<fond_annot::PageLabelOverride> {
         None
     }
 
-    fn set_page_label_override(&self, _value: Option<fond_bib::PageLabelOverride>) {}
+    fn set_page_label_override(&self, _value: Option<fond_annot::PageLabelOverride>) {}
 
     fn notify(&self, message: &str) {
         toast_anywhere(&self.widgets, message);

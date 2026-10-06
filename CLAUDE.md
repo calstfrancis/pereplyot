@@ -24,6 +24,7 @@ Kartoteka's own `docs/READER-EXTRACTION.md` for the `ReaderHost` boundary this a
   triggers a release. Nothing else does.
 - `pereplyot-ui-gtk/Cargo.toml`'s `version` is the sole source of truth (single crate, no
   separate CLI crate — see root `CLAUDE.md`'s Version files table).
+- `fond-doc` and `fond-annot` come from `calstfrancis/fond-core` (pinned by rev); `fond-bib`, for vault mode only, still comes from Kartoteka and re-exports the same `fond-annot` types — keep both on one `fond-annot` rev. `fond-read-gtk` must not depend on `fond-bib`.
 - Whenever `Cargo.lock` changes — most likely a bump of the `fond-bib`/`fond-doc` pinned
   Kartoteka tag, since `fond-read-gtk` itself is a local workspace member — regenerate
   `packaging/cargo-sources.json` per the root `CLAUDE.md`'s vendored-dependency rule (same

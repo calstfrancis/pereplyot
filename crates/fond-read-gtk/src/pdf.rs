@@ -29,7 +29,7 @@ struct ReaderState {
     /// This entry's annotation sidecar, loaded once at open and rewritten to disk on every
     /// highlight added. Held here (not re-read from the library each time) so the in-memory
     /// list and the on-screen render never disagree mid-session.
-    annotations: fond_bib::AnnotationSidecar,
+    annotations: fond_annot::AnnotationSidecar,
     /// The current page's rendered pixel size, refreshed by `render()` — the scale a
     /// drag-selected rectangle is converted through when saving a new highlight.
     render_px: (u32, u32),
@@ -40,7 +40,7 @@ struct ReaderState {
     /// via the separate "Note…" button instead. `None` is the drop-down's "Select text"
     /// entry — a drag copies the covered text to the clipboard instead of saving an
     /// annotation.
-    draw_kind: Option<fond_bib::AnnotationKind>,
+    draw_kind: Option<fond_annot::AnnotationKind>,
     /// The most recent "Select text" copy — page (0-based), text, and quadpoints — so the
     /// next note added on that same page can quote it (and carry its real on-page region)
     /// instead of starting blank, and so `render_pdf_page_texture` can keep showing it
@@ -87,8 +87,8 @@ struct ReaderState {
     /// deleted or edited). `push_undo_snapshot` is the single place that pushes here and
     /// clears `redo_stack` — every mutation site calls it first. Capped at
     /// `UNDO_HISTORY_LIMIT` so a long session doesn't grow this unbounded.
-    undo_stack: Vec<fond_bib::AnnotationSidecar>,
-    redo_stack: Vec<fond_bib::AnnotationSidecar>,
+    undo_stack: Vec<fond_annot::AnnotationSidecar>,
+    redo_stack: Vec<fond_annot::AnnotationSidecar>,
     /// Clockwise display rotation in degrees (0/90/180/270) — view-only, single-page mode
     /// only (see `rotate_button`'s wiring): the render pipeline blends annotations in the
     /// PDF's own unrotated coordinate space and only rotates the final pixel buffer for
@@ -330,8 +330,8 @@ fn paint_text_marks(reader: &Rc<RefCell<ReaderState>>, view: &Rc<crate::pdf_text
                 quote,
                 rgba: annotation_rgba(a.color.as_deref()),
                 style: match a.kind {
-                    fond_bib::AnnotationKind::Underline => MarkStyle::Underline,
-                    fond_bib::AnnotationKind::Strikeout => MarkStyle::Strikeout,
+                    fond_annot::AnnotationKind::Underline => MarkStyle::Underline,
+                    fond_annot::AnnotationKind::Strikeout => MarkStyle::Strikeout,
                     _ => MarkStyle::Highlight,
                 },
             })
@@ -517,10 +517,10 @@ fn build_drag_preview_overlay(
 /// The mark-style `DropDown` beside the colour palette, shared by both readers. "Select
 /// text" isn't here — it's the palette's own first button in the PDF reader, and the EPUB
 /// reader's native selection is always available.
-pub(crate) const MARK_KIND_OPTIONS: [(&str, fond_bib::AnnotationKind); 3] = [
-    ("Highlight", fond_bib::AnnotationKind::Highlight),
-    ("Underline", fond_bib::AnnotationKind::Underline),
-    ("Strikeout", fond_bib::AnnotationKind::Strikeout),
+pub(crate) const MARK_KIND_OPTIONS: [(&str, fond_annot::AnnotationKind); 3] = [
+    ("Highlight", fond_annot::AnnotationKind::Highlight),
+    ("Underline", fond_annot::AnnotationKind::Underline),
+    ("Strikeout", fond_annot::AnnotationKind::Strikeout),
 ];
 
 const READER_BASE_WIDTH: f64 = 820.0;
@@ -649,11 +649,11 @@ fn render_pdf_page_texture(r: &ReaderState, page: u16) -> Option<(gdk::Texture, 
         .filter(|a| a.page == Some(current_page) && !a.quadpoints.is_empty())
     {
         let kind = match a.kind {
-            fond_bib::AnnotationKind::Highlight | fond_bib::AnnotationKind::Note => {
+            fond_annot::AnnotationKind::Highlight | fond_annot::AnnotationKind::Note => {
                 fond_doc::MarkupKind::Highlight
             }
-            fond_bib::AnnotationKind::Underline => fond_doc::MarkupKind::Underline,
-            fond_bib::AnnotationKind::Strikeout => fond_doc::MarkupKind::Strikeout,
+            fond_annot::AnnotationKind::Underline => fond_doc::MarkupKind::Underline,
+            fond_annot::AnnotationKind::Strikeout => fond_doc::MarkupKind::Strikeout,
         };
         let items: Vec<(fond_doc::MarkupKind, [f64; 8])> = to_display(&a.quadpoints)
             .into_iter()
@@ -865,7 +865,7 @@ struct MarkCtx {
 }
 
 /// Turn the current selection into a mark of `kind`, in `color` (hex). Consumes the selection.
-fn apply_selection_mark(ctx: &MarkCtx, kind: fond_bib::AnnotationKind, color: &str) -> bool {
+fn apply_selection_mark(ctx: &MarkCtx, kind: fond_annot::AnnotationKind, color: &str) -> bool {
     let Some((page, text, mut quads)) = ctx.reader.borrow_mut().last_selection.take() else {
         return false;
     };
@@ -880,7 +880,7 @@ fn apply_selection_mark(ctx: &MarkCtx, kind: fond_bib::AnnotationKind, color: &s
             .map(|m| m.quads)
             .unwrap_or_default();
     }
-    let annotation = fond_bib::Annotation::drawn(
+    let annotation = fond_annot::Annotation::drawn(
         kind,
         page as u32 + 1,
         quads,
@@ -901,8 +901,8 @@ fn apply_selection_mark(ctx: &MarkCtx, kind: fond_bib::AnnotationKind, color: &s
             sync_undo_redo_buttons(&ctx.reader, &ctx.undo_button, &ctx.redo_button);
             (ctx.rebuild_notes)();
             ctx.host.notify(match kind {
-                fond_bib::AnnotationKind::Underline => "Underline added",
-                fond_bib::AnnotationKind::Strikeout => "Strikeout added",
+                fond_annot::AnnotationKind::Underline => "Underline added",
+                fond_annot::AnnotationKind::Strikeout => "Strikeout added",
                 _ => "Highlight added",
             });
             true
@@ -990,7 +990,7 @@ fn show_selection_popover(
         let hex = color.hex;
         button.connect_clicked(move |_| {
             popover.popdown();
-            apply_selection_mark(&ctx, fond_bib::AnnotationKind::Highlight, hex);
+            apply_selection_mark(&ctx, fond_annot::AnnotationKind::Highlight, hex);
         });
         colours.append(&button);
     }
@@ -1007,8 +1007,8 @@ fn show_selection_popover(
     };
     let default_hex = ctx.reader.borrow().draw_color.clone();
     for (label, kind) in [
-        ("Underline", fond_bib::AnnotationKind::Underline),
-        ("Strike out", fond_bib::AnnotationKind::Strikeout),
+        ("Underline", fond_annot::AnnotationKind::Underline),
+        ("Strike out", fond_annot::AnnotationKind::Strikeout),
     ] {
         let ctx = ctx.clone();
         let hex = default_hex.clone();
@@ -1116,7 +1116,7 @@ fn save_drag_annotation(
         )
     });
 
-    let annotation = fond_bib::Annotation::drawn(
+    let annotation = fond_annot::Annotation::drawn(
         draw_kind,
         page as u32 + 1,
         quads,
@@ -1136,10 +1136,10 @@ fn save_drag_annotation(
     match write_result {
         Ok(()) => {
             let label = match draw_kind {
-                fond_bib::AnnotationKind::Highlight => "Highlight added",
-                fond_bib::AnnotationKind::Underline => "Underline added",
-                fond_bib::AnnotationKind::Strikeout => "Strikeout added",
-                fond_bib::AnnotationKind::Note => "Annotation added",
+                fond_annot::AnnotationKind::Highlight => "Highlight added",
+                fond_annot::AnnotationKind::Underline => "Underline added",
+                fond_annot::AnnotationKind::Strikeout => "Strikeout added",
+                fond_annot::AnnotationKind::Note => "Annotation added",
             };
             host.notify(label);
             true
@@ -1156,7 +1156,7 @@ fn save_drag_annotation(
 /// right-click over overlapping highlights lands on the one the user most likely means.
 /// Returns the annotation's id.
 fn annotation_at_pdf_point(
-    annotations: &fond_bib::AnnotationSidecar,
+    annotations: &fond_annot::AnnotationSidecar,
     page: u16,
     x_pt: f32,
     y_pt: f32,
@@ -1290,10 +1290,10 @@ fn show_pdf_context_menu(
                 .filter(|t| !t.trim().is_empty());
             if let Some(text) = marked_text {
                 let label = match annotation.kind {
-                    fond_bib::AnnotationKind::Underline => "Copy underlined text",
-                    fond_bib::AnnotationKind::Strikeout => "Copy struck-out text",
-                    fond_bib::AnnotationKind::Note => "Copy noted text",
-                    fond_bib::AnnotationKind::Highlight => "Copy highlighted text",
+                    fond_annot::AnnotationKind::Underline => "Copy underlined text",
+                    fond_annot::AnnotationKind::Strikeout => "Copy struck-out text",
+                    fond_annot::AnnotationKind::Note => "Copy noted text",
+                    fond_annot::AnnotationKind::Highlight => "Copy highlighted text",
                 };
                 let copy = popover_button(label, false);
                 let host = host.clone();
@@ -2895,7 +2895,7 @@ pub fn show_pdf_reader(
                 notes_rows.remove(&child);
             }
             let bookmarks = reader.borrow().bookmarks.clone();
-            let mut all: Vec<fond_bib::Annotation> = reader
+            let mut all: Vec<fond_annot::Annotation> = reader
                 .borrow()
                 .annotations
                 .annotations
@@ -3156,7 +3156,7 @@ pub fn show_pdf_reader(
                 },
             };
             if let Some(color) = crate::palette::HIGHLIGHT_COLORS.get(i) {
-                apply_selection_mark(&ctx, fond_bib::AnnotationKind::Highlight, color.hex);
+                apply_selection_mark(&ctx, fond_annot::AnnotationKind::Highlight, color.hex);
             }
         }));
     }
@@ -4223,7 +4223,7 @@ pub fn show_pdf_reader(
                 MARK_KIND_OPTIONS
                     .get(style_drop.selected() as usize)
                     .map(|(_, k)| *k)
-                    .unwrap_or(fond_bib::AnnotationKind::Highlight)
+                    .unwrap_or(fond_annot::AnnotationKind::Highlight)
             });
             style_drop.set_sensitive(choice.is_some());
             {
@@ -4240,10 +4240,10 @@ pub fn show_pdf_reader(
             }
             let text = match kind {
                 None => "Drag over text to select it, then choose a colour (or press 1–4)",
-                Some(fond_bib::AnnotationKind::Highlight) => "Drag over text to highlight it",
-                Some(fond_bib::AnnotationKind::Underline) => "Drag over text to underline it",
-                Some(fond_bib::AnnotationKind::Strikeout) => "Drag over text to strike it out",
-                Some(fond_bib::AnnotationKind::Note) => "Drag over the page",
+                Some(fond_annot::AnnotationKind::Highlight) => "Drag over text to highlight it",
+                Some(fond_annot::AnnotationKind::Underline) => "Drag over text to underline it",
+                Some(fond_annot::AnnotationKind::Strikeout) => "Drag over text to strike it out",
+                Some(fond_annot::AnnotationKind::Note) => "Drag over the page",
             };
             hint.set_text(text);
         });
@@ -4512,7 +4512,7 @@ pub fn show_pdf_reader(
             };
             if page != last_saved.get() {
                 last_saved.set(page);
-                host.save_progress(fond_bib::Progress {
+                host.save_progress(fond_annot::Progress {
                     page: page as u32 + 1,
                     of: count as u32,
                     chapter_percent: None,
@@ -4531,7 +4531,7 @@ pub fn show_pdf_reader(
                 let r = reader.borrow();
                 (r.page as u32 + 1, r.count as u32)
             };
-            host.save_progress(fond_bib::Progress {
+            host.save_progress(fond_annot::Progress {
                 page,
                 of: count,
                 chapter_percent: None,
@@ -4707,7 +4707,7 @@ fn export_notes(
 
 /// A small modal that anchors the reader's *current* physical page to its own printed page
 /// number — the manual counterpart to the automatic `/PageLabels` read in `show_pdf_reader`,
-/// for a PDF that declares no page labels of its own (see `fond_bib::PageLabelOverride`).
+/// for a PDF that declares no page labels of its own (see `fond_annot::PageLabelOverride`).
 /// Leaving the entry blank and confirming clears any existing override, reverting to raw file
 /// page numbers. Writes straight to `notes/<key>.md` (same `load_note`/`write_note` pattern
 /// as `Progress`) and updates the live reader in place, so the change is visible immediately
@@ -4789,7 +4789,7 @@ fn show_page_number_dialog(
                 None
             } else {
                 match text.parse::<i64>() {
-                    Ok(n) => Some(fond_bib::PageLabelOverride {
+                    Ok(n) => Some(fond_annot::PageLabelOverride {
                         start_page: page as u32 + 1,
                         start_label: n,
                     }),
@@ -4935,8 +4935,8 @@ fn show_pdf_note_dialog(
             }
 
             let has_region = !selection_quads.is_empty();
-            let annotation = fond_bib::Annotation::drawn(
-                fond_bib::AnnotationKind::Note,
+            let annotation = fond_annot::Annotation::drawn(
+                fond_annot::AnnotationKind::Note,
                 current_page,
                 selection_quads.clone(),
                 selection_quote.clone(),

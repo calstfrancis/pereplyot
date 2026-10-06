@@ -9,12 +9,13 @@ authors = ["Cal St Francis <calstfrancis@gmail.com>"]
 repository = "https://github.com/calstfrancis/pereplyot"
 
 [workspace.dependencies]
-# The document/annotation primitives fond-read-gtk depends on stay in Kartoteka (MIT,
-# UI-agnostic) — only the proprietary reader widget crate itself moved here. Pinned to
-# Kartoteka's current release tag; bump deliberately, not automatically, the same way
-# Sputnik pins its own Kartoteka-sourced dependencies.
-fond-bib = { git = "https://github.com/calstfrancis/kartoteka", tag = "v0.16.0" }
-fond-doc = { git = "https://github.com/calstfrancis/kartoteka", tag = "v0.16.0" }
+# The document and annotation primitives (fond-doc, fond-annot) come from fond-core (MIT,
+# UI-agnostic). fond-bib (the vault Library/Note, for the Kartoteka launch mode) still comes
+# from Kartoteka and re-exports the same fond-annot types, so both must stay on one
+# fond-annot revision. Pinned by rev; bump deliberately.
+fond-bib = { git = "https://github.com/calstfrancis/kartoteka", rev = "03ce76f9a" }
+fond-annot = { git = "https://github.com/calstfrancis/fond-core", rev = "d519cc2" }
+fond-doc = { git = "https://github.com/calstfrancis/fond-core", rev = "d519cc2" }
 # Same version/features fond-doc builds it with, so the two unify into one crate — only
 # needed directly for page geometry (crop-box origin, /Rotate) that fond-doc doesn't expose.
 pdfium-render = { version = "0.8", default-features = false, features = ["pdfium_latest", "thread_safe", "sync"] }

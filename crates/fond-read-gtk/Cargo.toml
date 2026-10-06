@@ -12,7 +12,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-fond-bib = { workspace = true }
+fond-annot = { workspace = true }
 fond-doc = { workspace = true }
 pdfium-render = { workspace = true }
 gtk4 = { version = "0.11", features = ["v4_10"] }
