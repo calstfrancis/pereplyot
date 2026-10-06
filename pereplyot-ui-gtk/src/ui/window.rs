@@ -453,6 +453,54 @@ pub fn open_path_with_host(
         }
     };
     let hash = blake3::hash(&bytes).to_hex().to_string();
+
+    // The same path now has different contents than when it was last opened (re-saved, OCR'd,
+    // annotated in another program): offer to bring its notes along instead of letting them
+    // silently appear to have vanished.
+    if override_.is_none() {
+        let previous = crate::paths::earlier_hashes(&path, &hash)
+            .into_iter()
+            .map(|h| (reader_host::local_annotation_count(&h), h))
+            .find(|(n, _)| *n > 0);
+        if let Some((carry, old)) = previous {
+            if reader_host::local_annotation_count(&hash) == 0 {
+                crate::paths::record(&path, &hash);
+                let dialog = adw::MessageDialog::new(
+                    Some(&widgets.window),
+                    Some("This file has changed"),
+                    Some(&format!(
+                        "It looks like a newer version of a document you annotated (it may have been \
+                         re-saved or OCR'd). Bring over its {carry} annotation(s), bookmarks and \
+                         reading position?"
+                    )),
+                );
+                dialog.add_responses(&[("fresh", "Start fresh"), ("carry", "Bring them over")]);
+                dialog.set_response_appearance("carry", adw::ResponseAppearance::Suggested);
+                dialog.set_default_response(Some("carry"));
+                dialog.set_close_response("fresh");
+                let widgets = widgets.clone();
+                dialog.connect_response(None, move |_, id| {
+                    if id == "carry" {
+                        if let Err(e) = reader_host::reattach_local(&old, &hash) {
+                            toast(&widgets, &format!("Couldn't bring annotations over: {e}"));
+                        }
+                    }
+                    open_path_with_host(
+                        &widgets,
+                        path.clone(),
+                        LaunchOptions {
+                            title: title_override.clone(),
+                            annotations_only,
+                            ..LaunchOptions::default()
+                        },
+                    );
+                });
+                dialog.present();
+                return None;
+            }
+        }
+        crate::paths::record(&path, &hash);
+    }
     let title = title_override
         .filter(|t| !t.trim().is_empty())
         .or_else(|| sniff_title(kind, &path, &bytes))

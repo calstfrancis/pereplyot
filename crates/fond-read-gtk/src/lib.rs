@@ -91,6 +91,14 @@ pub trait ReaderHost {
     }
 
     fn set_citation_key(&self, _key: Option<String>) {}
+
+    /// Like [`Self::notify`], with one button. Hosts that can't show buttons just notify.
+    fn notify_action(&self, message: &str, _label: &str, _action: Rc<dyn Fn()>) {
+        self.notify(message);
+    }
+
+    /// Open another document (for instance the OCR'd copy of this one) in the host app.
+    fn open_document(&self, _path: &std::path::Path) {}
 }
 
 thread_local! {

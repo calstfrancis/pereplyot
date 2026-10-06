@@ -483,7 +483,16 @@ pub fn set_tab_header(
 /// Show a toast in the reader host window the user is looking at (the active one, else any).
 /// Returns false when no reader window is open, so the caller can fall back to its own.
 pub fn toast_in_readers(message: &str) -> bool {
+    toast_in_readers_with(message, None)
+}
+
+/// A toast button: its label and what it does.
+pub type ToastAction<'a> = (&'a str, Rc<dyn Fn()>);
+
+/// [`toast_in_readers`] with an optional action button.
+pub fn toast_in_readers_with(message: &str, action: Option<ToastAction<'_>>) -> bool {
     let mut fallback: Option<adw::ToastOverlay> = None;
+    let mut target: Option<adw::ToastOverlay> = None;
     for toplevel in gtk4::Window::list_toplevels() {
         let Some(window) = toplevel.downcast_ref::<adw::Window>() else {
             continue;
@@ -495,16 +504,19 @@ pub fn toast_in_readers(message: &str) -> bool {
         };
         let Some(overlay) = overlay else { continue };
         if window.is_active() {
-            overlay.add_toast(adw::Toast::new(message));
-            return true;
+            target = Some(overlay);
+            break;
         }
         fallback.get_or_insert(overlay);
     }
-    match fallback {
-        Some(o) => {
-            o.add_toast(adw::Toast::new(message));
-            true
-        }
-        None => false,
+    let Some(overlay) = target.or(fallback) else {
+        return false;
+    };
+    let toast = adw::Toast::new(message);
+    if let Some((label, run)) = action {
+        toast.set_button_label(Some(label));
+        toast.connect_button_clicked(move |_| run());
     }
+    overlay.add_toast(toast);
+    true
 }

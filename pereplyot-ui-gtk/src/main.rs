@@ -7,6 +7,7 @@ mod about;
 mod changelog;
 mod config;
 mod library;
+mod paths;
 mod reader_host;
 mod thumbnail;
 mod ui;

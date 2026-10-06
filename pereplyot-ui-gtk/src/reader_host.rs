@@ -66,6 +66,16 @@ fn toast_anywhere(widgets: &Rc<Widgets>, message: &str) {
     }
 }
 
+fn toast_action_anywhere(widgets: &Rc<Widgets>, message: &str, label: &str, action: Rc<dyn Fn()>) {
+    if fond_read_gtk::reader_host::toast_in_readers_with(message, Some((label, action.clone()))) {
+        return;
+    }
+    let toast = libadwaita::Toast::new(message);
+    toast.set_button_label(Some(label));
+    toast.connect_button_clicked(move |_| action());
+    widgets.toasts.add_toast(toast);
+}
+
 pub struct LocalReaderHost {
     widgets: Rc<Widgets>,
     hash: String,
@@ -127,6 +137,14 @@ impl ReaderHost for LocalReaderHost {
         toast_anywhere(&self.widgets, message);
     }
 
+    fn notify_action(&self, message: &str, label: &str, action: Rc<dyn Fn()>) {
+        toast_action_anywhere(&self.widgets, message, label, action);
+    }
+
+    fn open_document(&self, path: &std::path::Path) {
+        crate::ui::window::open_path(&self.widgets, path.to_path_buf());
+    }
+
     fn load_bookmarks(&self) -> Vec<u32> {
         LocalMeta::load(&self.hash).bookmarks
     }
@@ -146,6 +164,46 @@ impl ReaderHost for LocalReaderHost {
         meta.citation_key = key;
         meta.save(&self.hash);
     }
+}
+
+/// How many annotations are stored locally for a content hash.
+pub fn local_annotation_count(hash: &str) -> usize {
+    let path = data_dir().join("annotations").join(format!("{hash}.json"));
+    fs::read_to_string(&path)
+        .ok()
+        .and_then(|t| fond_bib::AnnotationSidecar::parse(&t, &path).ok())
+        .map_or(0, |s| s.annotations.len())
+}
+
+/// Carry the notes, bookmarks and reading position stored for `old_hash` over to `new_hash`
+/// (the same file after it was re-saved or OCR'd). The old copies are left in place.
+pub fn reattach_local(old_hash: &str, new_hash: &str) -> Result<(), String> {
+    let old = data_dir()
+        .join("annotations")
+        .join(format!("{old_hash}.json"));
+    let text = fs::read_to_string(&old).map_err(|e| e.to_string())?;
+    let mut sidecar = fond_bib::AnnotationSidecar::parse(&text, &old).map_err(|e| e.to_string())?;
+    sidecar.key = new_hash.to_string();
+    if sidecar.pdf_hash.is_some() {
+        sidecar.pdf_hash = Some(new_hash.to_string());
+    }
+    let json = sidecar.to_json().map_err(|e| e.to_string())?;
+    let new = data_dir()
+        .join("annotations")
+        .join(format!("{new_hash}.json"));
+    fsutil::write_atomic(&new, json.as_bytes()).map_err(|e| e.to_string())?;
+    let old_meta = LocalMeta::load(old_hash);
+    if old_meta.progress.is_some() || !old_meta.bookmarks.is_empty() {
+        let mut meta = LocalMeta::load(new_hash);
+        meta.progress = meta.progress.or(old_meta.progress);
+        if meta.bookmarks.is_empty() {
+            meta.bookmarks = old_meta.bookmarks;
+        }
+        meta.page_label_override = meta.page_label_override.or(old_meta.page_label_override);
+        meta.citation_key = meta.citation_key.or(old_meta.citation_key);
+        meta.save(new_hash);
+    }
+    Ok(())
 }
 
 /// The saved progress/page for a document, if any — used to pick `show_pdf_reader`'s
@@ -323,6 +381,14 @@ impl ReaderHost for VaultReaderHost {
         toast_anywhere(&self.widgets, message);
     }
 
+    fn notify_action(&self, message: &str, label: &str, action: Rc<dyn Fn()>) {
+        toast_action_anywhere(&self.widgets, message, label, action);
+    }
+
+    fn open_document(&self, path: &std::path::Path) {
+        crate::ui::window::open_path(&self.widgets, path.to_path_buf());
+    }
+
     fn load_bookmarks(&self) -> Vec<u32> {
         LocalMeta::load(&self.hash).bookmarks
     }
@@ -411,6 +477,14 @@ impl ReaderHost for ExternalPathReaderHost {
 
     fn notify(&self, message: &str) {
         toast_anywhere(&self.widgets, message);
+    }
+
+    fn notify_action(&self, message: &str, label: &str, action: Rc<dyn Fn()>) {
+        toast_action_anywhere(&self.widgets, message, label, action);
+    }
+
+    fn open_document(&self, path: &std::path::Path) {
+        crate::ui::window::open_path(&self.widgets, path.to_path_buf());
     }
 
     fn load_bookmarks(&self) -> Vec<u32> {

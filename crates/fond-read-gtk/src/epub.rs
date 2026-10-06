@@ -491,7 +491,11 @@ fn show_epub_selection_popover(
     }
 
     popover.set_child(Some(&rows));
-    popover.connect_closed(|p| p.unparent());
+    let view = view.clone();
+    popover.connect_closed(move |p| {
+        p.unparent();
+        view.grab_focus();
+    });
     popover.popup();
 }
 
