@@ -19,7 +19,7 @@ pub(super) const THUMBNAIL_GRID_WIDTH: u32 = 140;
 /// long document.
 pub(super) fn build_thumbnails_sidebar(
     reader: &Rc<RefCell<ReaderState>>,
-    render: &Rc<impl Fn() + 'static>,
+    render: &Rc<dyn Fn()>,
     continuous_toggle: &gtk4::ToggleButton,
     continuous_scroll: &gtk4::ScrolledWindow,
 ) -> (gtk4::ScrolledWindow, Rc<dyn Fn()>) {
