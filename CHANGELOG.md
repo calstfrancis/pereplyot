@@ -16,7 +16,7 @@
 - **A failed save no longer leaves a ghost annotation.** Adding, editing or deleting an
   annotation (and undo/redo) is rolled back if the file can't be written, so what you see
   matches what is on disk.
-- Internal: every annotation change in both readers now goes through one store
+- Internal: `pdf.rs` is now a `pdf/` module of ten files; every annotation change in both readers now goes through one store
   (`annotation_store.rs`) that saves it, records undo/redo as small steps instead of copying
   the whole annotation list, and tells the page, the Notes sidebar and the undo buttons to
   update — replacing about twenty hand-written snapshot/save/redraw sequences.
