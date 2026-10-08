@@ -16,7 +16,7 @@
 - **A failed save no longer leaves a ghost annotation.** Adding, editing or deleting an
   annotation (and undo/redo) is rolled back if the file can't be written, so what you see
   matches what is on disk.
-- Internal: `pdf.rs` and `epub.rs` are now `pdf/` and `epub/` modules; every annotation change in both readers now goes through one store
+- Internal: `pdf.rs` and `epub.rs` are now `pdf/` and `epub/` modules, and the two reader-opening functions (once ~2,370 and ~1,500 lines) are ~290 and ~330 lines of builders and wiring; every annotation change in both readers now goes through one store
   (`annotation_store.rs`) that saves it, records undo/redo as small steps instead of copying
   the whole annotation list, and tells the page, the Notes sidebar and the undo buttons to
   update — replacing about twenty hand-written snapshot/save/redraw sequences.

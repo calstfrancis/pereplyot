@@ -4,7 +4,7 @@ Goal: make Pereplyot the best reader on any platform for someone who reads to *w
 student, scholar or preacher who reads closely, marks with intent, comes back months later
 to find the passage, and turns it into a citation in a paper. Not a general e-book app.
 
-Written 2026-10-08 against v0.10.0 "Fair Copy". **Status: settled 2026-10-08. Phase 0: smoke harness, `AnnotationStore`, `pdf/` and `epub/` module splits and the tolerant `fond-annot` are done and pinned (fond-core PR #1, Kartoteka branch `bump-fond-core-phase0`, both awaiting merge). Still open: layout builders to get `show_pdf_reader` (~835 lines) and `show_epub_reader` (~740) under ~300, and the performance budgets.** Phases are ordered by dependency first and
+Written 2026-10-08 against v0.10.0 "Fair Copy". **Status: settled 2026-10-08. Phase 0: smoke harness, `AnnotationStore`, `pdf/` and `epub/` module splits and the tolerant `fond-annot` are done and pinned (fond-core PR #1, Kartoteka branch `bump-fond-core-phase0`, both awaiting merge). Reader functions are split (`show_pdf_reader` ~290 lines, `show_epub_reader` ~330). Still open: the performance budgets.** Phases are ordered by dependency first and
 value second. Each one ships on its own as a minor release.
 
 ---

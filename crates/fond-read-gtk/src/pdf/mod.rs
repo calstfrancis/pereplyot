@@ -25,6 +25,12 @@ mod drag_gesture;
 mod drag_preview;
 mod export;
 mod keys;
+mod open_pdf;
+use open_pdf::OpenedPdf;
+mod render_actions;
+use render_actions::*;
+mod sidebar;
+use sidebar::*;
 mod page_nav;
 use page_nav::*;
 mod tool_buttons;
@@ -266,84 +272,15 @@ pub fn show_pdf_reader(
     if crate::present_existing(pdf_hash) {
         return;
     }
-    let bytes = match std::fs::read(blob) {
-        Ok(b) => b,
-        Err(e) => {
-            gtk4::AlertDialog::builder()
-                .message("Could not open PDF")
-                .detail(e.to_string())
-                .build()
-                .show(Some(window));
-            return;
-        }
+    let Some(OpenedPdf {
+        reader,
+        outline_entries,
+        has_native_page_labels,
+        start_page,
+    }) = open_pdf::open_pdf(host, window, pdf_hash, blob, start_page)
+    else {
+        return;
     };
-    let pdfium = match fond_doc::bind_pdfium() {
-        Ok(p) => p,
-        Err(e) => {
-            gtk4::AlertDialog::builder()
-                .message("PDF reader unavailable")
-                .detail(format!("PDFium could not be loaded: {e}"))
-                .build()
-                .show(Some(window));
-            return;
-        }
-    };
-    let count = fond_doc::page_count(pdfium, &bytes).unwrap_or(1).max(1);
-    // Empty for most PDFs — outlines are the exception, not the rule — so the Contents
-    // button below only appears when there's actually something to jump to.
-    let outline_entries = fond_doc::outline(pdfium, &bytes).unwrap_or_default();
-    // Likewise empty for most PDFs (no custom /PageLabels) — falls back to the raw page
-    // number wherever it's displayed. When the PDF declares nothing of its own, fall back to
-    // a manually-set `page_label_override` on the entry's note (see "Set page numbering…"
-    // below) — this is the only way to get printed-page-number navigation on the common case
-    // of a scanned or older PDF with no `/PageLabels` dictionary at all.
-    let native_page_labels = fond_doc::page_labels(pdfium, &bytes).unwrap_or_default();
-    let has_native_page_labels = native_page_labels.iter().any(|l| l.is_some());
-    let page_label_override = host.page_label_override();
-    let page_labels = if has_native_page_labels {
-        native_page_labels
-    } else {
-        page_label_override
-            .map(|ov| ov.apply(count))
-            .unwrap_or(native_page_labels)
-    };
-
-    let store = AnnotationStore::new(host, Some(pdf_hash.to_string()));
-    let mut bookmarks = host.load_bookmarks();
-    bookmarks.sort_unstable();
-
-    let start_page = start_page
-        .saturating_sub(1)
-        .min(count.saturating_sub(1) as u32) as u16;
-    let doc = pdfium.load_pdf_from_byte_vec(bytes.clone(), None).ok();
-    let reader = Rc::new(RefCell::new(ReaderState {
-        pdfium,
-        bytes,
-        doc,
-        page: start_page,
-        count,
-        zoom: 1.0,
-        store,
-        render_px: (0, 0),
-        page_geoms: RefCell::new(std::collections::HashMap::new()),
-        draw_kind: None,
-        last_selection: None,
-        search_matches: Vec::new(),
-        search_current: 0,
-        draw_color: crate::palette::HIGHLIGHT_COLORS[0].hex.to_string(),
-        continuous_pictures: Vec::new(),
-        continuous_offsets: Vec::new(),
-        continuous_rendered: Vec::new(),
-        continuous_window: (0, 0),
-        link_goto: None,
-        nav_back: Vec::new(),
-        text_goto: None,
-        text_zoom: None,
-        page_labels,
-        rotation: 0,
-        invert_colors: false,
-        bookmarks,
-    }));
 
     let PageNavParts {
         view,
@@ -430,244 +367,37 @@ pub fn show_pdf_reader(
     crate::label_icon_buttons(&header_start);
     crate::label_icon_buttons(&header_end);
     crate::label_icon_buttons(&statusbar);
-    crate::reader_host::set_tab_header(&reader_tab, header_start, title_widget, header_end);
+    let RenderActionsParts { render, undo, redo } = render_actions::build_render_actions(
+        &bookmark_button,
+        &continuous_toggle,
+        &header_end,
+        &header_start,
+        host,
+        &next,
+        &page_entry,
+        &page_of_label,
+        &picture,
+        &prev,
+        &reader,
+        &reader_tab,
+        &redo_button,
+        &right_picture,
+        &title_widget,
+        &two_page_toggle,
+        &undo_button,
+    );
 
-    // Render the current page into the Picture (via the shared helper both this view and
-    // continuous-scroll mode use), and refresh the page label. Also fills `right_picture`
-    // with the facing page when Two-page mode is on (hidden otherwise) — every existing
-    // caller of `render()` (nav buttons, zoom, search, outline/notes-sidebar jumps, page
-    // entry) gets two-page-aware rendering for free this way, with no changes needed at any
-    // of those call sites.
-    let render: Rc<dyn Fn()> = {
-        let reader = reader.clone();
-        let picture = picture.clone();
-        let right_picture = right_picture.clone();
-        let two_page_toggle = two_page_toggle.clone();
-        let page_entry = page_entry.clone();
-        let page_of_label = page_of_label.clone();
-        let prev = prev.clone();
-        let next = next.clone();
-        let bookmark_button = bookmark_button.clone();
-        Rc::new(move || {
-            let mut r = reader.borrow_mut();
-            match render_pdf_page_texture(&r, r.page) {
-                Some((texture, w, h)) => {
-                    r.render_px = (w, h);
-                    picture.set_paintable(Some(&texture));
-                    picture.set_size_request(w as i32, h as i32);
-                }
-                None => picture.set_paintable(gdk::Paintable::NONE),
-            }
-            if two_page_toggle.is_active() {
-                let right_page = r.page + 1;
-                if right_page < r.count {
-                    match render_pdf_page_texture(&r, right_page) {
-                        Some((texture, w, h)) => {
-                            right_picture.set_paintable(Some(&texture));
-                            right_picture.set_size_request(w as i32, h as i32);
-                            right_picture.set_visible(true);
-                        }
-                        None => right_picture.set_visible(false),
-                    }
-                } else {
-                    // Odd page count: the last spread has no facing page.
-                    right_picture.set_visible(false);
-                }
-            } else {
-                right_picture.set_visible(false);
-            }
-            update_page_display(
-                &page_entry,
-                &page_of_label,
-                &prev,
-                &next,
-                &bookmark_button,
-                r.page,
-                r.count,
-                &r.page_labels,
-                &r.bookmarks,
-            );
-        })
-    };
-    render();
-
-    // Undo/redo and every other annotation change redraw through the store's change
-    // notification; a change doesn't say which page(s) it touched, so redraw everything —
-    // cheap even in continuous mode, since each page's blend is just a texture re-render.
-    let redraw_for = {
-        let reader = reader.clone();
-        let render = render.clone();
-        let continuous_toggle = continuous_toggle.clone();
-        Rc::new(move |change: &crate::annotation_store::Change| {
-            if !continuous_toggle.is_active() {
-                render();
-            }
-            for page in change.pages() {
-                render_continuous_page(&reader, page.saturating_sub(1) as u16);
-            }
-        })
-    };
-    {
-        let store = reader.borrow().store.clone();
-        let undo_button = undo_button.clone();
-        let redo_button = redo_button.clone();
-        store.subscribe(move |store, change| {
-            undo_button.set_sensitive(store.can_undo());
-            redo_button.set_sensitive(store.can_redo());
-            redraw_for(change);
-        });
-    }
-    let undo = {
-        let reader = reader.clone();
-        let host = host.clone();
-        Rc::new(move || {
-            let store = reader.borrow().store.clone();
-            match store.undo() {
-                Ok(true) => host.notify("Undid last annotation change"),
-                Ok(false) => host.notify("Nothing to undo"),
-                Err(e) => host.notify(&format!("Could not undo: {e}")),
-            }
-        })
-    };
-    let redo = {
-        let reader = reader.clone();
-        let host = host.clone();
-        Rc::new(move || {
-            let store = reader.borrow().store.clone();
-            match store.redo() {
-                Ok(true) => host.notify("Redid annotation change"),
-                Ok(false) => host.notify("Nothing to redo"),
-                Err(e) => host.notify(&format!("Could not redo: {e}")),
-            }
-        })
-    };
-    {
-        let undo = undo.clone();
-        undo_button.connect_clicked(move |_| undo());
-    }
-    {
-        let redo = redo.clone();
-        redo_button.connect_clicked(move |_| redo());
-    }
-
-    // Contents/Notes sidebar: persistent (not a popover) so it stays visible while
-    // navigating, per Cal's request. Both panels share one Paned start-child slot via a
-    // Stack, since only one is useful to see at a time; the two toggles are mutually
-    // exclusive (activating one deactivates the other) but each can still be clicked again
-    // to close the sidebar entirely, unlike a strict radio-group.
-    let contents_scroll = {
-        let rows = gtk4::Box::new(Orientation::Vertical, 2);
-        rows.set_margin_top(6);
-        rows.set_margin_bottom(6);
-        rows.set_margin_start(6);
-        rows.set_margin_end(6);
-        for entry in &outline_entries {
-            let label = format!("{}{}", "    ".repeat(entry.depth as usize), entry.title);
-            let row = popover_button(&label, false);
-            if let Some(lbl) = row.child().and_then(|w| w.downcast::<gtk4::Label>().ok()) {
-                lbl.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-            }
-            if let Some(page) = entry.page {
-                let reader = reader.clone();
-                let render = render.clone();
-                let continuous_toggle = continuous_toggle.clone();
-                let continuous_scroll = continuous_scroll.clone();
-                row.connect_clicked(move |_| {
-                    let target = {
-                        let r = reader.borrow();
-                        (page.saturating_sub(1)).min(r.count.saturating_sub(1))
-                    };
-                    if continuous_toggle.is_active() {
-                        scroll_continuous_to_page(&reader, &continuous_scroll, target);
-                    } else {
-                        reader.borrow_mut().page = target;
-                        render();
-                    }
-                });
-            } else {
-                row.set_sensitive(false);
-            }
-            rows.append(&row);
-        }
-        let scroll = gtk4::ScrolledWindow::new();
-        scroll.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
-        scroll.set_child(Some(&rows));
-        scroll
-    };
-
-    // Outline and Thumbnails are two tabs of the one left sidebar (as opposed to Notes,
-    // which is its own independent right-hand sidebar — see the comment further down where
-    // `notes_paned` is built). A plain Stack + a two-button switcher, not `gtk4::StackSwitcher`
-    // or `adw::ViewSwitcher`, to match the rest of this reader's hand-built toggle style and
-    // to get `ToggleButton::set_group`'s native radio behaviour (exactly one active, clicking
-    // the active one again does nothing) for free.
-    let (thumbnails_scroll, trigger_thumbnails) =
-        build_thumbnails_sidebar(&reader, &render, &continuous_toggle, &continuous_scroll);
-
-    let outline_tab_toggle = gtk4::ToggleButton::with_label("Outline");
-    let thumbnails_tab_toggle = gtk4::ToggleButton::with_label("Thumbnails");
-    thumbnails_tab_toggle.set_group(Some(&outline_tab_toggle));
-    let sidebar_tabs_row = gtk4::Box::new(Orientation::Horizontal, 0);
-    sidebar_tabs_row.add_css_class("linked");
-    sidebar_tabs_row.set_margin_top(6);
-    sidebar_tabs_row.set_margin_bottom(6);
-    sidebar_tabs_row.set_margin_start(6);
-    sidebar_tabs_row.set_margin_end(6);
-    sidebar_tabs_row.set_halign(gtk4::Align::Center);
-    sidebar_tabs_row.append(&outline_tab_toggle);
-    sidebar_tabs_row.append(&thumbnails_tab_toggle);
-
-    let sidebar_tab_stack = gtk4::Stack::new();
-    sidebar_tab_stack.set_vexpand(true);
-    sidebar_tab_stack.add_named(&contents_scroll, Some("outline"));
-    sidebar_tab_stack.add_named(&thumbnails_scroll, Some("thumbnails"));
-
-    if outline_entries.is_empty() {
-        outline_tab_toggle.set_sensitive(false);
-        outline_tab_toggle.set_tooltip_text(Some("This PDF has no table of contents"));
-        thumbnails_tab_toggle.set_active(true);
-        sidebar_tab_stack.set_visible_child_name("thumbnails");
-        trigger_thumbnails();
-    } else {
-        outline_tab_toggle.set_active(true);
-        sidebar_tab_stack.set_visible_child_name("outline");
-    }
-    {
-        let sidebar_tab_stack = sidebar_tab_stack.clone();
-        outline_tab_toggle.connect_toggled(move |btn| {
-            if btn.is_active() {
-                sidebar_tab_stack.set_visible_child_name("outline");
-            }
-        });
-    }
-    {
-        let sidebar_tab_stack = sidebar_tab_stack.clone();
-        thumbnails_tab_toggle.connect_toggled(move |btn| {
-            if btn.is_active() {
-                sidebar_tab_stack.set_visible_child_name("thumbnails");
-                trigger_thumbnails();
-            }
-        });
-    }
-
-    let sidebar_box = gtk4::Box::new(Orientation::Vertical, 0);
-    sidebar_box.append(&sidebar_tabs_row);
-    sidebar_box.append(&sidebar_tab_stack);
-
-    // Notes/highlights list: every annotation in the document, readable prose rather than
-    // just on-page markers, sorted by page. Rebuilt fresh (`rebuild_notes`, below) whenever
-    // shown or whenever an annotation is added/removed elsewhere in the reader, via the
-    // `Rc<RefCell<Option<...>>>` indirection so a row's own delete button can trigger a
-    // rebuild of the list it lives in.
-    let notes_rows = gtk4::Box::new(Orientation::Vertical, 2);
-    notes_rows.set_margin_top(6);
-    notes_rows.set_margin_bottom(6);
-    notes_rows.set_margin_start(6);
-    notes_rows.set_margin_end(6);
-    let notes_scroll = gtk4::ScrolledWindow::new();
-    notes_scroll.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
-    notes_scroll.set_child(Some(&notes_rows));
-
+    let SidebarParts {
+        sidebar_box,
+        notes_rows,
+        notes_scroll,
+    } = sidebar::build_sidebar(
+        &continuous_scroll,
+        &continuous_toggle,
+        &outline_entries,
+        &reader,
+        &render,
+    );
     let (rebuild_notes, quiet_notes) = notes::install_notes_sidebar(
         host,
         &reader,
