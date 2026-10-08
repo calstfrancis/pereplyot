@@ -172,6 +172,42 @@ pub fn unregister_window(hash: &str) {
     }
 }
 
+/// A page's text, read character by character. PDFium's own `all()` only returns text inside
+/// a rectangle anchored at the page's origin, so a page with a rotated or offset crop box
+/// comes back empty or missing its top lines.
+pub(crate) fn page_text(page: &pdfium_render::prelude::PdfPage) -> String {
+    page.text()
+        .map(|t| t.chars().iter().filter_map(|c| c.unicode_char()).collect())
+        .unwrap_or_default()
+}
+
+/// Let keys 1-4 choose a colour while a selection popover is open. The popover takes keyboard
+/// input on its own surface, so the reader window's 1-4 shortcut never sees them there.
+pub(crate) fn bind_number_keys(popover: &gtk4::Popover, buttons: &[gtk4::Button]) {
+    let buttons = buttons.to_vec();
+    let keys = gtk4::EventControllerKey::new();
+    keys.connect_key_pressed(move |_, key, _, state| {
+        if !state.is_empty() {
+            return glib::Propagation::Proceed;
+        }
+        let index = match key {
+            gtk4::gdk::Key::_1 | gtk4::gdk::Key::KP_1 => 0,
+            gtk4::gdk::Key::_2 | gtk4::gdk::Key::KP_2 => 1,
+            gtk4::gdk::Key::_3 | gtk4::gdk::Key::KP_3 => 2,
+            gtk4::gdk::Key::_4 | gtk4::gdk::Key::KP_4 => 3,
+            _ => return glib::Propagation::Proceed,
+        };
+        match buttons.get(index) {
+            Some(b) => {
+                b.emit_clicked();
+                glib::Propagation::Stop
+            }
+            None => glib::Propagation::Proceed,
+        }
+    });
+    popover.add_controller(keys);
+}
+
 /// A flat, left-aligned popover row. Deliberately a copy of `app_window`'s helper of the
 /// same name rather than a shared import: this module is on its way into its own crate, and
 /// an eighteen-line button helper is not worth a dependency back on the application. If the
@@ -447,4 +483,46 @@ pub fn note_dialog(
     }
     dialog.present();
     text_view.grab_focus();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::page_text;
+
+    fn first_page_text(bytes: &[u8]) -> Option<String> {
+        let pdfium = fond_doc::bind_pdfium().ok()?;
+        let doc = pdfium.load_pdf_from_byte_slice(bytes, None).ok()?;
+        let page = doc.pages().get(0).ok()?;
+        Some(page_text(&page))
+    }
+
+    // These need a real libpdfium (PDFIUM_LIB_PATH); without one they skip rather than fail.
+    #[test]
+    fn page_text_reads_every_line_of_plain_cropped_and_rotated_pages() {
+        let fixtures: [(&str, &[u8]); 3] = [
+            ("plain", include_bytes!("../../../tests/fixtures/plain.pdf")),
+            (
+                "cropbox",
+                include_bytes!("../../../tests/fixtures/cropbox.pdf"),
+            ),
+            (
+                "rotated",
+                include_bytes!("../../../tests/fixtures/rotated.pdf"),
+            ),
+        ];
+        for (name, bytes) in fixtures {
+            let Some(text) = first_page_text(bytes) else {
+                eprintln!("skipped: libpdfium not available");
+                return;
+            };
+            for line in [
+                "Page 1",
+                "The quick brown fox jumps over the lazy dog.",
+                "Pack my box with five dozen liquor jugs.",
+                "Sphinx of black quartz, judge my vow.",
+            ] {
+                assert!(text.contains(line), "{name}: missing {line:?} in {text:?}");
+            }
+        }
+    }
 }

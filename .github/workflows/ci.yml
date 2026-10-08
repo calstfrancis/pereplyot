@@ -35,3 +35,30 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test
         run: cargo test --workspace
+
+  smoke:
+    name: headless smoke test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install GTK4/libadwaita/WebKitGTK and the display tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libadwaita-1-dev libwebkitgtk-6.0-dev \
+            xvfb xdotool imagemagick dbus fonts-dejavu-core
+      - name: Fetch PDFium (same pinned build the flatpak bundles)
+        run: |
+          mkdir -p "$RUNNER_TEMP/pdfium"
+          curl -sSL -o "$RUNNER_TEMP/pdfium.tgz" \
+            "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F7961/pdfium-linux-x64.tgz"
+          echo "019665c8877d46fe65f625f80fd714ab07aac68554b0636acf2a2adf9288adb2  $RUNNER_TEMP/pdfium.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/pdfium.tgz" -C "$RUNNER_TEMP/pdfium"
+          echo "PDFIUM_LIB_PATH=$RUNNER_TEMP/pdfium/lib" >> "$GITHUB_ENV"
+      - name: Build
+        run: cargo build -p pereplyot-ui-gtk
+      - name: Tests that need PDFium
+        run: cargo test -p fond-read-gtk
+      - name: Smoke test
+        run: tests/smoke/run.sh

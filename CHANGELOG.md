@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+- **Fixed: a false "This PDF has no text layer" warning, and missing lines in the Text view,
+  on PDFs with a rotated page or an offset crop box.** The reader asked PDFium for the text
+  inside a rectangle anchored at the page's origin, which comes back empty for a rotated
+  page and drops the top lines of a cropped one. Text is now read character by character.
+- **Fixed: pressing 1–4 with the selection popover open did nothing** — the popover took the
+  keystroke before the reader's shortcut saw it, although the hint line says "or press 1–4".
+  The keys now choose the colour from inside the popover too, in both readers.
+- Internal: a headless smoke test (`tests/smoke/run.sh`, run in CI) drives the real app under
+  Xvfb through open → select → mark for PDF (plain, cropped, rotated) and EPUB, and checks
+  the saved annotation.
+- Known, not yet fixed (tracked in the smoke test): in the shared selection code, dragging
+  along a line can drop its trailing punctuation from the saved quote, and a drag on an
+  upright page that carries `/Rotate 90` selects the whole page.
+
 ## [0.10.0] "Fair Copy" — 2026-10-06
 
 - **Typst, LaTeX and Markdown export, grouped by what your colours mean.** The export dialog

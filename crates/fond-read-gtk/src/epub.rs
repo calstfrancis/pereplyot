@@ -398,6 +398,7 @@ fn show_epub_selection_popover(
 
     let colours = gtk4::Box::new(Orientation::Horizontal, 4);
     colours.set_halign(gtk4::Align::Center);
+    let mut swatches: Vec<gtk4::Button> = Vec::new();
     for (i, color) in crate::palette::HIGHLIGHT_COLORS.iter().enumerate() {
         let button = gtk4::Button::new();
         button.add_css_class("flat");
@@ -422,8 +423,10 @@ fn show_epub_selection_popover(
                 None,
             );
         });
+        swatches.push(button.clone());
         colours.append(&button);
     }
+    crate::bind_number_keys(&popover, &swatches);
     rows.append(&colours);
 
     let row = |label: &str, run: Rc<dyn Fn()>| {

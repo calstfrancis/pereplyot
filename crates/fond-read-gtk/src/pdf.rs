@@ -242,11 +242,7 @@ fn warn_if_no_text_layer(
             let Ok(page) = doc.pages().get(i) else {
                 return false;
             };
-            let found = page
-                .text()
-                .map(|t| t.all().chars().any(|c| !c.is_whitespace()))
-                .unwrap_or(false);
-            found
+            crate::page_text(&page).chars().any(|c| !c.is_whitespace())
         })
     };
     if has_text {
@@ -972,6 +968,7 @@ fn show_selection_popover(
 
     let colours = gtk4::Box::new(Orientation::Horizontal, 4);
     colours.set_halign(gtk4::Align::Center);
+    let mut swatches: Vec<gtk4::Button> = Vec::new();
     for (i, color) in crate::palette::HIGHLIGHT_COLORS.iter().enumerate() {
         let button = gtk4::Button::new();
         button.add_css_class("flat");
@@ -992,8 +989,10 @@ fn show_selection_popover(
             popover.popdown();
             apply_selection_mark(&ctx, fond_annot::AnnotationKind::Highlight, hex);
         });
+        swatches.push(button.clone());
         colours.append(&button);
     }
+    crate::bind_number_keys(&popover, &swatches);
     rows.append(&colours);
 
     let action = |label: &str, run: Rc<dyn Fn()>| {
@@ -3446,8 +3445,7 @@ pub fn show_pdf_reader(
                             .as_ref()
                             .and_then(|d| {
                                 let page = d.pages().get(page).ok()?;
-                                let text = page.text().ok()?.all();
-                                Some(text)
+                                Some(crate::page_text(&page))
                             })
                             .unwrap_or_default()
                     }
