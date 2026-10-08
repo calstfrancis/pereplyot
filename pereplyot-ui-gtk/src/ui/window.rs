@@ -607,9 +607,9 @@ pub fn open_path_with_host(
 
 fn sniff_title(kind: DocKind, path: &Path, bytes: &[u8]) -> Option<String> {
     match kind {
-        DocKind::Pdf => fond_doc::bind_pdfium()
-            .and_then(|pdfium| fond_doc::extract_metadata(pdfium, bytes))
+        DocKind::Pdf => fond_read_gtk::pdfium::get()
             .ok()
+            .and_then(|pdfium| fond_doc::extract_metadata(pdfium, bytes).ok())
             .and_then(|meta| meta.title)
             .filter(|t| !t.is_empty()),
         DocKind::Epub => fond_doc::extract_epub_metadata(path)

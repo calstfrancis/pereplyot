@@ -30,6 +30,8 @@ mod page_geom;
 pub mod palette;
 pub mod pdf;
 mod pdf_text;
+pub mod pdfium;
+mod pdfium_lock;
 pub mod perf;
 pub mod reader_host;
 pub mod store;
@@ -509,7 +511,7 @@ mod tests {
     use super::page_text;
 
     fn first_page_text(bytes: &[u8]) -> Option<String> {
-        let pdfium = fond_doc::bind_pdfium().ok()?;
+        let pdfium = crate::pdfium::get().ok()?;
         let doc = pdfium.load_pdf_from_byte_slice(bytes, None).ok()?;
         let page = doc.pages().get(0).ok()?;
         Some(page_text(&page))

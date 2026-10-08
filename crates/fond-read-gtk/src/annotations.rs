@@ -50,7 +50,7 @@ pub fn show_annotations_dialog(
         .as_ref()
         .and_then(|(_, blob)| {
             let bytes = std::fs::read(blob).ok()?;
-            let pdfium = fond_doc::bind_pdfium().ok()?;
+            let pdfium = crate::pdfium::get().ok()?;
             let native = fond_doc::page_labels(pdfium, &bytes).unwrap_or_default();
             if native.iter().any(|l| l.is_some()) {
                 return Some(native);

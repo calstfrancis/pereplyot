@@ -80,34 +80,22 @@ pub(super) fn render_open(
     })
 }
 
-/// Render `page` (0-based) to a ready-to-display texture, with this entry's saved
-/// annotations — and, if `page` has the current search match, that match's highlight too —
-/// blended in. Shared by both the page-by-page view and continuous-scroll mode so the two
-/// can never visually disagree about what a page looks like. Returns the texture, its pixel
-/// size, and the page's PDF-point size (the scale a drag-selected rectangle on that page
-/// converts through).
-pub(super) fn render_pdf_page_texture(
-    r: &ReaderState,
-    page: u16,
-) -> Option<(gdk::Texture, u32, u32)> {
-    let _span = crate::perf::span(|| format!("render page {}", page + 1));
-    let width = (READER_BASE_WIDTH * r.zoom) as u32;
-    let geom = r.geom(page);
+/// What the page's overlay (saved marks, the current search match, the live selection) looks
+/// like right now, in the page's displayed point space, plus a hash so it can key a cache.
+fn overlay_for(r: &ReaderState, page: u16, geom: Option<PageGeom>) -> (Overlay, u64) {
+    use std::hash::{Hash, Hasher};
     let page_pts = geom.map(|g| g.display_size()).unwrap_or((0.0, 0.0));
     let to_display = |quads: &[[f64; 8]]| match geom {
         Some(g) => g.quads_to_display(quads),
         None => quads.to_vec(),
     };
-    let mut rp = render_open(r, page, width)?;
     let current_page = page as u32 + 1;
-
-    // A freestanding Note (no quadpoints — added via the "Note…" button on blank page) is
-    // already excluded by the `!quadpoints.is_empty()` filter above; a Note created *from a
-    // text selection* ("Create note from…", see `show_pdf_context_menu`) does carry real
-    // quadpoints and is blended here like a highlight, so it stays visible on the page and
-    // not just listed in the sidebar. Each annotation keeps its own colour (from the colour
-    // picker at draw time, or the default amber for a Note, which has none), so this blends
-    // per-annotation rather than batching every quad on the page into one shared-colour call.
+    let mut overlay = Overlay {
+        page_pts,
+        ..Overlay::default()
+    };
+    // A freestanding Note (no quadpoints) is skipped; a Note made from a text selection carries
+    // real quadpoints and is drawn like a highlight. Each mark keeps its own colour.
     for a in r
         .store
         .sidecar()
@@ -121,68 +109,107 @@ pub(super) fn render_pdf_page_texture(
             }
             fond_annot::AnnotationKind::Underline => fond_doc::MarkupKind::Underline,
             fond_annot::AnnotationKind::Strikeout => fond_doc::MarkupKind::Strikeout,
-            // AnnotationKind is non_exhaustive from fond-core's next rev
             _ => continue,
         };
-        let items: Vec<(fond_doc::MarkupKind, [f64; 8])> = to_display(&a.quadpoints)
-            .into_iter()
-            .map(|q| (kind, q))
-            .collect();
-        fond_doc::blend_annotations(
-            &mut rp,
-            page_pts.0,
-            page_pts.1,
-            &items,
+        overlay.marks.push((
+            kind,
+            to_display(&a.quadpoints),
             annotation_rgba(a.color.as_deref()),
-        );
+        ));
     }
-
-    // The current search match, if it's on this page — blended in its own colour, on top of
-    // any saved highlights, so it reads as "found this" and not as another saved annotation.
+    // The current search match is drawn in its own colour on top of saved marks, and a "Select
+    // text" selection stays visible after the drag ends until a new one replaces it.
     if let Some(current) = r.search_matches.get(r.search_current) {
         if current.page == page {
-            fond_doc::blend_highlights(
-                &mut rp,
-                page_pts.0,
-                page_pts.1,
-                &to_display(&current.quads),
-                SEARCH_MATCH_RGBA,
-            );
+            overlay
+                .highlights
+                .push((to_display(&current.quads), SEARCH_MATCH_RGBA));
         }
     }
-
-    // A "Select text" drag's selection, if it's on this page — kept visible after the drag
-    // ends (previously it vanished the instant you released the mouse, leaving only the
-    // clipboard copy as any trace) until a new selection replaces it or it's consumed by
-    // "Create note from…". Uses the live drag-preview's own colour so a selection looks the
-    // same while dragging and once settled.
     if let Some((sel_page, _, quads)) = &r.last_selection {
         if *sel_page == page {
-            fond_doc::blend_highlights(
-                &mut rp,
-                page_pts.0,
-                page_pts.1,
-                &to_display(quads),
-                SELECTION_RGBA,
-            );
+            overlay.highlights.push((to_display(quads), SELECTION_RGBA));
         }
     }
-
-    if r.invert_colors {
-        invert_rgba(&mut rp.rgba);
-    }
-    let (data, out_w, out_h) = if r.rotation != 0 {
-        let (rotated, w, h) = rotate_rgba(&rp.rgba, rp.width, rp.height, r.rotation);
-        (glib::Bytes::from(&rotated), w, h)
-    } else {
-        (glib::Bytes::from(&rp.rgba), rp.width, rp.height)
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    let quads_hash = |h: &mut std::collections::hash_map::DefaultHasher, qs: &[[f64; 8]]| {
+        for q in qs {
+            for v in q {
+                v.to_bits().hash(h);
+            }
+        }
     };
+    for (kind, quads, rgba) in &overlay.marks {
+        (*kind as u8).hash(&mut h);
+        rgba.hash(&mut h);
+        quads_hash(&mut h, quads);
+    }
+    for (quads, rgba) in &overlay.highlights {
+        rgba.hash(&mut h);
+        quads_hash(&mut h, quads);
+    }
+    (overlay, h.finish())
+}
+
+/// The page's size on screen in logical pixels (unrotated, then swapped for a quarter turn).
+pub(super) fn logical_page_size(r: &ReaderState, page: u16) -> (u32, u32) {
+    let lw = (READER_BASE_WIDTH * r.zoom).max(1.0);
+    let (pw, ph) = r.display_size(page);
+    let lh = (lw * ph as f64 / (pw as f64).max(1.0)).round().max(1.0);
+    let (lw, lh) = (lw as u32, lh as u32);
+    if r.rotation % 180 == 90 {
+        (lh, lw)
+    } else {
+        (lw, lh)
+    }
+}
+
+/// Show `page` in `picture`: from the texture cache if it is there, otherwise queue it on the
+/// render thread and leave whatever the picture shows until the new pixels arrive. Returns the
+/// page's logical size, which does not depend on the pixels, so layout never waits for them.
+pub(super) fn paint_page(
+    reader: &Rc<RefCell<ReaderState>>,
+    page: u16,
+    picture: &gtk4::Picture,
+) -> (u32, u32) {
+    let scale = picture.scale_factor().max(1) as u32;
+    let mut r = reader.borrow_mut();
+    let size = logical_page_size(&r, page);
+    let geom = r.geom(page);
+    let (overlay, overlay_hash) = overlay_for(&r, page, geom);
+    let unrotated_w = (READER_BASE_WIDTH * r.zoom).max(1.0) as u32;
+    let key = RenderKey {
+        page,
+        width: unrotated_w * scale,
+        rotation: r.rotation,
+        invert: r.invert_colors,
+        overlay: overlay_hash,
+    };
+    if let Some(texture) = r.textures.get(&key) {
+        picture.set_paintable(Some(&texture));
+        return size;
+    }
+    let priority = (page as i32 - r.page as i32).unsigned_abs();
+    if let Some(worker) = &r.worker {
+        worker.submit(Job {
+            key,
+            overlay,
+            priority,
+        });
+    }
+    size
+}
+
+/// Turn a finished render into a texture and keep it for reuse.
+pub(super) fn accept_render(r: &mut ReaderState, done: Rendered) {
+    let bytes = done.rgba.len();
+    let stride = done.width as usize * 4;
     let texture = gdk::MemoryTexture::new(
-        out_w as i32,
-        out_h as i32,
+        done.width as i32,
+        done.height as i32,
         gdk::MemoryFormat::R8g8b8a8,
-        &data,
-        (out_w * 4) as usize,
+        &glib::Bytes::from_owned(done.rgba),
+        stride,
     );
-    Some((texture.upcast(), out_w, out_h))
+    r.textures.insert(done.key, texture.upcast(), bytes);
 }

@@ -53,6 +53,7 @@ pub(super) fn install_session(ui: &PdfUi, start_page: u16) {
                 chapter_percent: None,
             });
             reader.borrow().store.clear_listeners();
+            reader.borrow_mut().worker = None;
             crate::unregister_window(&pdf_hash);
         });
     }

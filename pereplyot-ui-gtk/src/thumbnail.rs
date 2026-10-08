@@ -48,7 +48,7 @@ fn render_uncached(kind: DocKind, path: &Path, width: u32) -> Option<gdk::Textur
     match kind {
         DocKind::Pdf => {
             let bytes = std::fs::read(path).ok()?;
-            let pdfium = fond_doc::bind_pdfium().ok()?;
+            let pdfium = fond_read_gtk::pdfium::get().ok()?;
             let rp = fond_doc::render_page(pdfium, &bytes, 0, width).ok()?;
             let data = glib::Bytes::from(&rp.rgba);
             let texture = gdk::MemoryTexture::new(

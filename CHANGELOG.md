@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+- **Pages are drawn on their own thread, at the screen's real resolution.** Page rendering used
+  to run on the same thread as the window, so on a scanned book zooming or paging could
+  freeze the whole interface for a frame or more, and pages were drawn at logical size, so
+  text looked soft on a 2× or 4K screen. Pages are now rasterised by a background thread at
+  the display's scale factor (and redrawn if the window moves to a screen with a different
+  one), finished pages are kept in a texture cache so scrolling back is instant, and the
+  page you are on is always drawn first. Measured on a 600-page scan: no main-thread stall
+  while paging or zooming (it was 24 ms per page at 2×).
+- **Fixed: a crash waiting to happen with any second thread — PDFium was never thread-safe.**
+  The PDF library's own "thread safe" switch only guards start-up and shut-down, not each
+  call. Every PDFium call in Pereplyot now goes through one lock (`pdfium_lock.rs`, generated
+  from the library's source by `tools/gen_pdfium_lock.py`), so the render thread and the
+  window thread can both use it. Without it the first version of the render thread corrupted
+  the heap on 11 of 12 launches.
 - **Fixed: a false "This PDF has no text layer" warning, and missing lines in the Text view,
   on PDFs with a rotated page or an offset crop box.** The reader asked PDFium for the text
   inside a rectangle anchored at the page's origin, which comes back empty for a rotated

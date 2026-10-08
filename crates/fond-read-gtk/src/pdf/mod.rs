@@ -59,10 +59,14 @@ mod search;
 mod session;
 mod sidebar_toggle;
 mod text_view;
+mod texture_cache;
 mod ui;
 mod view_modes;
+mod worker;
 mod zoom;
+use texture_cache::TextureCache;
 use ui::PdfUi;
+use worker::{Job, Overlay, RenderKey, RenderWorker, Rendered};
 mod notes;
 mod ocr;
 mod render;
@@ -139,6 +143,10 @@ struct ReaderState {
     /// Inclusive range of pages currently kept rendered in continuous mode; everything else
     /// is unloaded so a long book at high zoom doesn't hold every page as a texture.
     continuous_window: (u16, u16),
+    /// Finished page pictures, reused across scrolling, zooming back and forth, and redraws.
+    textures: TextureCache,
+    /// Rasterises pages off the GTK thread.
+    worker: Option<RenderWorker>,
     /// Each page's document-defined `/PageLabels` printed number (`None` where the PDF
     /// doesn't define one, which is most PDFs) — read once at open, since it's an immutable
     /// property of the file. Index `i` (0-based) matches every other page index in this
@@ -168,6 +176,7 @@ impl ReaderState {
         if let Some(cached) = self.page_geoms.borrow().get(&page) {
             return *cached;
         }
+        let _span = crate::perf::span(|| format!("geometry page {}", page + 1));
         let geom = match &self.doc {
             Some(doc) => PageGeom::read_doc(doc, page),
             None => self
@@ -272,6 +281,7 @@ pub fn show_pdf_reader(
     if crate::present_existing(pdf_hash) {
         return;
     }
+    crate::perf::watch_main_loop();
     crate::perf::mark("show_pdf_reader start");
     let open_span = crate::perf::span(|| "open_pdf".to_string());
     let Some(OpenedPdf {

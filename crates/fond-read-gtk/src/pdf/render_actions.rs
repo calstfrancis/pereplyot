@@ -62,33 +62,22 @@ pub(super) fn build_render_actions(
         let next = next.clone();
         let bookmark_button = bookmark_button.clone();
         Rc::new(move || {
-            let mut r = reader.borrow_mut();
-            match render_pdf_page_texture(&r, r.page) {
-                Some((texture, w, h)) => {
-                    r.render_px = (w, h);
-                    picture.set_paintable(Some(&texture));
-                    picture.set_size_request(w as i32, h as i32);
-                }
-                None => picture.set_paintable(gdk::Paintable::NONE),
-            }
-            if two_page_toggle.is_active() {
-                let right_page = r.page + 1;
-                if right_page < r.count {
-                    match render_pdf_page_texture(&r, right_page) {
-                        Some((texture, w, h)) => {
-                            right_picture.set_paintable(Some(&texture));
-                            right_picture.set_size_request(w as i32, h as i32);
-                            right_picture.set_visible(true);
-                        }
-                        None => right_picture.set_visible(false),
-                    }
-                } else {
-                    // Odd page count: the last spread has no facing page.
-                    right_picture.set_visible(false);
-                }
+            let (page, count, two_page) = {
+                let r = reader.borrow();
+                (r.page, r.count, two_page_toggle.is_active())
+            };
+            let (w, h) = paint_page(&reader, page, &picture);
+            reader.borrow_mut().render_px = (w, h);
+            picture.set_size_request(w as i32, h as i32);
+            if two_page && page + 1 < count {
+                let (rw, rh) = paint_page(&reader, page + 1, &right_picture);
+                right_picture.set_size_request(rw as i32, rh as i32);
+                right_picture.set_visible(true);
             } else {
+                // Not two-page mode, or an odd page count's last spread with no facing page.
                 right_picture.set_visible(false);
             }
+            let r = reader.borrow();
             update_page_display(
                 &page_entry,
                 &page_of_label,
@@ -103,6 +92,41 @@ pub(super) fn build_render_actions(
         })
     };
     render();
+
+    // Finished pages arrive here from the render thread; show them wherever they are wanted.
+    if let Some(worker) = &reader.borrow().worker {
+        let reader = reader.clone();
+        let render = render.clone();
+        worker.set_sink(Rc::new(move |done: Rendered| {
+            let page = done.key.page;
+            accept_render(&mut reader.borrow_mut(), done);
+            let (current, wanted_in_continuous) = {
+                let r = reader.borrow();
+                (
+                    r.page,
+                    r.continuous_rendered
+                        .get(page as usize)
+                        .copied()
+                        .unwrap_or(false),
+                )
+            };
+            if page == current || page == current + 1 {
+                render();
+            }
+            if wanted_in_continuous {
+                render_continuous_page(&reader, page);
+            }
+        }));
+    }
+    // Moving the window to a monitor with a different scale needs the pages drawn again.
+    {
+        let reader = reader.clone();
+        let render = render.clone();
+        picture.connect_notify_local(Some("scale-factor"), move |_, _| {
+            render();
+            rerender_loaded_continuous_pages(&reader);
+        });
+    }
 
     // Undo/redo and every other annotation change redraw through the store's change
     // notification; a change doesn't say which page(s) it touched, so redraw everything —

@@ -280,39 +280,30 @@ pub(super) fn refresh_continuous_window(
         });
     }
     if !missing.is_empty() {
-        schedule_continuous_render(reader.clone(), missing, 0);
+        schedule_continuous_render(reader.clone(), missing);
     }
 }
 
-/// Rasterize one page of `order`, then yield to the main loop before the next, so filling
-/// the window never blocks the UI for more than one page's render. Pages that have since
-/// left the window (the user scrolled on) or were already rendered are skipped.
-pub(super) fn schedule_continuous_render(
-    reader: Rc<RefCell<ReaderState>>,
-    order: Vec<u16>,
-    idx: usize,
-) {
-    let Some(&page) = order.get(idx) else {
-        return;
-    };
-    let wanted = {
-        let r = reader.borrow();
-        let (lo, hi) = r.continuous_window;
-        r.continuous_pictures.get(page as usize).is_some()
-            && page >= lo
-            && page <= hi
-            && !r
-                .continuous_rendered
-                .get(page as usize)
-                .copied()
-                .unwrap_or(true)
-    };
-    if wanted {
-        render_continuous_page(&reader, page);
+/// Queue the pages of `order` on the render thread, nearest first. Pages that have since left
+/// the window or were already requested are skipped; nothing here waits for pixels.
+pub(super) fn schedule_continuous_render(reader: Rc<RefCell<ReaderState>>, order: Vec<u16>) {
+    for page in order {
+        let wanted = {
+            let r = reader.borrow();
+            let (lo, hi) = r.continuous_window;
+            r.continuous_pictures.get(page as usize).is_some()
+                && page >= lo
+                && page <= hi
+                && !r
+                    .continuous_rendered
+                    .get(page as usize)
+                    .copied()
+                    .unwrap_or(true)
+        };
+        if wanted {
+            render_continuous_page(&reader, page);
+        }
     }
-    glib::idle_add_local_once(move || {
-        schedule_continuous_render(reader, order, idx + 1);
-    });
 }
 
 /// Tear down and rebuild continuous-scroll mode's widgets after a zoom change — page pixel
@@ -360,13 +351,14 @@ pub(super) fn render_continuous_page(reader: &Rc<RefCell<ReaderState>>, page: u1
     let Some(picture) = picture else {
         return;
     };
-    let mut r = reader.borrow_mut();
-    if let Some((texture, w, h)) = render_pdf_page_texture(&r, page) {
-        picture.set_paintable(Some(&texture));
-        picture.set_size_request(w as i32, h as i32);
-        if let Some(flag) = r.continuous_rendered.get_mut(page as usize) {
-            *flag = true;
-        }
+    let (w, h) = paint_page(reader, page, &picture);
+    picture.set_size_request(w as i32, h as i32);
+    if let Some(flag) = reader
+        .borrow_mut()
+        .continuous_rendered
+        .get_mut(page as usize)
+    {
+        *flag = true;
     }
 }
 

@@ -27,7 +27,7 @@ pub(super) fn open_pdf(
             return None;
         }
     };
-    let pdfium = match fond_doc::bind_pdfium() {
+    let pdfium = match crate::pdfium::get() {
         Ok(p) => p,
         Err(e) => {
             gtk4::AlertDialog::builder()
@@ -92,6 +92,8 @@ pub(super) fn open_pdf(
         page_labels,
         rotation: 0,
         invert_colors: false,
+        textures: TextureCache::new(96 * 1024 * 1024),
+        worker: Some(RenderWorker::spawn(blob.to_path_buf())),
         bookmarks,
     }));
     Some(OpenedPdf {
