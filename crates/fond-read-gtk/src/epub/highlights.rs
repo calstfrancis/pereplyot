@@ -355,3 +355,136 @@ pub(super) fn show_epub_selection_popover(
     });
     popover.popup();
 }
+
+/// Marks the current selection. Shared by the header's Apply button and the popover that
+/// appears when a selection ends; the browser selection is cleared once it's marked.
+pub(super) fn build_apply_mark(
+    host: &Rc<dyn ReaderHost>,
+    reader: &Rc<RefCell<EpubReaderState>>,
+    web_view: &webkit6::WebView,
+) -> EpubMarkFn {
+    let reader = reader.clone();
+    let view = web_view.clone();
+    let host = host.clone();
+    Rc::new(move |kind, color, note| {
+        let reader = reader.clone();
+        let host = host.clone();
+        view.evaluate_javascript(
+            &epub_selection_js(true),
+            None,
+            None,
+            gio::Cancellable::NONE,
+            move |result| {
+                let raw = match result {
+                    Ok(v) => v.to_str().to_string(),
+                    Err(e) => {
+                        host.notify(&format!("Could not read selection: {e}"));
+                        return;
+                    }
+                };
+                let Ok(capture) = serde_json::from_str::<EpubSelectionCapture>(&raw) else {
+                    host.notify("Could not read selection");
+                    return;
+                };
+                let snippet = capture.text.filter(|t| !t.trim().is_empty());
+                let Some(snippet) = (!capture.empty).then_some(snippet).flatten() else {
+                    host.notify("Select some text first");
+                    return;
+                };
+                let chapter = {
+                    let r = reader.borrow();
+                    r.spine.get(r.index).cloned()
+                };
+                let Some(chapter) = chapter else {
+                    return;
+                };
+                let mut annotation = fond_annot::Annotation::drawn_epub(
+                    kind,
+                    chapter,
+                    snippet,
+                    capture.prefix,
+                    capture.suffix,
+                    note,
+                );
+                annotation.color = color;
+                let store = reader.borrow().store.clone();
+                match store.add(annotation) {
+                    Ok(()) => host.notify("Added"),
+                    Err(e) => host.notify(&e),
+                }
+            },
+        );
+    })
+}
+
+/// Select first, then mark: when the pointer is released over a selection, offer the same
+/// actions as the PDF reader's selection popover.
+pub(super) fn install_selection_popover(
+    host: &Rc<dyn ReaderHost>,
+    reader: &Rc<RefCell<EpubReaderState>>,
+    web_view: &webkit6::WebView,
+    apply_mark: &EpubMarkFn,
+    reader_window: &adw::Window,
+) {
+    {
+        let click = gtk4::GestureDrag::new();
+        click.set_button(gdk::BUTTON_PRIMARY);
+        click.set_propagation_phase(gtk4::PropagationPhase::Capture);
+        let view = web_view.clone();
+        let host = host.clone();
+        let reader = reader.clone();
+        let apply_mark = apply_mark.clone();
+        let reader_window = reader_window.clone();
+        let pointer: Rc<Cell<(f64, f64)>> = Rc::new(Cell::new((0.0, 0.0)));
+        {
+            let motion = gtk4::EventControllerMotion::new();
+            motion.set_propagation_phase(gtk4::PropagationPhase::Capture);
+            let pointer = pointer.clone();
+            motion.connect_motion(move |_, x, y| pointer.set((x, y)));
+            web_view.add_controller(motion);
+        }
+        click.connect_drag_end(move |_, _, _| {
+            let (x, y) = pointer.get();
+            let view = view.clone();
+            let host = host.clone();
+            let reader = reader.clone();
+            let apply_mark = apply_mark.clone();
+            let reader_window = reader_window.clone();
+            glib::timeout_add_local_once(std::time::Duration::from_millis(80), move || {
+                let view_for_popover = view.clone();
+                view.evaluate_javascript(
+                    &epub_selection_js(false),
+                    None,
+                    None,
+                    gio::Cancellable::NONE,
+                    move |result| {
+                        let Ok(v) = result else { return };
+                        let Ok(capture) = serde_json::from_str::<EpubSelectionCapture>(&v.to_str())
+                        else {
+                            return;
+                        };
+                        let Some(text) = capture
+                            .text
+                            .filter(|t| !capture.empty && !t.trim().is_empty())
+                        else {
+                            return;
+                        };
+                        let chapter_number = reader.borrow().index + 1;
+                        show_epub_selection_popover(
+                            &view_for_popover,
+                            (x, y),
+                            EpubSelection {
+                                text,
+                                chapter_number,
+                            },
+                            &host,
+                            &apply_mark,
+                            &reader_window,
+                        );
+                    },
+                );
+            });
+        });
+        web_view.add_controller(click);
+    }
+}

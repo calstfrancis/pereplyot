@@ -117,3 +117,54 @@ pub(super) fn epub_go_to(
     next.set_sensitive(r.index + 1 < r.spine.len());
     update_bookmark_button(bookmark_button, r.bookmarks.contains(&r.index));
 }
+
+pub(super) fn build_contents_sidebar(
+    toc: &[fond_doc::TocEntry],
+    reader: &Rc<RefCell<EpubReaderState>>,
+    web_view: &webkit6::WebView,
+    prev: &gtk4::Button,
+    next: &gtk4::Button,
+    chapter_label: &gtk4::Label,
+    bookmark_button: &gtk4::Button,
+) -> gtk4::ScrolledWindow {
+    let rows = gtk4::Box::new(Orientation::Vertical, 2);
+    rows.set_margin_top(6);
+    rows.set_margin_bottom(6);
+    rows.set_margin_start(6);
+    rows.set_margin_end(6);
+    let last = toc.len().saturating_sub(1);
+    for (i, entry) in toc.iter().enumerate() {
+        let row = popover_button(&entry.label, false);
+        if let Some(lbl) = row.child().and_then(|w| w.downcast::<gtk4::Label>().ok()) {
+            lbl.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+        }
+        {
+            let reader = reader.clone();
+            let view = web_view.clone();
+            let prev = prev.clone();
+            let next = next.clone();
+            let chapter_label = chapter_label.clone();
+            let bookmark_button = bookmark_button.clone();
+            let target = entry.target.clone();
+            row.connect_clicked(move |_| {
+                epub_go_to(
+                    &reader,
+                    &view,
+                    &prev,
+                    &next,
+                    &chapter_label,
+                    &bookmark_button,
+                    &target,
+                );
+            });
+        }
+        rows.append(&row);
+        if i != last {
+            rows.append(&popover_separator());
+        }
+    }
+    let scroll = gtk4::ScrolledWindow::new();
+    scroll.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
+    scroll.set_child(Some(&rows));
+    scroll
+}
