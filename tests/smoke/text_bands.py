@@ -2,10 +2,20 @@
 """Locate dark text in a screenshot of the reader window (1000x820 PDF window / 1360x820 EPUB).
 
 text_bands.py IMG            -> "x0 y0 x1 y1" of all dark text inside the PDF page area
+text_bands.py IMG --has-search-match -> number of blue search-match pixels in the PDF page area
 text_bands.py IMG --has-highlight -> number of amber highlight pixels in the PDF page area
 text_bands.py IMG --last-line -> "x0 y0 x1 y1" of the lowest text line in the EPUB content area
 """
 import subprocess, sys
+
+if "--has-search-match" in sys.argv:
+    W0, H0, X0, Y0 = 800, 645, 100, 95
+    raw = subprocess.run(
+        ["convert", sys.argv[1], "-crop", f"{W0}x{H0}+{X0}+{Y0}", "-depth", "8", "rgb:-"],
+        capture_output=True,
+    ).stdout
+    print(sum(1 for i in range(0, len(raw) - 2, 3) if raw[i + 2] > 200 and raw[i] < 190 and raw[i + 1] < 215 and raw[i + 2] - raw[i] > 40))
+    sys.exit(0)
 
 if "--has-highlight" in sys.argv:
     import re

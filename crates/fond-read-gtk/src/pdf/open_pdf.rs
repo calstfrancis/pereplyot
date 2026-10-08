@@ -93,6 +93,8 @@ pub(super) fn open_pdf(
         rotation: 0,
         invert_colors: false,
         textures: TextureCache::new(96 * 1024 * 1024),
+        path: blob.to_path_buf(),
+        search: None,
         worker: Some(RenderWorker::spawn(blob.to_path_buf())),
         bookmarks,
     }));

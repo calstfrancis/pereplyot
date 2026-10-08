@@ -56,6 +56,7 @@ mod page_number;
 mod popout;
 mod prev_next;
 mod search;
+mod search_thread;
 mod session;
 mod sidebar_toggle;
 mod text_view;
@@ -145,6 +146,10 @@ struct ReaderState {
     continuous_window: (u16, u16),
     /// Finished page pictures, reused across scrolling, zooming back and forth, and redraws.
     textures: TextureCache,
+    /// Where the document lives, for threads that open their own copy.
+    path: std::path::PathBuf,
+    /// The search in progress, if any; replacing it cancels it.
+    search: Option<search_thread::SearchHandle>,
     /// Rasterises pages off the GTK thread.
     worker: Option<RenderWorker>,
     /// Each page's document-defined `/PageLabels` printed number (`None` where the PDF

@@ -1,3 +1,4 @@
+use super::search_thread::SearchEvent;
 use super::*;
 
 pub(super) fn install_search(ui: &PdfUi) {
@@ -41,40 +42,88 @@ pub(super) fn install_search(ui: &PdfUi) {
     };
     let run_search = {
         let reader = reader.clone();
+        let render = render.clone();
         let goto_search_match = goto_search_match.clone();
         let search_prev = search_prev.clone();
         let search_next = search_next.clone();
         let search_count = search_count.clone();
         Rc::new(move |query: &str| {
-            let matches = {
-                let r = reader.borrow();
-                let _span = crate::perf::span(|| format!("search {query:?} (main thread)"));
-                fond_doc::search_document(r.pdfium, &r.bytes, query).unwrap_or_default()
-            };
-            let count = matches.len();
-            let first_page = matches.first().map(|m| m.page);
-            let previous_page = {
-                let r = reader.borrow();
-                r.search_matches.get(r.search_current).map(|m| m.page)
-            };
-            {
+            // Starting a search cancels the one in flight, and drops the previous results (and
+            // the tint of the match that was showing) straight away.
+            let cleared_page = {
                 let mut r = reader.borrow_mut();
-                r.search_matches = matches;
+                r.search = None;
+                let page = r.search_matches.get(r.search_current).map(|m| m.page);
+                r.search_matches.clear();
                 r.search_current = 0;
-                if let Some(page) = first_page {
-                    r.page = page;
-                }
+                page
+            };
+            search_prev.set_sensitive(false);
+            search_next.set_sensitive(false);
+            if query.trim().is_empty() {
+                search_count.set_text("");
+            } else {
+                search_count.set_text("Searching…");
             }
-            search_prev.set_sensitive(count > 0);
-            search_next.set_sensitive(count > 0);
-            search_count.set_text(&match (count, query.trim().is_empty()) {
-                (0, true) => String::new(),
-                (0, false) => "No matches".to_string(),
-                (n, _) => format!("1 of {n}"),
-            });
-            if let Some(page) = first_page {
-                goto_search_match(page, previous_page);
+            if let Some(page) = cleared_page {
+                render();
+                render_continuous_page(&reader, page);
             }
+            if query.trim().is_empty() {
+                return;
+            }
+            let sink: Rc<dyn Fn(SearchEvent)> = {
+                let reader = reader.clone();
+                let goto_search_match = goto_search_match.clone();
+                let search_prev = search_prev.clone();
+                let search_next = search_next.clone();
+                let search_count = search_count.clone();
+                let scanning = Rc::new(std::cell::Cell::new(true));
+                Rc::new(move |event| {
+                    let label = |r: &ReaderState, scanning: bool| {
+                        let n = r.search_matches.len();
+                        match (n, scanning) {
+                            (0, true) => "Searching…".to_string(),
+                            (0, false) => "No matches".to_string(),
+                            (n, true) => format!("{} of {n}+", r.search_current + 1),
+                            (n, false) => format!("{} of {n}", r.search_current + 1),
+                        }
+                    };
+                    match event {
+                        SearchEvent::Matches(batch, _scanned) => {
+                            let first_page = {
+                                let mut r = reader.borrow_mut();
+                                let was_empty = r.search_matches.is_empty();
+                                r.search_matches.extend(batch);
+                                let first = was_empty
+                                    .then(|| r.search_matches.first().map(|m| m.page))
+                                    .flatten();
+                                if let Some(page) = first {
+                                    r.search_current = 0;
+                                    r.page = page;
+                                }
+                                search_count.set_text(&label(&r, scanning.get()));
+                                first
+                            };
+                            search_prev.set_sensitive(true);
+                            search_next.set_sensitive(true);
+                            if let Some(page) = first_page {
+                                crate::perf::mark("search first match shown");
+                                goto_search_match(page, None);
+                            }
+                        }
+                        SearchEvent::Done => {
+                            scanning.set(false);
+                            let r = reader.borrow();
+                            search_count.set_text(&label(&r, false));
+                        }
+                    }
+                })
+            };
+            crate::perf::mark("search started");
+            let path = reader.borrow().path.clone();
+            let handle = search_thread::spawn(path, query.to_string(), sink);
+            reader.borrow_mut().search = Some(handle);
         })
     };
     {
@@ -93,6 +142,7 @@ pub(super) fn install_search(ui: &PdfUi) {
             if entry.text().is_empty() {
                 let cleared_page = {
                     let mut r = reader.borrow_mut();
+                    r.search = None;
                     let page = r.search_matches.get(r.search_current).map(|m| m.page);
                     r.search_matches.clear();
                     page

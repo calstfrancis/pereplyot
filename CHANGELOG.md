@@ -10,6 +10,11 @@
   one), finished pages are kept in a texture cache so scrolling back is instant, and the
   page you are on is always drawn first. Measured on a 600-page scan: no main-thread stall
   while paging or zooming (it was 24 ms per page at 2×).
+- **Search no longer freezes the window.** Searching a PDF scanned every page on the same thread
+  as the window — 330 ms of frozen interface on a 600-page book, growing with length. The
+  search now runs on its own thread: the first match is shown within a few milliseconds
+  (the counter reads "1 of 12+" while the rest are found), a new search cancels the old one,
+  and closing the reader stops it.
 - **Fixed: a crash waiting to happen with any second thread — PDFium was never thread-safe.**
   The PDF library's own "thread safe" switch only guards start-up and shut-down, not each
   call. Every PDFium call in Pereplyot now goes through one lock (`pdfium_lock.rs`, generated

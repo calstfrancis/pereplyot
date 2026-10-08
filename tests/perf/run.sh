@@ -72,9 +72,13 @@ run_doc() {
     # search
     mark="$(wc -l <"$log")"
     xdotool key ctrl+f; sleep 0.4; xdotool type --delay 20 "$search"; xdotool key Return
-    for _ in $(seq 100); do tail -n +"$((mark + 1))" "$log" | grep -q 'search .* took' && break; sleep 0.3; done
+    for _ in $(seq 150); do tail -n +"$((mark + 1))" "$log" | grep -q 'search .* (background) took' && break; sleep 0.3; done
     local search_stalls; search_stalls="$(stalls_of "$log" "$mark")"
-    local search_ms; search_ms="$(tail -n +"$((mark + 1))" "$log" | grep 'search .* took' | head -1 | sed -E 's/.* took ([0-9.]+) ms/\1/')"
+    local t_start t_first t_done
+    t_start="$(tail -n +"$((mark + 1))" "$log" | grep -m1 'search started' | awk '{print $2}')"
+    t_first="$(tail -n +"$((mark + 1))" "$log" | grep -m1 'search first match shown' | awk '{print $2}')"
+    t_done="$(tail -n +"$((mark + 1))" "$log" | grep -m1 'search .* (background) took' | sed -E 's/.* took ([0-9.]+) ms/\1/')"
+    local search_ms="first hit $(awk -v a="${t_start:-0}" -v b="${t_first:-0}" 'BEGIN{ if (b>0) printf "%.0f ms", b-a; else printf "none" }'), whole document ${t_done:-?} ms, on a background thread"
     sleep 1
     # zoom ~2x (stands in for a HiDPI render: four times the pixels), then page through again
     mark="$(wc -l <"$log")"
@@ -90,7 +94,7 @@ run_doc() {
     local first_render; first_render="$(grep -m1 'render page' "$log" | sed -E 's/.* took ([0-9.]+) ms/\1/')"
     local file_mb; file_mb="$(du -m "$DOCS/$doc.pdf" | cut -f1)"
     printf '%-12s file %4s MB | open_pdf %8s ms | window up at %8s ms | first page render %7s ms\n' "$doc" "$file_mb" "${open_ms:-?}" "${first_ms:-?}" "${first_render:-?}"
-    printf '%-12s renders while paging: n/median/max = %s ms | search %s: %s ms (main thread)\n' "" "$scroll_renders" "\"$search\"" "${search_ms:-?}"
+    printf '%-12s renders while paging: n/median/max = %s ms | search "%s": %s\n' "" "$scroll_renders" "$search" "$search_ms"
     printf '%-12s main-thread stalls >20ms (count/worst ms): open %s | paging %s | search %s | zoom %s\n' "" "$open_stalls" "$page_stalls" "$search_stalls" "$zoom_stalls"
     printf '%-12s renders at ~2x zoom:    n/median/max = %s ms\n' "" "$zoom_renders"
     printf '%-12s memory: after open %s MB, after paging %s MB, peak %s MB\n\n' "" "${rss_open:-?}" "${rss_scroll:-?}" "${peak:-?}"

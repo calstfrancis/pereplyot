@@ -171,6 +171,17 @@ except Exception as e:
         screenshot "$WORK/$label-redone.png"
         on="$(python3 "$HERE/text_bands.py" "$WORK/$label-redone.png" --has-highlight)"
         check "$label: Ctrl+Shift+Z brings it back" "$([ "${on:-0}" -gt 200 ] && [ -n "$(snippets)" ] && echo 1 || echo 0)" "(amber pixels: $on, saved: '$(snippets)')"
+        xdotool key ctrl+z
+        sleep 0.5
+        xdotool key ctrl+f
+        sleep 0.4
+        xdotool type --delay 30 "sphinx"
+        xdotool key Return
+        sleep 2
+        screenshot "$WORK/$label-search.png"
+        local blue
+        blue="$(python3 "$HERE/text_bands.py" "$WORK/$label-search.png" --has-search-match)"
+        check "$label: searching marks the match on the page" "$([ "${blue:-0}" -gt 150 ] && echo 1 || echo 0)" "(blue pixels: $blue)"
     fi
     stop_app
 }
