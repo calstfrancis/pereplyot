@@ -20,6 +20,7 @@
   (`annotation_store.rs`) that saves it, records undo/redo as small steps instead of copying
   the whole annotation list, and tells the page, the Notes sidebar and the undo buttons to
   update — replacing about twenty hand-written snapshot/save/redraw sequences.
+- Internal: `PEREPLYOT_PERF=1` prints timed trace lines (open, page renders, search) to stderr, and `tests/perf/` generates large synthetic PDFs and measures them against written budgets.
 - Internal: a headless smoke test (`tests/smoke/run.sh`, run in CI) drives the real app under
   Xvfb through open → select → mark for PDF (plain, cropped, rotated) and EPUB, and checks
   the saved annotation, that the highlight is drawn, and that Ctrl+Z / Ctrl+Shift+Z undo and redo it.

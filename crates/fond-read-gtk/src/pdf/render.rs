@@ -90,6 +90,7 @@ pub(super) fn render_pdf_page_texture(
     r: &ReaderState,
     page: u16,
 ) -> Option<(gdk::Texture, u32, u32)> {
+    let _span = crate::perf::span(|| format!("render page {}", page + 1));
     let width = (READER_BASE_WIDTH * r.zoom) as u32;
     let geom = r.geom(page);
     let page_pts = geom.map(|g| g.display_size()).unwrap_or((0.0, 0.0));

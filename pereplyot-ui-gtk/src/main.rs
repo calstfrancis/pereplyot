@@ -135,6 +135,7 @@ fn content_hash(path: &std::path::Path) -> Result<String, String> {
 }
 
 fn main() -> glib::ExitCode {
+    fond_read_gtk::perf::init();
     let app = adw::Application::builder()
         .application_id(APP_ID)
         .flags(gio::ApplicationFlags::HANDLES_COMMAND_LINE)

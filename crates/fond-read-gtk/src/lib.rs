@@ -30,6 +30,7 @@ mod page_geom;
 pub mod palette;
 pub mod pdf;
 mod pdf_text;
+pub mod perf;
 pub mod reader_host;
 pub mod store;
 

@@ -4,7 +4,7 @@ Goal: make Pereplyot the best reader on any platform for someone who reads to *w
 student, scholar or preacher who reads closely, marks with intent, comes back months later
 to find the passage, and turns it into a citation in a paper. Not a general e-book app.
 
-Written 2026-10-08 against v0.10.0 "Fair Copy". **Status: settled 2026-10-08. Phase 0: smoke harness, `AnnotationStore`, `pdf/` and `epub/` module splits and the tolerant `fond-annot` are done and pinned (fond-core PR #1, Kartoteka branch `bump-fond-core-phase0`, both awaiting merge). Reader functions are split (`show_pdf_reader` ~290 lines, `show_epub_reader` ~330). Still open: the performance budgets.** Phases are ordered by dependency first and
+Written 2026-10-08 against v0.10.0 "Fair Copy". **Status: settled 2026-10-08. Phase 0: smoke harness, `AnnotationStore`, `pdf/` and `epub/` module splits and the tolerant `fond-annot` are done and pinned (fond-core PR #1, Kartoteka branch `bump-fond-core-phase0`, both awaiting merge). Reader functions are split (`show_pdf_reader` ~290 lines, `show_epub_reader` ~330), and the performance budgets are measured (`tests/perf/BUDGETS.md`). **Phase 0 is complete** apart from merging the two PRs.** Phases are ordered by dependency first and
 value second. Each one ships on its own as a minor release.
 
 ---
@@ -137,9 +137,12 @@ are foundations; the rest can be reordered to taste once those land.
      consumer (Kartoteka, Sputnik, Pereplyot) must update to the tolerant parser before the
      first writer of a new field ships. Add a test that a sidecar containing an unknown kind
      loads cleanly and is never quarantined.
-5. Measure performance budgets on a 600-page scanned book and a 50-page LaTeX paper. The
-   targets for later phases: open to first page under 300 ms, page turn under 16 ms when
-   cached and under 120 ms when not, search shows its first hits under 200 ms.
+5. **Performance budgets**, measured (2026-10-08) on synthetic documents with `tests/perf/run.sh`
+   and recorded in `tests/perf/BUDGETS.md`. Findings that Phase 1 must fix: search blocks the
+   main thread (331 ms on a 600-page book), a scanned page at 2× pixels takes 16–24 ms on the
+   main thread, and a scan costs ~3.3× its file size in memory. Targets: no main-thread block
+   over 16 ms, first search hit under 200 ms, memory under 300 MB + 1.5× the file size,
+   launch to first page under 300 ms.
 
 **Done when:** behaviour is unchanged, the smoke tests pass in CI, a sidecar with an
 unknown kind round-trips, and no function in the reader is over ~300 lines.

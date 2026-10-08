@@ -48,6 +48,7 @@ pub(super) fn install_search(ui: &PdfUi) {
         Rc::new(move |query: &str| {
             let matches = {
                 let r = reader.borrow();
+                let _span = crate::perf::span(|| format!("search {query:?} (main thread)"));
                 fond_doc::search_document(r.pdfium, &r.bytes, query).unwrap_or_default()
             };
             let count = matches.len();

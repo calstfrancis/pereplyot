@@ -272,6 +272,8 @@ pub fn show_pdf_reader(
     if crate::present_existing(pdf_hash) {
         return;
     }
+    crate::perf::mark("show_pdf_reader start");
+    let open_span = crate::perf::span(|| "open_pdf".to_string());
     let Some(OpenedPdf {
         reader,
         outline_entries,
@@ -281,6 +283,7 @@ pub fn show_pdf_reader(
     else {
         return;
     };
+    drop(open_span);
 
     let PageNavParts {
         view,
@@ -550,5 +553,6 @@ pub fn show_pdf_reader(
     // @wiring
 
     warn_if_no_text_layer(host, &reader, blob);
+    crate::perf::mark("pdf reader presented");
     reader_tab.present();
 }
