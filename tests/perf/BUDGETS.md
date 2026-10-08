@@ -37,3 +37,26 @@ above is a warm run.
 
 These synthetic scans are small next to real ones (300 dpi, 500 MB+), so the memory and
 open-time numbers are lower bounds.
+
+## After Phase 1a (render thread, HiDPI) and 1b (background search) — 2026-10-09
+
+Same machine and documents; GTK Cairo renderer (`run.sh` sets it). "Stall" = the GTK main loop
+going more than 20 ms without servicing an 8 ms timer (`PEREPLYOT_PERF=1`).
+
+| | paper-50 | book-600 | scan-600 | budget |
+|---|---:|---:|---:|---|
+| launch → reader window up | 131 ms | 221 ms | 284 ms | ≤ 300 ms ✔ |
+| main-thread stalls while paging (40 page-downs) | none | none | none | none ✔ |
+| main-thread stalls while zooming to ~2× | none | none | none | none ✔ |
+| render time per page at ~2× (now on the render thread) | 5 / 10 ms | 5 / 7 ms | 14 / 23 ms | not on the GTK thread ✔ |
+| search "covenant": first hit | 5 ms | 4 ms | – (no text) | ≤ 200 ms ✔ |
+| search: main-thread stall | none | none | none | none ✔ |
+| search: whole document (background) | 51 ms | 315 ms | 57 ms | |
+| stall at open (building the window and the 600-page layout) | 67 ms | 166 ms | 179 ms | ≤ 16 ms ✘ |
+| memory after open | 210 MB | 226 MB | **643 MB** | ≤ 300 MB + 1.5 × file ✘ (scan) |
+| peak memory | 352 MB | 389 MB | **941 MB** | |
+
+Still open: the stall while the window and the continuous-scroll layout are built (it measures
+the per-page geometry of every page), and the scan's memory, which still holds the whole file
+twice (see "What this says", point 3). Sharpness on a HiDPI display was checked by eye: the
+same text at 2× is crisp where the 1× render, scaled up, is soft.
