@@ -4,7 +4,7 @@ Goal: make Pereplyot the best reader on any platform for someone who reads to *w
 student, scholar or preacher who reads closely, marks with intent, comes back months later
 to find the passage, and turns it into a citation in a paper. Not a general e-book app.
 
-Written 2026-10-08 against v0.10.0 "Fair Copy". **Status: settled 2026-10-08, nothing started.** Phases are ordered by dependency first and
+Written 2026-10-08 against v0.10.0 "Fair Copy". **Status: settled 2026-10-08. Phase 0 in progress: step 1 (smoke harness) done and committed; step 4 (tolerant `fond-annot`, plus selection fixes the harness found) done on branch `phase0-selection-and-schema` in `~/Projects/fond-core`, not yet pushed; steps 2, 3, 5 not started.** Phases are ordered by dependency first and
 value second. Each one ships on its own as a minor release.
 
 ---
