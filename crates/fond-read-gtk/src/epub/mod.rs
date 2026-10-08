@@ -20,6 +20,13 @@ use crate::{color_swatch, note_edit_widget, popover_button, popover_separator, R
 
 mod chrome;
 mod highlights;
+mod keys;
+mod notes;
+mod search_wiring;
+mod session;
+mod toggles;
+mod ui;
+use ui::EpubUi;
 mod search;
 use chrome::*;
 use highlights::*;
@@ -526,251 +533,17 @@ pub fn show_epub_reader(
     // way in-chapter search already does, just arriving at the right chapter first.
     let pending_search: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
 
-    let rebuild_notes_cell: RebuildCell = Rc::new(RefCell::new(None));
-    let quiet_notes = Rc::new(Cell::new(false));
-    {
-        let notes_rows = notes_rows.clone();
-        let host = host.clone();
-        let reader = reader.clone();
-        let view = web_view.clone();
-        let prev = prev.clone();
-        let next = next.clone();
-        let chapter_label = chapter_label.clone();
-        let bookmark_button = bookmark_button.clone();
-        let pending_scroll = pending_scroll.clone();
-        let quiet_notes = quiet_notes.clone();
-        let rebuild_notes_cell_inner = rebuild_notes_cell.clone();
-        let builder = move || {
-            while let Some(child) = notes_rows.first_child() {
-                notes_rows.remove(&child);
-            }
-            let mut all: Vec<fond_annot::Annotation> = reader
-                .borrow()
-                .store
-                .sidecar()
-                .annotations
-                .iter()
-                .filter(|a| a.chapter.is_some())
-                .cloned()
-                .collect();
-            all.sort_by_key(|a| {
-                let r = reader.borrow();
-                let spine_pos = a
-                    .chapter
-                    .as_deref()
-                    .and_then(|c| r.spine.iter().position(|p| p == c))
-                    .unwrap_or(usize::MAX);
-                (spine_pos, a.created.clone())
-            });
-            let bookmarks = reader.borrow().bookmarks.clone();
-            if all.is_empty() && bookmarks.is_empty() {
-                let label = gtk4::Label::new(Some("No bookmarks, notes, or highlights yet"));
-                label.add_css_class("dim-label");
-                label.set_margin_top(6);
-                label.set_margin_bottom(6);
-                notes_rows.append(&label);
-                return;
-            }
-            if !bookmarks.is_empty() {
-                let heading = gtk4::Label::new(Some("Bookmarks"));
-                heading.add_css_class("dim-label");
-                heading.add_css_class("caption-heading");
-                heading.set_xalign(0.0);
-                notes_rows.append(&heading);
-                for &chapter_index in &bookmarks {
-                    let row = gtk4::Box::new(Orientation::Horizontal, 6);
-                    let label = gtk4::Label::new(Some(&format!("Chapter {}", chapter_index + 1)));
-                    label.set_xalign(0.0);
-                    label.set_hexpand(true);
-                    row.append(&label);
-                    let remove_button = gtk4::Button::from_icon_name("user-trash-symbolic");
-                    remove_button.add_css_class("flat");
-                    remove_button.set_tooltip_text(Some("Remove bookmark"));
-                    row.append(&remove_button);
-                    {
-                        let reader = reader.clone();
-                        let view = view.clone();
-                        let prev = prev.clone();
-                        let next = next.clone();
-                        let chapter_label = chapter_label.clone();
-                        let bookmark_button = bookmark_button.clone();
-                        crate::make_jump(&label, move || {
-                            let target = reader
-                                .borrow()
-                                .spine
-                                .get(chapter_index)
-                                .cloned()
-                                .unwrap_or_default();
-                            epub_go_to(
-                                &reader,
-                                &view,
-                                &prev,
-                                &next,
-                                &chapter_label,
-                                &bookmark_button,
-                                &target,
-                            );
-                        });
-                    }
-                    {
-                        let host = host.clone();
-                        let reader = reader.clone();
-                        let bookmark_button = bookmark_button.clone();
-                        let rebuild_notes_cell = rebuild_notes_cell_inner.clone();
-                        remove_button.connect_clicked(move |_| {
-                            reader
-                                .borrow_mut()
-                                .bookmarks
-                                .retain(|&c| c != chapter_index);
-                            let saved: Vec<u32> = reader
-                                .borrow()
-                                .bookmarks
-                                .iter()
-                                .map(|&c| c as u32)
-                                .collect();
-                            host.save_bookmarks(&saved);
-                            let current = reader.borrow().index;
-                            update_bookmark_button(
-                                &bookmark_button,
-                                reader.borrow().bookmarks.contains(&current),
-                            );
-                            if let Some(f) = rebuild_notes_cell.borrow().as_ref() {
-                                f();
-                            }
-                        });
-                    }
-                    notes_rows.append(&row);
-                }
-                notes_rows.append(&popover_separator());
-            }
-            if all.is_empty() {
-                return;
-            }
-            let last = all.len().saturating_sub(1);
-            for (i, annotation) in all.into_iter().enumerate() {
-                let Some(chapter) = annotation.chapter.clone() else {
-                    continue;
-                };
-                let chapter_num = reader
-                    .borrow()
-                    .spine
-                    .iter()
-                    .position(|p| p == &chapter)
-                    .map(|i| i + 1)
-                    .unwrap_or(0);
-                let kind_label = match annotation.kind {
-                    fond_annot::AnnotationKind::Highlight => "Highlight",
-                    fond_annot::AnnotationKind::Underline => "Underline",
-                    fond_annot::AnnotationKind::Strikeout => "Strikeout",
-                    fond_annot::AnnotationKind::Note => "Note",
-                    #[allow(unreachable_patterns)]
-                    // AnnotationKind is non_exhaustive from fond-core's next rev
-                    _ => "Annotation",
-                };
-                let outer = gtk4::Box::new(Orientation::Vertical, 2);
-
-                let header_box = gtk4::Box::new(Orientation::Horizontal, 6);
-                if let Some(swatch) = color_swatch(annotation.color.as_deref()) {
-                    header_box.append(&swatch);
-                }
-                let header_label =
-                    gtk4::Label::new(Some(&format!("Ch. {chapter_num} — {kind_label}")));
-                header_label.set_xalign(0.0);
-                header_label.set_hexpand(true);
-                header_label.add_css_class("dim-label");
-                header_label.add_css_class("caption-heading");
-                header_box.append(&header_label);
-                let delete_button = gtk4::Button::from_icon_name("user-trash-symbolic");
-                delete_button.add_css_class("flat");
-                delete_button.set_tooltip_text(Some("Delete this annotation"));
-                header_box.append(&delete_button);
-                outer.append(&header_box);
-
-                {
-                    let reader = reader.clone();
-                    let view = view.clone();
-                    let prev = prev.clone();
-                    let next = next.clone();
-                    let chapter_label = chapter_label.clone();
-                    let bookmark_button = bookmark_button.clone();
-                    let pending_scroll = pending_scroll.clone();
-                    let id = annotation.id.clone();
-                    let chapter = chapter.clone();
-                    crate::make_jump(&header_label, move || {
-                        *pending_scroll.borrow_mut() = Some(id.clone());
-                        epub_go_to(
-                            &reader,
-                            &view,
-                            &prev,
-                            &next,
-                            &chapter_label,
-                            &bookmark_button,
-                            &chapter,
-                        );
-                    });
-                }
-
-                if let Some(snippet) = &annotation.snippet {
-                    let snippet_label = gtk4::Label::new(Some(snippet));
-                    snippet_label.set_xalign(0.0);
-                    snippet_label.set_wrap(true);
-                    snippet_label.add_css_class("dim-label");
-                    snippet_label.add_css_class("caption");
-                    outer.append(&snippet_label);
-                }
-
-                let save_note = {
-                    let host = host.clone();
-                    let reader = reader.clone();
-                    let quiet_notes = quiet_notes.clone();
-                    let id = annotation.id.clone();
-                    move |text: &str| {
-                        let text = text.trim();
-                        let store = reader.borrow().store.clone();
-                        quiet_notes.set(true);
-                        let result = store.update(&id, |a| {
-                            a.note = (!text.is_empty()).then(|| text.to_string());
-                        });
-                        quiet_notes.set(false);
-                        if let Err(e) = result {
-                            host.notify(&e);
-                        }
-                    }
-                };
-                let note_widget =
-                    note_edit_widget(annotation.note.as_deref(), move |text| save_note(&text));
-                outer.append(&note_widget);
-
-                {
-                    let host = host.clone();
-                    let reader = reader.clone();
-                    let id = annotation.id.clone();
-                    delete_button.connect_clicked(move |_| {
-                        let store = reader.borrow().store.clone();
-                        match store.remove(&id) {
-                            Ok(_) => host.notify("Annotation deleted"),
-                            Err(e) => host.notify(&e),
-                        }
-                    });
-                }
-
-                notes_rows.append(&outer);
-                if i != last {
-                    notes_rows.append(&popover_separator());
-                }
-            }
-        };
-        *rebuild_notes_cell.borrow_mut() = Some(Rc::new(builder));
-    }
-    let rebuild_notes: Rc<dyn Fn()> = {
-        let cell = rebuild_notes_cell.clone();
-        Rc::new(move || {
-            let f = cell.borrow().clone();
-            if let Some(f) = f {
-                f();
-            }
-        })
-    };
+    let (rebuild_notes, quiet_notes) = notes::install_notes_sidebar(
+        host,
+        &reader,
+        &web_view,
+        &prev,
+        &next,
+        &chapter_label,
+        &bookmark_button,
+        &pending_scroll,
+        &notes_rows,
+    );
     {
         let store = reader.borrow().store.clone();
         let reader_weak = Rc::downgrade(&reader);
@@ -894,7 +667,7 @@ pub fn show_epub_reader(
         });
     }
 
-    let epub_undo = {
+    let epub_undo: Rc<dyn Fn()> = {
         let reader = reader.clone();
         let host = host.clone();
         Rc::new(move || {
@@ -906,7 +679,7 @@ pub fn show_epub_reader(
             }
         })
     };
-    let epub_redo = {
+    let epub_redo: Rc<dyn Fn()> = {
         let reader = reader.clone();
         let host = host.clone();
         Rc::new(move || {
@@ -927,330 +700,39 @@ pub fn show_epub_reader(
         redo_button.connect_clicked(move |_| epub_redo());
     }
 
-    // Search wiring: toggling `search_toggle` reveals the bar and focuses the entry; turning
-    // it off clears the query, WebKit's highlight state (`search_finish`), the whole-book
-    // results list, and drops out of whole-book mode — so reopening search always starts
-    // from the same clean state rather than leaving stale results/highlights visible.
-    {
-        let search_revealer = search_revealer.clone();
-        let search_bar_entry = search_bar_entry.clone();
-        let search_count = search_count.clone();
-        let results_list = results_list.clone();
-        let results_revealer = results_revealer.clone();
-        let whole_book_toggle = whole_book_toggle.clone();
-        let view = web_view.clone();
-        search_toggle.connect_toggled(move |btn| {
-            let on = btn.is_active();
-            search_revealer.set_reveal_child(on);
-            if on {
-                search_bar_entry.grab_focus();
-            } else {
-                search_bar_entry.set_text("");
-                search_count.set_text("");
-                whole_book_toggle.set_active(false);
-                results_revealer.set_reveal_child(false);
-                while let Some(child) = results_list.first_child() {
-                    results_list.remove(&child);
-                }
-                if let Some(fc) = webkit6::prelude::WebViewExt::find_controller(&view) {
-                    fc.search_finish();
-                }
-            }
-        });
-    }
-    {
-        let search_bar_entry = search_bar_entry.clone();
-        let search_count = search_count.clone();
-        let results_list = results_list.clone();
-        let results_revealer = results_revealer.clone();
-        let view = web_view.clone();
-        whole_book_toggle.connect_toggled(move |btn| {
-            search_bar_entry.set_placeholder_text(Some(if btn.is_active() {
-                "Search the whole book"
-            } else {
-                "Search this chapter"
-            }));
-            search_bar_entry.set_text("");
-            search_count.set_text("");
-            results_revealer.set_reveal_child(false);
-            while let Some(child) = results_list.first_child() {
-                results_list.remove(&child);
-            }
-            if let Some(fc) = webkit6::prelude::WebViewExt::find_controller(&view) {
-                fc.search_finish();
-            }
-            search_bar_entry.grab_focus();
-        });
-    }
-    {
-        let view = web_view.clone();
-        let search_count = search_count.clone();
-        let whole_book_toggle = whole_book_toggle.clone();
-        let results_list = results_list.clone();
-        let results_revealer = results_revealer.clone();
-        let reader = reader.clone();
-        let prev = prev.clone();
-        let next = next.clone();
-        let chapter_label = chapter_label.clone();
-        let bookmark_button = bookmark_button.clone();
-        let pending_search = pending_search.clone();
-        search_bar_entry.connect_search_changed(move |entry| {
-            let text = entry.text();
-
-            if whole_book_toggle.is_active() {
-                while let Some(child) = results_list.first_child() {
-                    results_list.remove(&child);
-                }
-                if text.is_empty() {
-                    search_count.set_text("");
-                    results_revealer.set_reveal_child(false);
-                    return;
-                }
-                let matches = epub_search_whole_book(&reader, &text);
-                if matches.is_empty() {
-                    search_count.set_text("No matches");
-                    results_revealer.set_reveal_child(false);
-                    return;
-                }
-                search_count.set_text(&if matches.len() >= EPUB_WHOLE_BOOK_MATCH_LIMIT {
-                    format!("{EPUB_WHOLE_BOOK_MATCH_LIMIT}+ found")
-                } else {
-                    format!("{} found", matches.len())
-                });
-                let spine_len = reader.borrow().spine.len();
-                for m in &matches {
-                    let before = glib::markup_escape_text(&m.snippet[..m.match_start]);
-                    let hit = glib::markup_escape_text(&m.snippet[m.match_start..m.match_end]);
-                    let after = glib::markup_escape_text(&m.snippet[m.match_end..]);
-                    let row = gtk4::ListBoxRow::new();
-                    let box_ = gtk4::Box::new(Orientation::Vertical, 2);
-                    box_.set_margin_top(6);
-                    box_.set_margin_bottom(6);
-                    box_.set_margin_start(6);
-                    box_.set_margin_end(6);
-                    let heading = gtk4::Label::new(Some(&format!(
-                        "Chapter {} of {}",
-                        m.chapter + 1,
-                        spine_len
-                    )));
-                    heading.set_xalign(0.0);
-                    heading.add_css_class("dim-label");
-                    heading.add_css_class("caption-heading");
-                    box_.append(&heading);
-                    let excerpt = gtk4::Label::new(None);
-                    excerpt.set_markup(&format!("…{before}<b>{hit}</b>{after}…"));
-                    excerpt.set_xalign(0.0);
-                    excerpt.set_wrap(true);
-                    excerpt.set_ellipsize(gtk4::pango::EllipsizeMode::None);
-                    box_.append(&excerpt);
-                    row.set_child(Some(&box_));
-
-                    let click = gtk4::GestureClick::new();
-                    let reader = reader.clone();
-                    let view = view.clone();
-                    let prev = prev.clone();
-                    let next = next.clone();
-                    let chapter_label = chapter_label.clone();
-                    let bookmark_button = bookmark_button.clone();
-                    let pending_search = pending_search.clone();
-                    let query = text.to_string();
-                    let chapter_idx = m.chapter;
-                    let go: Rc<dyn Fn()> = Rc::new(move || {
-                        let target = {
-                            let r = reader.borrow();
-                            r.spine.get(chapter_idx).cloned()
-                        };
-                        let Some(target) = target else { return };
-                        *pending_search.borrow_mut() = Some(query.clone());
-                        epub_go_to(
-                            &reader,
-                            &view,
-                            &prev,
-                            &next,
-                            &chapter_label,
-                            &bookmark_button,
-                            &target,
-                        );
-                    });
-                    {
-                        let go = go.clone();
-                        click.connect_released(move |_, _, _, _| go());
-                    }
-                    row.connect_activate(move |_| go());
-                    row.set_activatable(true);
-                    row.update_property(&[gtk4::accessible::Property::Label(&format!(
-                        "Chapter {}: {}",
-                        m.chapter + 1,
-                        m.snippet
-                    ))]);
-                    row.add_controller(click);
-                    results_list.append(&row);
-                }
-                results_revealer.set_reveal_child(true);
-                return;
-            }
-
-            results_revealer.set_reveal_child(false);
-            let Some(fc) = webkit6::prelude::WebViewExt::find_controller(&view) else {
-                return;
-            };
-            if text.is_empty() {
-                fc.search_finish();
-                search_count.set_text("");
-                return;
-            }
-            let options =
-                (webkit6::FindOptions::CASE_INSENSITIVE | webkit6::FindOptions::WRAP_AROUND).bits();
-            fc.search(&text, options, 1000);
-        });
-    }
-    {
-        let view = web_view.clone();
-        let whole_book_toggle = whole_book_toggle.clone();
-        search_prev.connect_clicked(move |_| {
-            if whole_book_toggle.is_active() {
-                return;
-            }
-            if let Some(fc) = webkit6::prelude::WebViewExt::find_controller(&view) {
-                fc.search_previous();
-            }
-        });
-    }
-    {
-        let view = web_view.clone();
-        let whole_book_toggle = whole_book_toggle.clone();
-        search_next.connect_clicked(move |_| {
-            if whole_book_toggle.is_active() {
-                return;
-            }
-            if let Some(fc) = webkit6::prelude::WebViewExt::find_controller(&view) {
-                fc.search_next();
-            }
-        });
-    }
-    if let Some(fc) = webkit6::prelude::WebViewExt::find_controller(&web_view) {
-        let count_label = search_count.clone();
-        let toggle = whole_book_toggle.clone();
-        fc.connect_found_text(move |_, count| {
-            if !toggle.is_active() {
-                count_label.set_text(&format!("{count} found"));
-            }
-        });
-        let count_label = search_count.clone();
-        let toggle = whole_book_toggle.clone();
-        fc.connect_failed_to_find_text(move |_| {
-            if !toggle.is_active() {
-                count_label.set_text("No matches");
-            }
-        });
-    }
-
-    {
-        // Registered with the tab host, which catches keys at the window in the capture
-        // phase (see `reader_host::set_tab_key_handler`) — ahead of the WebView (which owns
-        // focus whenever the reader isn't showing chrome) and any focused header control,
-        // either of which would otherwise consume Left/Right for in-page scroll or focus
-        // navigation. The search entry still needs normal Left/Right/cursor behavior while
-        // it has focus, so that's explicitly passed through below rather than intercepted.
-        let epub_undo = epub_undo.clone();
-        let epub_redo = epub_redo.clone();
-        let search_toggle = search_toggle.clone();
-        let prev = prev.clone();
-        let next = next.clone();
-        let bookmark_button = bookmark_button.clone();
-        let view_for_focus = view.clone();
-        let zoom_in_key = zoom_in_button.clone();
-        let zoom_out_key = zoom_out_button.clone();
-        crate::reader_host::set_tab_key_handler(&reader_tab, move |keyval, modifiers| {
-            if (keyval == gdk::Key::z || keyval == gdk::Key::Z)
-                && modifiers.contains(gdk::ModifierType::CONTROL_MASK)
-            {
-                if modifiers.contains(gdk::ModifierType::SHIFT_MASK) {
-                    epub_redo();
-                } else {
-                    epub_undo();
-                }
-                return glib::Propagation::Stop;
-            }
-            if keyval == gdk::Key::f && modifiers.contains(gdk::ModifierType::CONTROL_MASK) {
-                search_toggle.set_active(!search_toggle.is_active());
-                return glib::Propagation::Stop;
-            }
-            if keyval == gdk::Key::Escape && search_toggle.is_active() {
-                search_toggle.set_active(false);
-                return glib::Propagation::Stop;
-            }
-            let focus_in_text_entry = view_for_focus
-                .root()
-                .and_then(|root| root.focus())
-                .is_some_and(|w| {
-                    w.is::<gtk4::Entry>() || w.is::<gtk4::Text>() || w.is::<gtk4::TextView>()
-                });
-            if focus_in_text_entry {
-                return glib::Propagation::Proceed;
-            }
-            if modifiers.contains(gdk::ModifierType::CONTROL_MASK) {
-                match keyval {
-                    gdk::Key::plus | gdk::Key::equal | gdk::Key::KP_Add => {
-                        zoom_in_key.emit_clicked();
-                        return glib::Propagation::Stop;
-                    }
-                    gdk::Key::minus | gdk::Key::KP_Subtract => {
-                        zoom_out_key.emit_clicked();
-                        return glib::Propagation::Stop;
-                    }
-                    _ => {}
-                }
-            }
-            // Prev/next chapter — reuses the prev/next buttons' own handlers via
-            // `emit_clicked` rather than duplicating their chapter-boundary logic.
-            match keyval {
-                gdk::Key::Left | gdk::Key::KP_Left => {
-                    prev.emit_clicked();
-                    return glib::Propagation::Stop;
-                }
-                gdk::Key::Right | gdk::Key::KP_Right => {
-                    next.emit_clicked();
-                    return glib::Propagation::Stop;
-                }
-                gdk::Key::b | gdk::Key::B => {
-                    bookmark_button.emit_clicked();
-                    return glib::Propagation::Stop;
-                }
-                _ => {}
-            }
-            glib::Propagation::Proceed
-        });
-    }
-
-    {
-        let paned = paned.clone();
-        let contents_scroll = contents_scroll.clone();
-        sidebar_toggle.connect_toggled(move |btn| {
-            if btn.is_active() {
-                paned.set_start_child(Some(&contents_scroll));
-            } else {
-                paned.set_start_child(gtk4::Widget::NONE);
-            }
-        });
-    }
-    {
-        let notes_paned = notes_paned.clone();
-        let notes_scroll = notes_scroll.clone();
-        let rebuild_notes = rebuild_notes.clone();
-        const NOTES_SIDEBAR_WIDTH: i32 = 300;
-        notes_toggle.connect_toggled(move |btn| {
-            if btn.is_active() {
-                rebuild_notes();
-                let available = notes_paned.width();
-                let total = if available > 0 { available } else { 900 };
-                notes_paned.set_position((total - NOTES_SIDEBAR_WIDTH).max(200));
-                notes_paned.set_end_child(Some(&notes_scroll));
-            } else {
-                notes_paned.set_end_child(gtk4::Widget::NONE);
-            }
-        });
-    }
+    let ui = ui::EpubUi {
+        reader: reader.clone(),
+        web_view: web_view.clone(),
+        prev: prev.clone(),
+        next: next.clone(),
+        chapter_label: chapter_label.clone(),
+        bookmark_button: bookmark_button.clone(),
+        contents_scroll: contents_scroll.clone(),
+        notes_scroll: notes_scroll.clone(),
+        notes_toggle: notes_toggle.clone(),
+        notes_paned: notes_paned.clone(),
+        paned: paned.clone(),
+        sidebar_toggle: sidebar_toggle.clone(),
+        pending_search: pending_search.clone(),
+        reader_tab: reader_tab.clone(),
+        rebuild_notes: rebuild_notes.clone(),
+        results_list: results_list.clone(),
+        results_revealer: results_revealer.clone(),
+        search_bar_entry: search_bar_entry.clone(),
+        search_count: search_count.clone(),
+        search_next: search_next.clone(),
+        search_prev: search_prev.clone(),
+        search_revealer: search_revealer.clone(),
+        search_toggle: search_toggle.clone(),
+        whole_book_toggle: whole_book_toggle.clone(),
+        zoom_in_button: zoom_in_button.clone(),
+        zoom_out_button: zoom_out_button.clone(),
+        epub_undo: epub_undo.clone(),
+        epub_redo: epub_redo.clone(),
+    };
+    search_wiring::install_search(&ui);
+    keys::install_keys(&ui);
+    toggles::install_sidebar_toggles(&ui);
 
     // Re-apply saved highlights after every chapter load (initial load, TOC jump,
     // prev/next, a notes-sidebar jump — all funnel through `epub_go_to`'s `load_uri`, so
@@ -1488,105 +970,7 @@ pub fn show_epub_reader(
         web_view.add_controller(click);
     }
 
-    // Save the current chapter+scroll-percent back to the entry's Progress on close, so the
-    // next "Read" resumes where this session left off — the EPUB half of the same resume
-    // Tier 2a already gives the PDF reader (see its own `connect_close_request` above).
-    // Reading `document.documentElement.scrollTop`/`scrollHeight`/`clientHeight` is async
-    // (`evaluate_javascript`), so this returns `Propagation::Proceed` immediately and writes
-    // the note in the callback — nothing after that write depends on the dialog still being
-    // open, it just needs `state`/`key`, both cheap `Rc`/`String` clones.
-    const SCROLL_PERCENT_JS: &str = "(function() {\n  var el = document.documentElement;\n  var range = el.scrollHeight - el.clientHeight;\n  return range > 0 ? Math.round((el.scrollTop / range) * 100) : 0;\n})()";
-    let last_percent: Rc<Cell<u8>> = Rc::new(Cell::new(start_percent.unwrap_or(0)));
-    let closed = Rc::new(Cell::new(false));
-    {
-        let host = host.clone();
-        let reader = reader.clone();
-        let web_view = web_view.clone();
-        let last_percent = last_percent.clone();
-        let closed = closed.clone();
-        glib::timeout_add_local(std::time::Duration::from_secs(5), move || {
-            if closed.get() {
-                return glib::ControlFlow::Break;
-            }
-            let host = host.clone();
-            let reader = reader.clone();
-            let last_percent = last_percent.clone();
-            web_view.evaluate_javascript(
-                SCROLL_PERCENT_JS,
-                None,
-                None,
-                gio::Cancellable::NONE,
-                move |result| {
-                    if let Ok(v) = result {
-                        last_percent.set(v.to_int32().clamp(0, 100) as u8);
-                        let r = reader.borrow();
-                        host.save_progress(fond_annot::Progress {
-                            page: r.index as u32 + 1,
-                            of: r.spine.len() as u32,
-                            chapter_percent: Some(last_percent.get()),
-                        });
-                    }
-                },
-            );
-            glib::ControlFlow::Continue
-        });
-    }
-    // Saved synchronously from the last known scroll position first, then refreshed from the
-    // WebView and only then unregistered: unregistering the last reader can quit the app, and
-    // the WebView's answer arrives asynchronously.
-    {
-        let host = host.clone();
-        let hash = hash.to_string();
-        let reader = reader.clone();
-        let web_view = web_view.clone();
-        crate::reader_host::on_tab_closed(&reader_tab, move || {
-            closed.set(true);
-            let (chapter_num, chapter_count) = {
-                let r = reader.borrow();
-                (r.index as u32 + 1, r.spine.len() as u32)
-            };
-            host.save_progress(fond_annot::Progress {
-                page: chapter_num,
-                of: chapter_count,
-                chapter_percent: Some(last_percent.get()),
-            });
-            let unregistered = Rc::new(Cell::new(false));
-            let finish = {
-                let hash = hash.clone();
-                let unregistered = unregistered.clone();
-                let store = reader.borrow().store.clone();
-                Rc::new(move || {
-                    if !unregistered.replace(true) {
-                        store.clear_listeners();
-                        crate::unregister_window(&hash);
-                    }
-                })
-            };
-            {
-                let finish = finish.clone();
-                glib::timeout_add_local_once(std::time::Duration::from_millis(1500), move || {
-                    finish()
-                });
-            }
-            let host = host.clone();
-            web_view.evaluate_javascript(
-                SCROLL_PERCENT_JS,
-                None,
-                None,
-                gio::Cancellable::NONE,
-                move |result| {
-                    if let Ok(v) = result {
-                        host.save_progress(fond_annot::Progress {
-                            page: chapter_num,
-                            of: chapter_count,
-                            chapter_percent: Some(v.to_int32().clamp(0, 100) as u8),
-                        });
-                    }
-                    finish();
-                },
-            );
-        });
-    }
+    session::install_progress_saving(host, hash, &reader, &web_view, &reader_tab, start_percent);
 
     reader_tab.present();
 }
