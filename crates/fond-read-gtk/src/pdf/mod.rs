@@ -25,6 +25,18 @@ mod drag_gesture;
 mod drag_preview;
 mod export;
 mod keys;
+mod page_nav;
+use page_nav::*;
+mod tool_buttons;
+use tool_buttons::*;
+mod mark_palette;
+use mark_palette::*;
+mod header_buttons;
+use header_buttons::*;
+mod status_bar;
+use status_bar::*;
+mod canvas;
+use canvas::*;
 mod link_nav;
 mod links;
 mod mark_mode;
@@ -333,346 +345,80 @@ pub fn show_pdf_reader(
         bookmarks,
     }));
 
-    let view = adw::ToolbarView::new();
-    // No header of this tab's own any more — its controls are handed to the shared host
-    // header via `reader_host::set_tab_header` below instead, so there's one header row
-    // total rather than the host's own plus a second, per-tab one underneath it. Explicit
-    // title widget, not left to the default (the containing window's own title): the reader
-    // host window is shared across every open tab now, so its title can't speak for any one
-    // document — this used to show "Reader" twice (the tab host's own header fell back to
-    // the same window title, since it didn't set a title widget either).
-    let title_widget = adw::WindowTitle::new(title, "");
+    let PageNavParts {
+        view,
+        title_widget,
+        prev,
+        next,
+        page_entry,
+        page_of_label,
+        bookmark_button,
+        nav,
+    } = page_nav::build_page_nav(&reader, start_page, title);
+    let ToolButtonsParts {
+        zoom_out,
+        zoom_in,
+        zoom_fit_width,
+        zoom_fit_page,
+        rotate_button,
+        invert_button,
+        note_button,
+        page_num_button,
+    } = tool_buttons::build_tool_buttons(&nav, &bookmark_button, has_native_page_labels);
 
-    let prev = gtk4::Button::from_icon_name("go-previous-symbolic");
-    prev.add_css_class("flat");
-    prev.set_tooltip_text(Some("Previous page"));
-    let next = gtk4::Button::from_icon_name("go-next-symbolic");
-    next.add_css_class("flat");
-    next.set_tooltip_text(Some("Next page"));
-    // Shows (and, on Enter, navigates by) the *document's own* printed page number — its
-    // `/PageLabels` numbering, e.g. roman-numeral front matter restarting at arabic "1" for
-    // the body, rather than always the raw file position.
-    // Most PDFs have no `/PageLabels` at all, in which case this just shows the raw number,
-    // identical to before.
-    let page_entry = gtk4::Entry::new();
-    page_entry.set_width_chars(5);
-    page_entry.set_max_width_chars(5);
-    gtk4::prelude::EntryExt::set_alignment(&page_entry, 0.5);
-    let page_of_label = gtk4::Label::new(None);
-    page_of_label.add_css_class("dim-label");
-    // A lightweight "come back to this" marker, distinct from an annotation — see
-    // `ReaderState::bookmarks`. Lives beside page nav (not in the header) since it acts on
-    // "the current page", the same thing page nav already shows.
-    let bookmark_button = gtk4::Button::new();
-    bookmark_button.add_css_class("flat");
-    update_bookmark_button(
-        &bookmark_button,
-        reader.borrow().bookmarks.contains(&(start_page as u32 + 1)),
-    );
-    // Page nav lives in the bottom status bar (below), not the headerbar's title-widget slot
-    // — that slot is left to the default window title (the document's own name) instead.
-    let nav = gtk4::Box::new(Orientation::Horizontal, 6);
-    nav.append(&prev);
-    nav.append(&page_entry);
-    nav.append(&page_of_label);
-    nav.append(&next);
-    nav.append(&bookmark_button);
-
-    let zoom_out = gtk4::Button::from_icon_name("zoom-out-symbolic");
-    zoom_out.add_css_class("flat");
-    zoom_out.set_tooltip_text(Some("Zoom out"));
-    let zoom_in = gtk4::Button::from_icon_name("zoom-in-symbolic");
-    zoom_in.add_css_class("flat");
-    zoom_in.set_tooltip_text(Some("Zoom in"));
-    let zoom_fit_width = gtk4::Button::from_icon_name("view-fullscreen-symbolic");
-    zoom_fit_width.add_css_class("flat");
-    zoom_fit_width.set_tooltip_text(Some("Zoom to fit width"));
-    let zoom_fit_page = gtk4::Button::from_icon_name("zoom-fit-best-symbolic");
-    zoom_fit_page.add_css_class("flat");
-    zoom_fit_page.set_tooltip_text(Some("Zoom to fit page"));
-
-    // View-only rotation — see `ReaderState::rotation`'s doc comment for why this is
-    // single-page-mode only (disabled below whenever Continuous or Two-page is active).
-    let rotate_button = gtk4::Button::from_icon_name("object-rotate-right-symbolic");
-    rotate_button.add_css_class("flat");
-    rotate_button.set_tooltip_text(Some("Rotate page 90°"));
-
-    let invert_button = gtk4::ToggleButton::new();
-    invert_button.set_icon_name("weather-clear-night-symbolic");
-    invert_button.add_css_class("flat");
-    invert_button.set_tooltip_text(Some("Invert colours (for reading at night)"));
-
-    let note_button = gtk4::Button::with_label("Note…");
-    note_button.set_tooltip_text(Some("Add a marginal note on the current page"));
-
-    // Lets the current physical page be anchored to its own printed number when the PDF
-    // declares no `/PageLabels` of its own (common for scanned or older PDFs) — the manual
-    // counterpart to the automatic `/PageLabels` read above. Disabled when the PDF already
-    // has native labels, since those are authoritative and an override on top would be
-    // silently ignored (see the `page_labels` fallback above) — better to say so up front
-    // than let the user set something with no visible effect.
-    let page_num_button = gtk4::Button::with_label("Page #…");
-    if has_native_page_labels {
-        page_num_button.set_sensitive(false);
-        page_num_button.set_tooltip_text(Some("This PDF already declares its own page numbers"));
-    } else {
-        page_num_button.set_tooltip_text(Some("Set the printed page number for this page"));
-    }
-
-    // What a drag on the page does: the palette picks Select text or a colour, and the style
-    // drop-down picks which kind of mark that colour draws. Both feed one `apply_mode` closure,
-    // wired below once `hint`/`picture` exist.
-    let mode_change: crate::RebuildCell = Rc::new(RefCell::new(None));
-    let style_labels: Vec<&str> = MARK_KIND_OPTIONS.iter().map(|(l, _)| *l).collect();
-    let style_drop = gtk4::DropDown::from_strings(&style_labels);
-    style_drop.set_tooltip_text(Some("What kind of mark a drag draws"));
-    style_drop.set_sensitive(false);
-    let palette_choice: Rc<Cell<Option<usize>>> = Rc::new(Cell::new(None));
-    let palette = {
-        let palette_choice = palette_choice.clone();
-        let mode_change = mode_change.clone();
-        crate::palette::palette_widget(true, None, move |choice| {
-            palette_choice.set(choice);
-            if let Some(f) = mode_change.borrow().as_ref() {
-                f();
-            }
-        })
-    };
-
-    // Always enabled — Thumbnails is always available even for a PDF with no outline
-    // (unlike before this toggle covered Contents alone and was disabled without one).
-    // Toggles a persistent sidebar (built below, after `render`/`reader` exist) rather than
-    // a popover, per CLAUDE.md's house sidebar style: toggle at the *start* of the
-    // headerbar, content as a collapsible Paned start-child.
-    let sidebar_toggle = gtk4::ToggleButton::new();
-    crate::set_icon_with_fallback(
-        &sidebar_toggle,
-        &[
-            "sidebar-show-symbolic",
-            "view-sidebar-symbolic",
-            "sidebar-expand-left-symbolic",
-            "view-list-symbolic",
-        ],
-    );
-    sidebar_toggle.set_tooltip_text(Some("Show contents / thumbnails"));
-
-    // Whole-document notes/highlights list, in a persistent sidebar (built below, alongside
-    // Contents) rather than the old per-page "This page" dropdown — readable prose, not just
-    // on-page markers, and reachable regardless of which page is current. Editing/deleting
-    // an individual annotation now happens by right-clicking it on the page itself.
-    let notes_toggle = gtk4::ToggleButton::new();
-    notes_toggle.set_icon_name("view-list-symbolic");
-    notes_toggle.set_tooltip_text(Some("Show notes and highlights"));
-
-    let continuous_toggle = gtk4::ToggleButton::new();
-    crate::set_icon_with_fallback(
-        &continuous_toggle,
-        &["view-continuous-symbolic", "view-paged-symbolic"],
-    );
-    continuous_toggle.set_tooltip_text(Some(
-        "Continuous — scroll through every page, instead of one page at a time",
-    ));
-    // Mutually exclusive with `continuous_toggle` (each deactivates the other on activate,
-    // wired below) rather than a single 3-way control, so every existing
-    // `continuous_toggle.is_active()` check elsewhere keeps meaning exactly what it always
-    // did with no changes needed at those call sites. Reuses the single-page view's own
-    // `view_stack` child and `render()` (extended to also fill `right_picture`) rather than
-    // being a separate mode with its own render path, so navigation/zoom/search/outline/
-    // notes-sidebar jumps all stay in sync with two-page mode for free.
-    let text_toggle = gtk4::ToggleButton::new();
-    crate::set_icon_with_fallback(
-        &text_toggle,
-        &[
-            "format-justify-left-symbolic",
-            "view-reader-symbolic",
-            "text-x-generic-symbolic",
-        ],
-    );
-    text_toggle.set_tooltip_text(Some(
-        "Text view — the document's text reflowed: readable by screen readers, resizable, \
-         and selectable with the keyboard (Shift+arrows, then 1–4 to mark)",
-    ));
-    let two_page_toggle = gtk4::ToggleButton::new();
-    crate::set_icon_with_fallback(
-        &two_page_toggle,
-        &["view-dual-symbolic", "view-paged-symbolic"],
-    );
-    two_page_toggle.set_tooltip_text(Some(
-        "Two-page — show two facing pages side by side, like an open book. Drawing a new \
-         highlight or note still needs single-page or Continuous mode.",
-    ));
-
-    let undo_button = gtk4::Button::from_icon_name("edit-undo-symbolic");
-    undo_button.set_tooltip_text(Some("Undo (Ctrl+Z)"));
-    undo_button.set_sensitive(false);
-    let redo_button = gtk4::Button::from_icon_name("edit-redo-symbolic");
-    redo_button.set_tooltip_text(Some("Redo (Ctrl+Shift+Z)"));
-    redo_button.set_sensitive(false);
-
-    // Moves this tab out of the shared "Reader" window into its own standalone one — the
-    // only way to detach a tab (see `reader_host`'s module doc for why there's no drag-out-
-    // of-the-bar gesture too).
-    let popout_button = gtk4::Button::from_icon_name("window-new-symbolic");
-    popout_button.add_css_class("flat");
-    popout_button.set_tooltip_text(Some("Open in a new window"));
-
-    let export_button = gtk4::Button::from_icon_name("document-save-symbolic");
-    export_button.add_css_class("flat");
-    export_button.set_tooltip_text(Some("Export notes & highlights…"));
-
-    // Visual order, left to right, in the shared host header: sidebar toggle, Undo, Redo
-    // (start) … document title (centre) … Two-page, Continuous, colour palette, mark style,
-    // Note, Page #, Export, Open in new window, Notes sidebar (end) — unchanged from when
-    // these lived in this tab's own `HeaderBar`, just built as plain boxes now and handed to
-    // `reader_host::set_tab_header` below instead of packed directly (see the comment on
-    // `title_widget` above for why). Thumbnails used to have its own header button opening a
-    // popup grid; it's now a tab in the sidebar (built below), alongside Contents.
-    let header_start = gtk4::Box::new(Orientation::Horizontal, 6);
-    header_start.append(&sidebar_toggle);
-    header_start.append(&undo_button);
-    header_start.append(&redo_button);
-    let header_end = gtk4::Box::new(Orientation::Horizontal, 6);
-    header_end.append(&two_page_toggle);
-    header_end.append(&continuous_toggle);
-    header_end.append(&text_toggle);
-    header_end.append(&palette);
-    header_end.append(&style_drop);
-    let more_button = gtk4::MenuButton::new();
-    more_button.set_icon_name("view-more-symbolic");
-    more_button.set_tooltip_text(Some("More: note, page numbering, export, new window"));
-    more_button.add_css_class("flat");
-    {
-        let rows = gtk4::Box::new(Orientation::Vertical, 2);
-        rows.set_margin_top(6);
-        rows.set_margin_bottom(6);
-        rows.set_margin_start(6);
-        rows.set_margin_end(6);
-        let more_popover = gtk4::Popover::new();
-        for (label, target) in [
-            ("Add note on this page…", note_button.clone()),
-            ("Set page numbering…", page_num_button.clone()),
-            ("Export notes…", export_button.clone()),
-            ("Open in a new window", popout_button.clone()),
-        ] {
-            let row = popover_button(label, false);
-            row.set_sensitive(target.is_sensitive());
-            let popover = more_popover.clone();
-            row.connect_clicked(move |_| {
-                popover.popdown();
-                target.emit_clicked();
-            });
-            rows.append(&row);
-        }
-        more_popover.set_child(Some(&rows));
-        more_button.set_popover(Some(&more_popover));
-    }
+    let MarkPaletteParts {
+        mode_change,
+        style_drop,
+        palette_choice,
+        palette,
+    } = mark_palette::build_mark_palette();
+    let HeaderButtonsParts {
+        sidebar_toggle,
+        notes_toggle,
+        continuous_toggle,
+        text_toggle,
+        two_page_toggle,
+        undo_button,
+        redo_button,
+        popout_button,
+        export_button,
+        header_start,
+        header_end,
+        more_button,
+    } = header_buttons::build_header_buttons(&note_button, &page_num_button, &palette, &style_drop);
     header_end.append(&more_button);
-    header_end.append(&notes_toggle);
-
-    // Status bar (house style, same classes as the main window's): page nav and search on
-    // the left/middle, rotate/invert/zoom on the right, the reader-host footer (if the
-    // embedding app registered one) at the far right. Combines what used to be three
-    // separate bottom rows — this tab's own nav+zoom bar, its search bar (previously its own
-    // row above the page), and the host window's own footer bar below all of it — into one,
-    // so the rest of the window is free for the document itself.
-    let statusbar = gtk4::Box::new(Orientation::Horizontal, 6);
-    statusbar.add_css_class("toolbar");
-    statusbar.add_css_class("fond-chrome");
-    statusbar.add_css_class("fond-statusbar");
-
-    let search_entry = gtk4::SearchEntry::new();
-    search_entry.set_placeholder_text(Some("Search this PDF…"));
-    search_entry.set_hexpand(true);
-    search_entry.set_max_width_chars(28);
-    let search_prev = gtk4::Button::from_icon_name("go-up-symbolic");
-    search_prev.add_css_class("flat");
-    search_prev.set_tooltip_text(Some("Previous match"));
-    search_prev.set_sensitive(false);
-    let search_next = gtk4::Button::from_icon_name("go-down-symbolic");
-    search_next.add_css_class("flat");
-    search_next.set_tooltip_text(Some("Next match"));
-    search_next.set_sensitive(false);
-    let search_count = gtk4::Label::new(None);
-    search_count.add_css_class("dim-label");
-
-    let link_back = gtk4::Button::new();
-    link_back.add_css_class("flat");
-    link_back.set_visible(false);
-    link_back.set_tooltip_text(Some("Return to where you followed a link from (Alt+Left)"));
-    statusbar.append(&nav);
-    statusbar.append(&link_back);
-    statusbar.append(&search_entry);
-    statusbar.append(&search_count);
-    statusbar.append(&search_prev);
-    statusbar.append(&search_next);
-    statusbar.append(&rotate_button);
-    statusbar.append(&invert_button);
-    statusbar.append(&zoom_fit_width);
-    statusbar.append(&zoom_fit_page);
-    statusbar.append(&zoom_out);
-    statusbar.append(&zoom_in);
-    if let Some(footer_widget) = crate::reader_host::host_footer_widget() {
-        statusbar.append(&footer_widget);
-    }
+    let StatusBarParts {
+        statusbar,
+        search_entry,
+        search_prev,
+        search_next,
+        search_count,
+        link_back,
+    } = status_bar::build_status_bar(
+        &header_end,
+        &invert_button,
+        &rotate_button,
+        &zoom_fit_page,
+        &zoom_fit_width,
+        &zoom_in,
+        &zoom_out,
+        &notes_toggle,
+        &nav,
+    );
     view.add_bottom_bar(&statusbar);
 
-    let hint = gtk4::Label::new(Some(
-        "Drag over text to select it, then choose a colour (or press 1–4)",
-    ));
-    hint.add_css_class("dim-label");
-    hint.add_css_class("caption");
-    hint.set_margin_top(4);
-    hint.set_margin_bottom(4);
-
-    let picture = gtk4::Picture::new();
-    picture.set_halign(gtk4::Align::Center);
-    picture.set_valign(gtk4::Align::Start);
-    picture.set_can_target(true);
-    picture.set_focusable(true);
-    picture.set_cursor(cursor_for_select_mode(true).as_ref());
-    let (picture_overlay, drag_preview, drag_live_rect) = {
-        let reader_for_page = reader.clone();
-        build_drag_preview_overlay(&picture, &reader, move || reader_for_page.borrow().page)
-    };
-    picture_overlay.set_halign(gtk4::Align::Center);
-    picture_overlay.set_valign(gtk4::Align::Start);
-    // "Two-page" mode's facing page — sits beside `picture_overlay` in `spread_box`, hidden
-    // (and left unrendered) outside that mode. View-only for now: no drag/click gesture
-    // controllers of its own, so a highlight/note is still made via the left page (or by
-    // switching to single-page/Continuous) — `render()` below is what actually keeps this in
-    // sync with `picture`, so both stay one page apart with no separate render path to drift.
-    let right_picture = gtk4::Picture::new();
-    right_picture.set_halign(gtk4::Align::Center);
-    right_picture.set_valign(gtk4::Align::Start);
-    right_picture.set_visible(false);
-    let spread_box = gtk4::Box::new(Orientation::Horizontal, 12);
-    spread_box.set_halign(gtk4::Align::Center);
-    spread_box.append(&picture_overlay);
-    spread_box.append(&right_picture);
-    let scroll = gtk4::ScrolledWindow::new();
-    scroll.set_child(Some(&spread_box));
-    scroll.set_vexpand(true);
-    scroll.set_hexpand(true);
-
-    // Continuous-scroll mode's surface: an empty Box for now — populated with one Picture
-    // per page the first time the mode is toggled on (`build_continuous_view` below), not
-    // eagerly here, so a plain "Read" stays exactly as fast as it always was.
-    let continuous_box = gtk4::Box::new(Orientation::Vertical, CONTINUOUS_PAGE_GAP as i32);
-    continuous_box.set_margin_top(CONTINUOUS_PAGE_GAP as i32);
-    continuous_box.set_margin_bottom(CONTINUOUS_PAGE_GAP as i32);
-    let continuous_scroll = gtk4::ScrolledWindow::new();
-    continuous_scroll.set_child(Some(&continuous_box));
-    continuous_scroll.set_vexpand(true);
-    continuous_scroll.set_hexpand(true);
-
-    let view_stack = gtk4::Stack::new();
-    view_stack.add_named(&scroll, Some("paged"));
-    view_stack.add_named(&continuous_scroll, Some("continuous"));
-    view_stack.set_visible_child_name("paged");
-
-    let content = gtk4::Box::new(Orientation::Vertical, 0);
-    content.append(&hint);
-    content.append(&view_stack);
+    let CanvasParts {
+        hint,
+        picture,
+        drag_preview,
+        drag_live_rect,
+        right_picture,
+        scroll,
+        continuous_box,
+        continuous_scroll,
+        view_stack,
+        content,
+    } = canvas::build_canvas(&reader);
     // `content` is reparented into the sidebar Paned below instead of set directly here —
     // the Notes sidebar (and, when present, Contents) always builds that Paned now, and
     // `Paned::set_end_child` asserts its child has no existing parent.
