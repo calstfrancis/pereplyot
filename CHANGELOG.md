@@ -9,9 +9,20 @@
 - **Fixed: pressing 1–4 with the selection popover open did nothing** — the popover took the
   keystroke before the reader's shortcut saw it, although the hint line says "or press 1–4".
   The keys now choose the colour from inside the popover too, in both readers.
+- **Fixed: the page jumped away from the text you had just marked.** Closing the selection
+  popover returned keyboard focus to the page, and GTK scrolled the window to reveal it — on
+  any page taller than the window, every highlight scrolled the view down. Focus now returns
+  without moving the scroll position.
+- **A failed save no longer leaves a ghost annotation.** Adding, editing or deleting an
+  annotation (and undo/redo) is rolled back if the file can't be written, so what you see
+  matches what is on disk.
+- Internal: every annotation change in both readers now goes through one store
+  (`annotation_store.rs`) that saves it, records undo/redo as small steps instead of copying
+  the whole annotation list, and tells the page, the Notes sidebar and the undo buttons to
+  update — replacing about twenty hand-written snapshot/save/redraw sequences.
 - Internal: a headless smoke test (`tests/smoke/run.sh`, run in CI) drives the real app under
   Xvfb through open → select → mark for PDF (plain, cropped, rotated) and EPUB, and checks
-  the saved annotation.
+  the saved annotation, that the highlight is drawn, and that Ctrl+Z / Ctrl+Shift+Z undo and redo it.
 - Known, not yet fixed (tracked in the smoke test): in the shared selection code, dragging
   along a line can drop its trailing punctuation from the saved quote, and a drag on an
   upright page that carries `/Rotate 90` selects the whole page.

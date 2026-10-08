@@ -12,6 +12,7 @@ use gtk4::{gdk, glib, Orientation};
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
+use crate::annotation_store::AnnotationStore;
 use crate::page_geom::PageGeom;
 use crate::{color_swatch, note_edit_widget, popover_button, popover_separator, ReaderHost};
 
@@ -26,10 +27,8 @@ struct ReaderState {
     count: u16,
     /// Render width in px = `BASE_WIDTH * zoom`.
     zoom: f64,
-    /// This entry's annotation sidecar, loaded once at open and rewritten to disk on every
-    /// highlight added. Held here (not re-read from the library each time) so the in-memory
-    /// list and the on-screen render never disagree mid-session.
-    annotations: fond_annot::AnnotationSidecar,
+    /// This document's annotations, with undo/redo and saving; see [`AnnotationStore`].
+    store: Rc<AnnotationStore>,
     /// The current page's rendered pixel size, refreshed by `render()` — the scale a
     /// drag-selected rectangle is converted through when saving a new highlight.
     render_px: (u32, u32),
@@ -82,13 +81,6 @@ struct ReaderState {
     /// property of the file. Index `i` (0-based) matches every other page index in this
     /// struct.
     page_labels: Vec<Option<String>>,
-    /// Snapshot-based undo/redo: each entry is a full clone of `annotations` taken
-    /// immediately before a mutation (drag-created highlight, note added, annotation
-    /// deleted or edited). `push_undo_snapshot` is the single place that pushes here and
-    /// clears `redo_stack` — every mutation site calls it first. Capped at
-    /// `UNDO_HISTORY_LIMIT` so a long session doesn't grow this unbounded.
-    undo_stack: Vec<fond_annot::AnnotationSidecar>,
-    redo_stack: Vec<fond_annot::AnnotationSidecar>,
     /// Clockwise display rotation in degrees (0/90/180/270) — view-only, single-page mode
     /// only (see `rotate_button`'s wiring): the render pipeline blends annotations in the
     /// PDF's own unrotated coordinate space and only rotates the final pixel buffer for
@@ -131,35 +123,6 @@ impl ReaderState {
             .map(|g| g.display_size())
             .unwrap_or((612.0, 792.0))
     }
-}
-
-/// How many undo steps a PDF reader session keeps before dropping the oldest.
-pub(crate) const UNDO_HISTORY_LIMIT: usize = 50;
-
-/// Snapshot `reader`'s current annotations onto the undo stack and clear the redo stack —
-/// call this immediately before any mutation to `reader.annotations`, so the mutation can be
-/// undone. Standard editor convention: a fresh mutation invalidates any pending redo.
-fn push_undo_snapshot(reader: &Rc<RefCell<ReaderState>>) {
-    let mut r = reader.borrow_mut();
-    let snapshot = r.annotations.clone();
-    r.undo_stack.push(snapshot);
-    if r.undo_stack.len() > UNDO_HISTORY_LIMIT {
-        r.undo_stack.remove(0);
-    }
-    r.redo_stack.clear();
-}
-
-/// Refresh the Undo/Redo header buttons' sensitivity from `reader`'s current stacks — called
-/// after every mutation site (both the paged view's and, since `build_continuous_view` builds
-/// its own drag handlers, continuous mode's) so the buttons never sit enabled/disabled stale.
-fn sync_undo_redo_buttons(
-    reader: &Rc<RefCell<ReaderState>>,
-    undo_button: &gtk4::Button,
-    redo_button: &gtk4::Button,
-) {
-    let r = reader.borrow();
-    undo_button.set_sensitive(!r.undo_stack.is_empty());
-    redo_button.set_sensitive(!r.redo_stack.is_empty());
 }
 
 /// Parse an annotation's stored `#rrggbb` hex colour into RGBA at the standard highlight
@@ -315,7 +278,8 @@ fn paint_text_marks(reader: &Rc<RefCell<ReaderState>>, view: &Rc<crate::pdf_text
     use crate::pdf_text::{MarkStyle, TextMark};
     let marks: Vec<TextMark> = reader
         .borrow()
-        .annotations
+        .store
+        .sidecar()
         .annotations
         .iter()
         .filter_map(|a| {
@@ -639,7 +603,8 @@ fn render_pdf_page_texture(r: &ReaderState, page: u16) -> Option<(gdk::Texture, 
     // picker at draw time, or the default amber for a Note, which has none), so this blends
     // per-annotation rather than batching every quad on the page into one shared-colour call.
     for a in r
-        .annotations
+        .store
+        .sidecar()
         .annotations
         .iter()
         .filter(|a| a.page == Some(current_page) && !a.quadpoints.is_empty())
@@ -650,6 +615,9 @@ fn render_pdf_page_texture(r: &ReaderState, page: u16) -> Option<(gdk::Texture, 
             }
             fond_annot::AnnotationKind::Underline => fond_doc::MarkupKind::Underline,
             fond_annot::AnnotationKind::Strikeout => fond_doc::MarkupKind::Strikeout,
+            #[allow(unreachable_patterns)]
+            // AnnotationKind is non_exhaustive from fond-core's next rev
+            _ => continue,
         };
         let items: Vec<(fond_doc::MarkupKind, [f64; 8])> = to_display(&a.quadpoints)
             .into_iter()
@@ -781,8 +749,13 @@ fn selection_text(r: &ReaderState, page: u16, quads: &[[f64; 8]]) -> Option<Stri
                 q[1].min(q[3]).min(q[5]).min(q[7]),
                 q[1].max(q[3]).max(q[5]).max(q[7]),
             );
-            let dx = ((rt - l) * 0.25).min(0.5);
-            let dy = (t - b) * 0.25;
+            // Shrink across the line a quarter each side, along it only a hair. A line is wide
+            // on an upright page but a tall strip in user space on a quarter-turned one.
+            let (dx, dy) = if rt - l >= t - b {
+                (((rt - l) * 0.25).min(0.5), (t - b) * 0.25)
+            } else {
+                ((rt - l) * 0.25, ((t - b) * 0.25).min(0.5))
+            };
             let rect = pdfium_render::prelude::PdfRect::new_from_values(
                 (b + dy) as f32,
                 (l + dx) as f32,
@@ -851,13 +824,7 @@ fn select_drag_text(
 struct MarkCtx {
     host: Rc<dyn ReaderHost>,
     reader: Rc<RefCell<ReaderState>>,
-    pdf_hash: String,
-    undo_button: gtk4::Button,
-    redo_button: gtk4::Button,
-    rebuild_notes: Rc<dyn Fn()>,
     reader_window: adw::Window,
-    /// Re-render whatever shows the page that was just marked.
-    refresh: Rc<dyn Fn()>,
 }
 
 /// Turn the current selection into a mark of `kind`, in `color` (hex). Consumes the selection.
@@ -884,18 +851,9 @@ fn apply_selection_mark(ctx: &MarkCtx, kind: fond_annot::AnnotationKind, color: 
         None,
         Some(color.to_string()),
     );
-    push_undo_snapshot(&ctx.reader);
-    {
-        let mut r = ctx.reader.borrow_mut();
-        r.annotations.pdf_hash = Some(ctx.pdf_hash.clone());
-        r.annotations.upsert(annotation);
-    }
-    let result = ctx.host.save_annotations(&ctx.reader.borrow().annotations);
-    match result {
+    let store = ctx.reader.borrow().store.clone();
+    match store.add(annotation) {
         Ok(()) => {
-            (ctx.refresh)();
-            sync_undo_redo_buttons(&ctx.reader, &ctx.undo_button, &ctx.redo_button);
-            (ctx.rebuild_notes)();
             ctx.host.notify(match kind {
                 fond_annot::AnnotationKind::Underline => "Underline added",
                 fond_annot::AnnotationKind::Strikeout => "Strikeout added",
@@ -1023,16 +981,7 @@ fn show_selection_popover(
         rows.append(&action(
             "Add note…",
             Rc::new(move || {
-                show_pdf_note_dialog(
-                    &ctx.host,
-                    &ctx.reader,
-                    &ctx.pdf_hash,
-                    &ctx.undo_button,
-                    &ctx.redo_button,
-                    ctx.rebuild_notes.clone(),
-                    &ctx.reader_window,
-                    ctx.refresh.clone(),
-                );
+                show_pdf_note_dialog(&ctx.host, &ctx.reader, &ctx.reader_window);
             }),
         ));
     }
@@ -1056,7 +1005,7 @@ fn show_selection_popover(
     popover.set_child(Some(&rows));
     popover.connect_closed(move |p| {
         p.unparent();
-        parent.grab_focus();
+        crate::grab_focus_keeping_scroll(&parent);
     });
     popover.popup();
 }
@@ -1064,7 +1013,6 @@ fn show_selection_popover(
 fn save_drag_annotation(
     host: &Rc<dyn ReaderHost>,
     reader: &Rc<RefCell<ReaderState>>,
-    pdf_hash: &str,
     page: u16,
     geom: DragGeometry,
 ) -> bool {
@@ -1124,21 +1072,17 @@ fn save_drag_annotation(
         Some(draw_color),
     );
 
-    push_undo_snapshot(reader);
-    {
-        let mut r = reader.borrow_mut();
-        r.annotations.pdf_hash = Some(pdf_hash.to_string());
-        r.annotations.upsert(annotation);
-    }
-
-    let write_result = host.save_annotations(&reader.borrow().annotations);
-    match write_result {
+    let store = reader.borrow().store.clone();
+    match store.add(annotation) {
         Ok(()) => {
             let label = match draw_kind {
                 fond_annot::AnnotationKind::Highlight => "Highlight added",
                 fond_annot::AnnotationKind::Underline => "Underline added",
                 fond_annot::AnnotationKind::Strikeout => "Strikeout added",
                 fond_annot::AnnotationKind::Note => "Annotation added",
+                #[allow(unreachable_patterns)]
+                // AnnotationKind is non_exhaustive from fond-core's next rev
+                _ => "Annotation added",
             };
             host.notify(label);
             true
@@ -1197,12 +1141,7 @@ struct ClickGeometry {
 fn show_pdf_context_menu(
     host: &Rc<dyn ReaderHost>,
     reader: &Rc<RefCell<ReaderState>>,
-    pdf_hash: &str,
     parent: &gtk4::Picture,
-    refresh: Rc<dyn Fn()>,
-    rebuild_notes: Rc<dyn Fn()>,
-    undo_button: &gtk4::Button,
-    redo_button: &gtk4::Button,
     page: u16,
     geom: ClickGeometry,
     reader_window: &adw::Window,
@@ -1219,7 +1158,12 @@ fn show_pdf_context_menu(
         .filter(|_| render_w > 0 && render_h > 0)
         .map(|g| g.px_to_pdf(click_x, click_y, render_w as f64, render_h as f64))
         .and_then(|(x_pt, y_pt)| {
-            annotation_at_pdf_point(&reader.borrow().annotations, page, x_pt as f32, y_pt as f32)
+            annotation_at_pdf_point(
+                &reader.borrow().store.sidecar(),
+                page,
+                x_pt as f32,
+                y_pt as f32,
+            )
         });
 
     let popover = gtk4::Popover::new();
@@ -1260,7 +1204,8 @@ fn show_pdf_context_menu(
         Some(id) => {
             let annotation = reader
                 .borrow()
-                .annotations
+                .store
+                .sidecar()
                 .annotations
                 .iter()
                 .find(|a| a.id == id)
@@ -1292,7 +1237,7 @@ fn show_pdf_context_menu(
                     fond_annot::AnnotationKind::Underline => "Copy underlined text",
                     fond_annot::AnnotationKind::Strikeout => "Copy struck-out text",
                     fond_annot::AnnotationKind::Note => "Copy noted text",
-                    fond_annot::AnnotationKind::Highlight => "Copy highlighted text",
+                    _ => "Copy highlighted text",
                 };
                 let copy = popover_button(label, false);
                 let host = host.clone();
@@ -1308,35 +1253,14 @@ fn show_pdf_context_menu(
                 let host = host.clone();
                 let reader = reader.clone();
                 let id = id.clone();
-                let undo_button = undo_button.clone();
-                let redo_button = redo_button.clone();
-                let rebuild_notes = rebuild_notes.clone();
                 move |text: &str| {
                     let text = text.trim();
-                    let current_note = reader
-                        .borrow()
-                        .annotations
-                        .annotations
-                        .iter()
-                        .find(|a| a.id == id)
-                        .and_then(|a| a.note.clone());
-                    if current_note.as_deref().unwrap_or("") == text {
-                        return;
-                    }
-                    push_undo_snapshot(&reader);
-                    {
-                        let mut r = reader.borrow_mut();
-                        if let Some(a) = r.annotations.annotations.iter_mut().find(|a| a.id == id) {
-                            a.note = (!text.is_empty()).then(|| text.to_string());
-                        }
-                    }
-                    let write_result = host.save_annotations(&reader.borrow().annotations);
-                    match write_result {
-                        Ok(()) => {
-                            sync_undo_redo_buttons(&reader, &undo_button, &redo_button);
-                            rebuild_notes();
-                        }
-                        Err(e) => host.notify(&e),
+                    let store = reader.borrow().store.clone();
+                    let result = store.update(&id, |a| {
+                        a.note = (!text.is_empty()).then(|| text.to_string());
+                    });
+                    if let Err(e) = result {
+                        host.notify(&e);
                     }
                 }
             };
@@ -1349,27 +1273,12 @@ fn show_pdf_context_menu(
             {
                 let host = host.clone();
                 let reader = reader.clone();
-                let refresh = refresh.clone();
-                let rebuild_notes = rebuild_notes.clone();
                 let popover = popover.clone();
                 let id = id.clone();
-                let undo_button = undo_button.clone();
-                let redo_button = redo_button.clone();
                 delete_button.connect_clicked(move |_| {
-                    push_undo_snapshot(&reader);
-                    reader
-                        .borrow_mut()
-                        .annotations
-                        .annotations
-                        .retain(|a| a.id != id);
-                    let write_result = host.save_annotations(&reader.borrow().annotations);
-                    match write_result {
-                        Ok(()) => {
-                            refresh();
-                            sync_undo_redo_buttons(&reader, &undo_button, &redo_button);
-                            rebuild_notes();
-                            host.notify("Annotation deleted");
-                        }
+                    let store = reader.borrow().store.clone();
+                    match store.remove(&id) {
+                        Ok(_) => host.notify("Annotation deleted"),
                         Err(e) => host.notify(&e),
                     }
                     popover.popdown();
@@ -1395,24 +1304,10 @@ fn show_pdf_context_menu(
             {
                 let host = host.clone();
                 let reader = reader.clone();
-                let pdf_hash = pdf_hash.to_string();
-                let undo_button = undo_button.clone();
-                let redo_button = redo_button.clone();
                 let popover = popover.clone();
-                let rebuild_notes = rebuild_notes.clone();
                 let reader_window = reader_window.clone();
-                let refresh = refresh.clone();
                 add_note.connect_clicked(move |_| {
-                    show_pdf_note_dialog(
-                        &host,
-                        &reader,
-                        &pdf_hash,
-                        &undo_button,
-                        &redo_button,
-                        rebuild_notes.clone(),
-                        &reader_window,
-                        refresh.clone(),
-                    );
+                    show_pdf_note_dialog(&host, &reader, &reader_window);
                     popover.popdown();
                 });
             }
@@ -1424,7 +1319,7 @@ fn show_pdf_context_menu(
     let parent = parent.clone();
     popover.connect_closed(move |p| {
         p.unparent();
-        parent.grab_focus();
+        crate::grab_focus_keeping_scroll(&parent);
     });
     popover.popup();
 }
@@ -1443,16 +1338,11 @@ fn show_pdf_context_menu(
 /// current page — this used to run inline here, which blocked the whole UI thread for the
 /// entire document on every open once continuous mode became the default (previously it only
 /// cost anything on an explicit toggle-on, rare enough not to notice).
-#[allow(clippy::too_many_arguments)]
 fn build_continuous_view(
     host: &Rc<dyn ReaderHost>,
     reader: &Rc<RefCell<ReaderState>>,
-    pdf_hash: &str,
     continuous_box: &gtk4::Box,
     continuous_scroll: &gtk4::ScrolledWindow,
-    undo_button: &gtk4::Button,
-    redo_button: &gtk4::Button,
-    rebuild_notes: &Rc<dyn Fn()>,
     reader_window: &adw::Window,
 ) {
     if !reader.borrow().continuous_pictures.is_empty() {
@@ -1499,11 +1389,7 @@ fn build_continuous_view(
             let host = host.clone();
             let reader = reader.clone();
             let reader_window = reader_window.clone();
-            let pdf_hash = pdf_hash.to_string();
             let this_picture = picture.clone();
-            let undo_button = undo_button.clone();
-            let redo_button = redo_button.clone();
-            let rebuild_notes = rebuild_notes.clone();
             {
                 let live_rect = drag_live_rect.clone();
                 let drag_preview = drag_preview.clone();
@@ -1559,26 +1445,13 @@ fn build_continuous_view(
                             let ctx = MarkCtx {
                                 host: host.clone(),
                                 reader: reader.clone(),
-                                pdf_hash: pdf_hash.clone(),
-                                undo_button: undo_button.clone(),
-                                redo_button: redo_button.clone(),
-                                rebuild_notes: rebuild_notes.clone(),
                                 reader_window: reader_window.clone(),
-                                refresh: {
-                                    let reader = reader.clone();
-                                    Rc::new(move || render_continuous_page(&reader, page))
-                                },
                             };
                             show_selection_popover(&ctx, &this_picture, end_x, end_y, page);
                         }
                         return;
                     }
-                    let saved = save_drag_annotation(&host, &reader, &pdf_hash, page, geom);
-                    if saved {
-                        render_continuous_page(&reader, page);
-                        sync_undo_redo_buttons(&reader, &undo_button, &redo_button);
-                        rebuild_notes();
-                    }
+                    save_drag_annotation(&host, &reader, page, geom);
                 });
             }
             picture.add_controller(drag);
@@ -1592,29 +1465,16 @@ fn build_continuous_view(
             click.set_button(gdk::BUTTON_SECONDARY);
             let host = host.clone();
             let reader = reader.clone();
-            let pdf_hash = pdf_hash.to_string();
             let this_picture = picture.clone();
-            let undo_button = undo_button.clone();
-            let redo_button = redo_button.clone();
-            let rebuild_notes = rebuild_notes.clone();
             let reader_window = reader_window.clone();
             click.connect_pressed(move |_gesture, _n, x, y| {
                 let render_w = this_picture.width().max(0) as u32;
                 let render_h = this_picture.height().max(0) as u32;
                 let page_geom = reader.borrow().geom(page);
-                let refresh: Rc<dyn Fn()> = {
-                    let reader = reader.clone();
-                    Rc::new(move || render_continuous_page(&reader, page))
-                };
                 show_pdf_context_menu(
                     &host,
                     &reader,
-                    &pdf_hash,
                     &this_picture,
-                    refresh,
-                    rebuild_notes.clone(),
-                    &undo_button,
-                    &redo_button,
                     page,
                     ClickGeometry {
                         render_w,
@@ -1781,16 +1641,11 @@ fn schedule_continuous_render(reader: Rc<RefCell<ReaderState>>, order: Vec<u16>,
 /// resizing everything in place: zoom changes are infrequent, so paying a full rebuild is a
 /// reasonable trade for not having two code paths (initial build vs. resize-in-place) to
 /// keep in sync.
-#[allow(clippy::too_many_arguments)]
 fn rebuild_continuous_view_for_zoom(
     host: &Rc<dyn ReaderHost>,
     reader: &Rc<RefCell<ReaderState>>,
-    pdf_hash: &str,
     continuous_box: &gtk4::Box,
     continuous_scroll: &gtk4::ScrolledWindow,
-    undo_button: &gtk4::Button,
-    redo_button: &gtk4::Button,
-    rebuild_notes: &Rc<dyn Fn()>,
     reader_window: &adw::Window,
 ) {
     if reader.borrow().continuous_pictures.is_empty() {
@@ -1808,12 +1663,8 @@ fn rebuild_continuous_view_for_zoom(
     build_continuous_view(
         host,
         reader,
-        pdf_hash,
         continuous_box,
         continuous_scroll,
-        undo_button,
-        redo_button,
-        rebuild_notes,
         reader_window,
     );
 }
@@ -2033,7 +1884,7 @@ pub fn show_pdf_reader(
             .unwrap_or(native_page_labels)
     };
 
-    let annotations = host.load_annotations();
+    let store = AnnotationStore::new(host, Some(pdf_hash.to_string()));
     let mut bookmarks = host.load_bookmarks();
     bookmarks.sort_unstable();
 
@@ -2048,7 +1899,7 @@ pub fn show_pdf_reader(
         page: start_page,
         count,
         zoom: 1.0,
-        annotations,
+        store,
         render_px: (0, 0),
         page_geoms: RefCell::new(std::collections::HashMap::new()),
         draw_kind: None,
@@ -2065,8 +1916,6 @@ pub fn show_pdf_reader(
         text_goto: None,
         text_zoom: None,
         page_labels,
-        undo_stack: Vec::new(),
-        redo_stack: Vec::new(),
         rotation: 0,
         invert_colors: false,
         bookmarks,
@@ -2484,83 +2333,54 @@ pub fn show_pdf_reader(
     };
     render();
 
-    // Undo/redo: a snapshot doesn't record which page(s) it touched, so pop it and
-    // re-render everything — cheap even in continuous mode, since each page's blend is just
-    // a texture re-render, not a re-parse of the PDF.
-    let rerender_all_pages = {
+    // Undo/redo and every other annotation change redraw through the store's change
+    // notification; a change doesn't say which page(s) it touched, so redraw everything —
+    // cheap even in continuous mode, since each page's blend is just a texture re-render.
+    let redraw_for = {
         let reader = reader.clone();
         let render = render.clone();
-        Rc::new(move || {
-            render();
-            rerender_loaded_continuous_pages(&reader);
+        let continuous_toggle = continuous_toggle.clone();
+        Rc::new(move |change: &crate::annotation_store::Change| {
+            if !continuous_toggle.is_active() {
+                render();
+            }
+            for page in change.pages() {
+                render_continuous_page(&reader, page.saturating_sub(1) as u16);
+            }
         })
     };
+    {
+        let store = reader.borrow().store.clone();
+        let undo_button = undo_button.clone();
+        let redo_button = redo_button.clone();
+        store.subscribe(move |store, change| {
+            undo_button.set_sensitive(store.can_undo());
+            redo_button.set_sensitive(store.can_redo());
+            redraw_for(change);
+        });
+    }
     let undo = {
         let reader = reader.clone();
         let host = host.clone();
-        let rerender_all_pages = rerender_all_pages.clone();
-        let undo_button = undo_button.clone();
-        let redo_button = redo_button.clone();
         Rc::new(move || {
-            let popped = {
-                let mut r = reader.borrow_mut();
-                match r.undo_stack.pop() {
-                    Some(prev) => {
-                        let current = r.annotations.clone();
-                        r.redo_stack.push(current);
-                        r.annotations = prev;
-                        true
-                    }
-                    None => false,
-                }
-            };
-            if !popped {
-                host.notify("Nothing to undo");
-                return;
-            }
-            let write_result = host.save_annotations(&reader.borrow().annotations);
-            match write_result {
-                Ok(()) => {
-                    rerender_all_pages();
-                    host.notify("Undid last annotation change");
-                }
+            let store = reader.borrow().store.clone();
+            match store.undo() {
+                Ok(true) => host.notify("Undid last annotation change"),
+                Ok(false) => host.notify("Nothing to undo"),
                 Err(e) => host.notify(&format!("Could not undo: {e}")),
             }
-            sync_undo_redo_buttons(&reader, &undo_button, &redo_button);
         })
     };
     let redo = {
         let reader = reader.clone();
         let host = host.clone();
-        let rerender_all_pages = rerender_all_pages.clone();
-        let undo_button = undo_button.clone();
-        let redo_button = redo_button.clone();
         Rc::new(move || {
-            let popped = {
-                let mut r = reader.borrow_mut();
-                match r.redo_stack.pop() {
-                    Some(next) => {
-                        let current = r.annotations.clone();
-                        r.undo_stack.push(current);
-                        r.annotations = next;
-                        true
-                    }
-                    None => false,
-                }
-            };
-            if !popped {
-                host.notify("Nothing to redo");
-                return;
-            }
-            let write_result = host.save_annotations(&reader.borrow().annotations);
-            match write_result {
-                Ok(()) => {
-                    rerender_all_pages();
-                    host.notify("Redid annotation change");
-                }
+            let store = reader.borrow().store.clone();
+            match store.redo() {
+                Ok(true) => host.notify("Redid annotation change"),
+                Ok(false) => host.notify("Nothing to redo"),
                 Err(e) => host.notify(&format!("Could not redo: {e}")),
             }
-            sync_undo_redo_buttons(&reader, &undo_button, &redo_button);
         })
     };
     {
@@ -2878,6 +2698,7 @@ pub fn show_pdf_reader(
     notes_scroll.set_child(Some(&notes_rows));
 
     let rebuild_notes_cell: RebuildNotesCell = Rc::new(RefCell::new(None));
+    let quiet_notes = Rc::new(Cell::new(false));
     {
         let notes_rows = notes_rows.clone();
         let host = host.clone();
@@ -2885,10 +2706,9 @@ pub fn show_pdf_reader(
         let render = render.clone();
         let continuous_toggle = continuous_toggle.clone();
         let continuous_scroll = continuous_scroll.clone();
-        let undo_button = undo_button.clone();
-        let redo_button = redo_button.clone();
         let bookmark_button = bookmark_button.clone();
         let rebuild_notes_cell_inner = rebuild_notes_cell.clone();
+        let quiet_notes = quiet_notes.clone();
         let builder = move || {
             while let Some(child) = notes_rows.first_child() {
                 notes_rows.remove(&child);
@@ -2896,7 +2716,8 @@ pub fn show_pdf_reader(
             let bookmarks = reader.borrow().bookmarks.clone();
             let mut all: Vec<fond_annot::Annotation> = reader
                 .borrow()
-                .annotations
+                .store
+                .sidecar()
                 .annotations
                 .iter()
                 .filter(|a| a.page.is_some())
@@ -3035,36 +2856,18 @@ pub fn show_pdf_reader(
                 let save_note = {
                     let host = host.clone();
                     let reader = reader.clone();
+                    let quiet_notes = quiet_notes.clone();
                     let id = annotation.id.clone();
-                    let undo_button = undo_button.clone();
-                    let redo_button = redo_button.clone();
                     move |text: &str| {
                         let text = text.trim();
-                        let current_note = reader
-                            .borrow()
-                            .annotations
-                            .annotations
-                            .iter()
-                            .find(|a| a.id == id)
-                            .and_then(|a| a.note.clone());
-                        if current_note.as_deref().unwrap_or("") == text {
-                            return;
-                        }
-                        push_undo_snapshot(&reader);
-                        {
-                            let mut r = reader.borrow_mut();
-                            if let Some(a) =
-                                r.annotations.annotations.iter_mut().find(|a| a.id == id)
-                            {
-                                a.note = (!text.is_empty()).then(|| text.to_string());
-                            }
-                        }
-                        let write_result = host.save_annotations(&reader.borrow().annotations);
-                        match write_result {
-                            Ok(()) => {
-                                sync_undo_redo_buttons(&reader, &undo_button, &redo_button);
-                            }
-                            Err(e) => host.notify(&e),
+                        let store = reader.borrow().store.clone();
+                        quiet_notes.set(true);
+                        let result = store.update(&id, |a| {
+                            a.note = (!text.is_empty()).then(|| text.to_string());
+                        });
+                        quiet_notes.set(false);
+                        if let Err(e) = result {
+                            host.notify(&e);
                         }
                     }
                 };
@@ -3075,32 +2878,11 @@ pub fn show_pdf_reader(
                 {
                     let host = host.clone();
                     let reader = reader.clone();
-                    let render = render.clone();
                     let id = annotation.id.clone();
-                    let undo_button = undo_button.clone();
-                    let redo_button = redo_button.clone();
-                    let rebuild_notes_cell = rebuild_notes_cell_inner.clone();
                     delete_button.connect_clicked(move |_| {
-                        push_undo_snapshot(&reader);
-                        reader
-                            .borrow_mut()
-                            .annotations
-                            .annotations
-                            .retain(|a| a.id != id);
-                        let write_result = host.save_annotations(&reader.borrow().annotations);
-                        match write_result {
-                            Ok(()) => {
-                                render();
-                                render_continuous_page(
-                                    &reader,
-                                    (page_num.saturating_sub(1)) as u16,
-                                );
-                                sync_undo_redo_buttons(&reader, &undo_button, &redo_button);
-                                host.notify("Annotation deleted");
-                                if let Some(f) = rebuild_notes_cell.borrow().as_ref() {
-                                    f();
-                                }
-                            }
+                        let store = reader.borrow().store.clone();
+                        match store.remove(&id) {
+                            Ok(_) => host.notify("Annotation deleted"),
                             Err(e) => host.notify(&e),
                         }
                     });
@@ -3123,36 +2905,26 @@ pub fn show_pdf_reader(
             }
         })
     };
+    {
+        let store = reader.borrow().store.clone();
+        let rebuild_notes = rebuild_notes.clone();
+        let quiet_notes = quiet_notes.clone();
+        store.subscribe(move |_, _| {
+            if !quiet_notes.get() {
+                rebuild_notes();
+            }
+        });
+    }
 
     {
         let host = host.clone();
         let reader = reader.clone();
-        let render = render.clone();
-        let pdf_hash = pdf_hash.to_string();
-        let undo_button = undo_button.clone();
-        let redo_button = redo_button.clone();
-        let rebuild_notes = rebuild_notes.clone();
         let reader_window = reader_window.clone();
         *quick_mark.borrow_mut() = Some(Rc::new(move |i: usize| {
-            let page = reader.borrow().last_selection.as_ref().map(|(p, _, _)| *p);
             let ctx = MarkCtx {
                 host: host.clone(),
                 reader: reader.clone(),
-                pdf_hash: pdf_hash.clone(),
-                undo_button: undo_button.clone(),
-                redo_button: redo_button.clone(),
-                rebuild_notes: rebuild_notes.clone(),
                 reader_window: reader_window.clone(),
-                refresh: {
-                    let reader = reader.clone();
-                    let render = render.clone();
-                    Rc::new(move || {
-                        render();
-                        if let Some(p) = page {
-                            render_continuous_page(&reader, p);
-                        }
-                    })
-                },
             };
             if let Some(color) = crate::palette::HIGHLIGHT_COLORS.get(i) {
                 apply_selection_mark(&ctx, fond_annot::AnnotationKind::Highlight, color.hex);
@@ -3212,14 +2984,9 @@ pub fn show_pdf_reader(
             Rc::new(RefCell::new(None));
         let host = host.clone();
         let reader = reader.clone();
-        let render = render.clone();
-        let pdf_hash = pdf_hash.to_string();
         let view_stack = view_stack.clone();
         let continuous_toggle = continuous_toggle.clone();
         let continuous_scroll = continuous_scroll.clone();
-        let undo_button = undo_button.clone();
-        let redo_button = redo_button.clone();
-        let rebuild_notes = rebuild_notes.clone();
         let reader_window = reader_window.clone();
         let hint = hint.clone();
         let page_entry = page_entry.clone();
@@ -3265,31 +3032,11 @@ pub fn show_pdf_reader(
                     let make_ctx: Rc<dyn Fn() -> MarkCtx> = {
                         let host = host.clone();
                         let reader = reader.clone();
-                        let pdf_hash = pdf_hash.clone();
-                        let undo_button = undo_button.clone();
-                        let redo_button = redo_button.clone();
-                        let rebuild_notes = rebuild_notes.clone();
                         let reader_window = reader_window.clone();
-                        let view = view.clone();
-                        let render = render.clone();
                         Rc::new(move || MarkCtx {
                             host: host.clone(),
                             reader: reader.clone(),
-                            pdf_hash: pdf_hash.clone(),
-                            undo_button: undo_button.clone(),
-                            redo_button: redo_button.clone(),
-                            rebuild_notes: rebuild_notes.clone(),
                             reader_window: reader_window.clone(),
-                            refresh: {
-                                let reader = reader.clone();
-                                let view = view.clone();
-                                let render = render.clone();
-                                Rc::new(move || {
-                                    paint_text_marks(&reader, &view);
-                                    render();
-                                    rerender_loaded_continuous_pages(&reader);
-                                })
-                            },
                         })
                     };
 
@@ -3557,10 +3304,6 @@ pub fn show_pdf_reader(
         let reader_window_for_drag = reader_window.clone();
         let picture_for_popover = picture.clone();
         let host = host.clone();
-        let pdf_hash = pdf_hash.to_string();
-        let undo_button = undo_button.clone();
-        let redo_button = redo_button.clone();
-        let rebuild_notes = rebuild_notes.clone();
         {
             let live_rect = drag_live_rect.clone();
             let drag_preview = drag_preview.clone();
@@ -3629,34 +3372,13 @@ pub fn show_pdf_reader(
                         let ctx = MarkCtx {
                             host: host.clone(),
                             reader: reader.clone(),
-                            pdf_hash: pdf_hash.clone(),
-                            undo_button: undo_button.clone(),
-                            redo_button: redo_button.clone(),
-                            rebuild_notes: rebuild_notes.clone(),
                             reader_window: reader_window_for_drag.clone(),
-                            refresh: {
-                                let reader = reader.clone();
-                                let render = render.clone();
-                                Rc::new(move || {
-                                    render();
-                                    render_continuous_page(&reader, page);
-                                })
-                            },
                         };
                         show_selection_popover(&ctx, &picture_for_popover, end_x, end_y, page);
                     }
                     return;
                 }
-                let saved = save_drag_annotation(&host, &reader, &pdf_hash, page, geom);
-                if saved {
-                    render();
-                    // Keep continuous mode's copy of this page in sync too, in case it was
-                    // already built from an earlier toggle-on and the user drew this
-                    // highlight after switching back to the paged view.
-                    render_continuous_page(&reader, page);
-                    sync_undo_redo_buttons(&reader, &undo_button, &redo_button);
-                    rebuild_notes();
-                }
+                save_drag_annotation(&host, &reader, page, geom);
             });
         }
         picture.add_controller(drag);
@@ -3670,12 +3392,7 @@ pub fn show_pdf_reader(
         click.set_button(gdk::BUTTON_SECONDARY);
         let host = host.clone();
         let reader = reader.clone();
-        let render = render.clone();
-        let pdf_hash = pdf_hash.to_string();
         let picture_for_menu = picture.clone();
-        let undo_button = undo_button.clone();
-        let redo_button = redo_button.clone();
-        let rebuild_notes = rebuild_notes.clone();
         let dialog_for_menu = reader_window.clone();
         click.connect_pressed(move |_gesture, _n, x, y| {
             if reader.borrow().rotation != 0 {
@@ -3686,24 +3403,10 @@ pub fn show_pdf_reader(
                 let r = reader.borrow();
                 (r.page, r.render_px.0, r.render_px.1, r.geom(r.page))
             };
-            let refresh: Rc<dyn Fn()> = {
-                let reader = reader.clone();
-                let render = render.clone();
-                Rc::new(move || {
-                    render();
-                    let page = reader.borrow().page;
-                    render_continuous_page(&reader, page);
-                })
-            };
             show_pdf_context_menu(
                 &host,
                 &reader,
-                &pdf_hash,
                 &picture_for_menu,
-                refresh,
-                rebuild_notes.clone(),
-                &undo_button,
-                &redo_button,
                 page,
                 ClickGeometry {
                     render_w,
@@ -3832,13 +3535,9 @@ pub fn show_pdf_reader(
         let host = host.clone();
         let reader = reader.clone();
         let render = render.clone();
-        let pdf_hash = pdf_hash.to_string();
         let continuous_box = continuous_box.clone();
         let continuous_toggle = continuous_toggle.clone();
         let continuous_scroll = continuous_scroll.clone();
-        let undo_button = undo_button.clone();
-        let redo_button = redo_button.clone();
-        let rebuild_notes = rebuild_notes.clone();
         let dialog = reader_window.clone();
         let pending_zoom = pending_zoom.clone();
         let zoom_debounce = zoom_debounce.clone();
@@ -3856,13 +3555,9 @@ pub fn show_pdf_reader(
             let host = host.clone();
             let reader = reader.clone();
             let render = render.clone();
-            let pdf_hash = pdf_hash.clone();
             let continuous_box = continuous_box.clone();
             let continuous_toggle = continuous_toggle.clone();
             let continuous_scroll = continuous_scroll.clone();
-            let undo_button = undo_button.clone();
-            let redo_button = redo_button.clone();
-            let rebuild_notes = rebuild_notes.clone();
             let dialog = dialog.clone();
             let pending_zoom = pending_zoom.clone();
             let zoom_debounce_slot = zoom_debounce.clone();
@@ -3877,12 +3572,8 @@ pub fn show_pdf_reader(
                     rebuild_continuous_view_for_zoom(
                         &host,
                         &reader,
-                        &pdf_hash,
                         &continuous_box,
                         &continuous_scroll,
-                        &undo_button,
-                        &redo_button,
-                        &rebuild_notes,
                         &dialog,
                     );
                     let page = reader.borrow().page;
@@ -4092,29 +3783,15 @@ pub fn show_pdf_reader(
         let host = host.clone();
         let reader = reader.clone();
         let render = render.clone();
-        let pdf_hash = pdf_hash.to_string();
         let continuous_box = continuous_box.clone();
         let continuous_scroll = continuous_scroll.clone();
         let view_stack = view_stack.clone();
-        let undo_button = undo_button.clone();
-        let redo_button = redo_button.clone();
-        let rebuild_notes = rebuild_notes.clone();
         let dialog = reader_window.clone();
         let two_page_toggle = two_page_toggle.clone();
         continuous_toggle.connect_toggled(move |btn| {
             if btn.is_active() {
                 two_page_toggle.set_active(false);
-                build_continuous_view(
-                    &host,
-                    &reader,
-                    &pdf_hash,
-                    &continuous_box,
-                    &continuous_scroll,
-                    &undo_button,
-                    &redo_button,
-                    &rebuild_notes,
-                    &dialog,
-                );
+                build_continuous_view(&host, &reader, &continuous_box, &continuous_scroll, &dialog);
                 view_stack.set_visible_child_name("continuous");
                 // Deferred to the next idle cycle: the page widgets `build_continuous_view`
                 // just added haven't been through a layout pass yet at this point, so the
@@ -4241,7 +3918,7 @@ pub fn show_pdf_reader(
                 Some(fond_annot::AnnotationKind::Highlight) => "Drag over text to highlight it",
                 Some(fond_annot::AnnotationKind::Underline) => "Drag over text to underline it",
                 Some(fond_annot::AnnotationKind::Strikeout) => "Drag over text to strike it out",
-                Some(fond_annot::AnnotationKind::Note) => "Drag over the page",
+                Some(_) => "Drag over the page",
             };
             hint.set_text(text);
         });
@@ -4254,31 +3931,9 @@ pub fn show_pdf_reader(
     {
         let host = host.clone();
         let reader = reader.clone();
-        let pdf_hash = pdf_hash.to_string();
-        let undo_button = undo_button.clone();
-        let redo_button = redo_button.clone();
-        let rebuild_notes = rebuild_notes.clone();
         let dialog = reader_window.clone();
-        let refresh: Rc<dyn Fn()> = {
-            let reader = reader.clone();
-            let render = render.clone();
-            Rc::new(move || {
-                render();
-                let page = reader.borrow().page;
-                render_continuous_page(&reader, page);
-            })
-        };
         note_button.connect_clicked(move |_| {
-            show_pdf_note_dialog(
-                &host,
-                &reader,
-                &pdf_hash,
-                &undo_button,
-                &redo_button,
-                rebuild_notes.clone(),
-                &dialog,
-                refresh.clone(),
-            );
+            show_pdf_note_dialog(&host, &reader, &dialog);
         });
     }
     {
@@ -4327,8 +3982,8 @@ pub fn show_pdf_reader(
     }
     {
         let window = window.clone();
-        let pdf_hash = pdf_hash.to_string();
         let reader_tab = reader_tab.clone();
+        let pdf_hash = pdf_hash.to_string();
         popout_button.connect_clicked(move |_| {
             let new_tab = reader_tab.pop_out(&window);
             crate::register_reader(&pdf_hash, &new_tab);
@@ -4521,8 +4176,8 @@ pub fn show_pdf_reader(
     }
     {
         let host = host.clone();
-        let pdf_hash = pdf_hash.to_string();
         let reader = reader.clone();
+        let pdf_hash = pdf_hash.to_string();
         crate::reader_host::on_tab_closed(&reader_tab, move || {
             closed.set(true);
             let (page, count) = {
@@ -4534,6 +4189,7 @@ pub fn show_pdf_reader(
                 of: count,
                 chapter_percent: None,
             });
+            reader.borrow().store.clear_listeners();
             crate::unregister_window(&pdf_hash);
         });
     }
@@ -4685,7 +4341,8 @@ fn export_notes(
 ) {
     let (items, bookmarks) = {
         let r = reader.borrow();
-        let items = crate::export::items_from_sidecar(&r.annotations, &r.page_labels, &|_| None);
+        let items =
+            crate::export::items_from_sidecar(&r.store.sidecar(), &r.page_labels, &|_| None);
         let bookmarks = r
             .bookmarks
             .iter()
@@ -4833,16 +4490,10 @@ fn show_page_number_dialog(
 /// writes. When opened right after a "Select text" drag on this page, the note carries that
 /// selection's real quadpoints (see `last_selection`), so — unlike a plain marginal note on
 /// blank page — it does need a re-render (`refresh`) afterward to show up on the page.
-#[allow(clippy::too_many_arguments)]
 fn show_pdf_note_dialog(
     host: &Rc<dyn ReaderHost>,
     reader: &Rc<RefCell<ReaderState>>,
-    pdf_hash: &str,
-    undo_button: &gtk4::Button,
-    redo_button: &gtk4::Button,
-    rebuild_notes: Rc<dyn Fn()>,
     reader_window: &adw::Window,
-    refresh: Rc<dyn Fn()>,
 ) {
     let current_page = reader.borrow().page as u32 + 1;
 
@@ -4917,10 +4568,7 @@ fn show_pdf_note_dialog(
         let host = host.clone();
         let host = host.clone();
         let reader = reader.clone();
-        let pdf_hash = pdf_hash.to_string();
         let text_view = text_view.clone();
-        let undo_button = undo_button.clone();
-        let redo_button = redo_button.clone();
         save.connect_clicked(move |_| {
             let buffer = text_view.buffer();
             let text = buffer
@@ -4932,7 +4580,6 @@ fn show_pdf_note_dialog(
                 return;
             }
 
-            let has_region = !selection_quads.is_empty();
             let annotation = fond_annot::Annotation::drawn(
                 fond_annot::AnnotationKind::Note,
                 current_page,
@@ -4941,20 +4588,9 @@ fn show_pdf_note_dialog(
                 Some(text),
                 None,
             );
-            push_undo_snapshot(&reader);
-            {
-                let mut r = reader.borrow_mut();
-                r.annotations.pdf_hash = Some(pdf_hash.clone());
-                r.annotations.upsert(annotation);
-            }
-            let write_result = host.save_annotations(&reader.borrow().annotations);
-            match write_result {
+            let store = reader.borrow().store.clone();
+            match store.add(annotation) {
                 Ok(()) => {
-                    if has_region {
-                        refresh();
-                    }
-                    sync_undo_redo_buttons(&reader, &undo_button, &redo_button);
-                    rebuild_notes();
                     host.notify("Note added");
                     dialog.close();
                 }

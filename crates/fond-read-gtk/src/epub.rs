@@ -13,7 +13,8 @@ use gtk4::{gdk, gio, glib, Orientation};
 use libadwaita as adw;
 use webkit6::prelude::*;
 
-use super::pdf::{update_bookmark_button, MARK_KIND_OPTIONS, UNDO_HISTORY_LIMIT};
+use super::pdf::{update_bookmark_button, MARK_KIND_OPTIONS};
+use crate::annotation_store::{AnnotationStore, Change};
 use crate::RebuildCell;
 use crate::{color_swatch, note_edit_widget, popover_button, popover_separator, ReaderHost};
 
@@ -29,12 +30,7 @@ struct EpubReaderState {
     /// `fond_doc::EpubBook::spine`).
     spine: Vec<String>,
     index: usize,
-    annotations: fond_annot::AnnotationSidecar,
-    /// Snapshot-based undo/redo, same idiom as the PDF reader's `ReaderState` (see
-    /// `push_undo_snapshot`/`UNDO_HISTORY_LIMIT`) — a full clone of `annotations` taken
-    /// immediately before each mutation (add/edit/delete a mark).
-    undo_stack: Vec<fond_annot::AnnotationSidecar>,
-    redo_stack: Vec<fond_annot::AnnotationSidecar>,
+    store: Rc<AnnotationStore>,
     /// Whole-book plain-text search index, one entry per `spine` chapter — built lazily
     /// (see `epub_chapter_texts`) the first time whole-book search is used, from the
     /// chapters already sitting in `cache_dir` (no re-opening the EPUB zip needed). `None`
@@ -129,28 +125,6 @@ fn epub_search_whole_book(
         }
     }
     results
-}
-
-/// Snapshot `reader`'s current annotations onto the undo stack and clear the redo stack —
-/// same convention as the PDF reader's `push_undo_snapshot`, just typed to `EpubReaderState`.
-fn push_epub_undo_snapshot(reader: &Rc<RefCell<EpubReaderState>>) {
-    let mut r = reader.borrow_mut();
-    let snapshot = r.annotations.clone();
-    r.undo_stack.push(snapshot);
-    if r.undo_stack.len() > UNDO_HISTORY_LIMIT {
-        r.undo_stack.remove(0);
-    }
-    r.redo_stack.clear();
-}
-
-fn sync_epub_undo_redo_buttons(
-    reader: &Rc<RefCell<EpubReaderState>>,
-    undo_button: &gtk4::Button,
-    redo_button: &gtk4::Button,
-) {
-    let r = reader.borrow();
-    undo_button.set_sensitive(!r.undo_stack.is_empty());
-    redo_button.set_sensitive(!r.redo_stack.is_empty());
 }
 
 /// One annotation as sent to the reader's highlight-apply JS: just enough to find it in the
@@ -345,7 +319,7 @@ fn epub_apply_highlights(
     let payload_json = {
         let r = state.borrow();
         match r.spine.get(r.index) {
-            Some(chapter) => epub_highlight_payload_json(&r.annotations, chapter),
+            Some(chapter) => epub_highlight_payload_json(&r.store.sidecar(), chapter),
             None => return,
         }
     };
@@ -583,12 +557,12 @@ pub fn show_epub_reader(
         }
     }
 
-    let annotations = host.load_annotations();
+    let store = AnnotationStore::new(host, None);
 
     let start_index = start_annotation_id
-        .and_then(|id| annotations.annotations.iter().find(|a| a.id == id))
-        .and_then(|a| a.chapter.as_deref())
-        .and_then(|chapter| book.spine.iter().position(|p| p == chapter))
+        .and_then(|id| store.get(id))
+        .and_then(|a| a.chapter)
+        .and_then(|chapter| book.spine.iter().position(|p| *p == chapter))
         .or_else(|| {
             start_progress.and_then(|p| {
                 let idx = (p.page as usize).saturating_sub(1);
@@ -616,9 +590,7 @@ pub fn show_epub_reader(
         cache_dir,
         spine: book.spine,
         index: start_index,
-        annotations,
-        undo_stack: Vec::new(),
-        redo_stack: Vec::new(),
+        store,
         chapter_texts: None,
         bookmarks,
     }));
@@ -986,6 +958,7 @@ pub fn show_epub_reader(
     let pending_search: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
 
     let rebuild_notes_cell: RebuildCell = Rc::new(RefCell::new(None));
+    let quiet_notes = Rc::new(Cell::new(false));
     {
         let notes_rows = notes_rows.clone();
         let host = host.clone();
@@ -996,6 +969,7 @@ pub fn show_epub_reader(
         let chapter_label = chapter_label.clone();
         let bookmark_button = bookmark_button.clone();
         let pending_scroll = pending_scroll.clone();
+        let quiet_notes = quiet_notes.clone();
         let rebuild_notes_cell_inner = rebuild_notes_cell.clone();
         let builder = move || {
             while let Some(child) = notes_rows.first_child() {
@@ -1003,7 +977,8 @@ pub fn show_epub_reader(
             }
             let mut all: Vec<fond_annot::Annotation> = reader
                 .borrow()
-                .annotations
+                .store
+                .sidecar()
                 .annotations
                 .iter()
                 .filter(|a| a.chapter.is_some())
@@ -1119,6 +1094,9 @@ pub fn show_epub_reader(
                     fond_annot::AnnotationKind::Underline => "Underline",
                     fond_annot::AnnotationKind::Strikeout => "Strikeout",
                     fond_annot::AnnotationKind::Note => "Note",
+                    #[allow(unreachable_patterns)]
+                    // AnnotationKind is non_exhaustive from fond-core's next rev
+                    _ => "Annotation",
                 };
                 let outer = gtk4::Box::new(Orientation::Vertical, 2);
 
@@ -1175,29 +1153,17 @@ pub fn show_epub_reader(
                 let save_note = {
                     let host = host.clone();
                     let reader = reader.clone();
+                    let quiet_notes = quiet_notes.clone();
                     let id = annotation.id.clone();
                     move |text: &str| {
                         let text = text.trim();
-                        let current_note = reader
-                            .borrow()
-                            .annotations
-                            .annotations
-                            .iter()
-                            .find(|a| a.id == id)
-                            .and_then(|a| a.note.clone());
-                        if current_note.as_deref().unwrap_or("") == text {
-                            return;
-                        }
-                        push_epub_undo_snapshot(&reader);
-                        {
-                            let mut r = reader.borrow_mut();
-                            if let Some(a) =
-                                r.annotations.annotations.iter_mut().find(|a| a.id == id)
-                            {
-                                a.note = (!text.is_empty()).then(|| text.to_string());
-                            }
-                        }
-                        if let Err(e) = host.save_annotations(&reader.borrow().annotations) {
+                        let store = reader.borrow().store.clone();
+                        quiet_notes.set(true);
+                        let result = store.update(&id, |a| {
+                            a.note = (!text.is_empty()).then(|| text.to_string());
+                        });
+                        quiet_notes.set(false);
+                        if let Err(e) = result {
                             host.notify(&e);
                         }
                     }
@@ -1209,25 +1175,11 @@ pub fn show_epub_reader(
                 {
                     let host = host.clone();
                     let reader = reader.clone();
-                    let view = view.clone();
                     let id = annotation.id.clone();
-                    let rebuild_notes_cell = rebuild_notes_cell_inner.clone();
                     delete_button.connect_clicked(move |_| {
-                        push_epub_undo_snapshot(&reader);
-                        reader
-                            .borrow_mut()
-                            .annotations
-                            .annotations
-                            .retain(|a| a.id != id);
-                        let write_result = host.save_annotations(&reader.borrow().annotations);
-                        match write_result {
-                            Ok(()) => {
-                                epub_apply_highlights(&view, &reader, None);
-                                host.notify("Annotation deleted");
-                                if let Some(f) = rebuild_notes_cell.borrow().as_ref() {
-                                    f();
-                                }
-                            }
+                        let store = reader.borrow().store.clone();
+                        match store.remove(&id) {
+                            Ok(_) => host.notify("Annotation deleted"),
                             Err(e) => host.notify(&e),
                         }
                     });
@@ -1250,6 +1202,30 @@ pub fn show_epub_reader(
             }
         })
     };
+    {
+        let store = reader.borrow().store.clone();
+        let reader_weak = Rc::downgrade(&reader);
+        let view = web_view.clone();
+        let rebuild_notes = rebuild_notes.clone();
+        let undo_button = undo_button.clone();
+        let redo_button = redo_button.clone();
+        let quiet_notes = quiet_notes.clone();
+        store.subscribe(move |store, change| {
+            undo_button.set_sensitive(store.can_undo());
+            redo_button.set_sensitive(store.can_redo());
+            let Some(reader) = reader_weak.upgrade() else {
+                return;
+            };
+            let scroll_to = match change {
+                Change::Added(a) => Some(a.id.as_str()),
+                _ => None,
+            };
+            epub_apply_highlights(&view, &reader, scroll_to);
+            if !quiet_notes.get() {
+                rebuild_notes();
+            }
+        });
+    }
     {
         let host = host.clone();
         let reader = reader.clone();
@@ -1349,79 +1325,28 @@ pub fn show_epub_reader(
         });
     }
 
-    // Undo/redo: pop a snapshot and refresh the current chapter's highlights plus the notes
-    // sidebar — cheap, since there's no per-page render state to rebuild the way PDF's
-    // continuous mode has.
     let epub_undo = {
         let reader = reader.clone();
         let host = host.clone();
-        let view = web_view.clone();
-        let rebuild_notes = rebuild_notes.clone();
-        let undo_button = undo_button.clone();
-        let redo_button = redo_button.clone();
         Rc::new(move || {
-            let popped = {
-                let mut r = reader.borrow_mut();
-                match r.undo_stack.pop() {
-                    Some(prev) => {
-                        let current = r.annotations.clone();
-                        r.redo_stack.push(current);
-                        r.annotations = prev;
-                        true
-                    }
-                    None => false,
-                }
-            };
-            if !popped {
-                host.notify("Nothing to undo");
-                return;
-            }
-            let write_result = host.save_annotations(&reader.borrow().annotations);
-            match write_result {
-                Ok(()) => {
-                    epub_apply_highlights(&view, &reader, None);
-                    rebuild_notes();
-                    host.notify("Undid last annotation change");
-                }
+            let store = reader.borrow().store.clone();
+            match store.undo() {
+                Ok(true) => host.notify("Undid last annotation change"),
+                Ok(false) => host.notify("Nothing to undo"),
                 Err(e) => host.notify(&format!("Could not undo: {e}")),
             }
-            sync_epub_undo_redo_buttons(&reader, &undo_button, &redo_button);
         })
     };
     let epub_redo = {
         let reader = reader.clone();
         let host = host.clone();
-        let view = web_view.clone();
-        let rebuild_notes = rebuild_notes.clone();
-        let undo_button = undo_button.clone();
-        let redo_button = redo_button.clone();
         Rc::new(move || {
-            let popped = {
-                let mut r = reader.borrow_mut();
-                match r.redo_stack.pop() {
-                    Some(next) => {
-                        let current = r.annotations.clone();
-                        r.undo_stack.push(current);
-                        r.annotations = next;
-                        true
-                    }
-                    None => false,
-                }
-            };
-            if !popped {
-                host.notify("Nothing to redo");
-                return;
-            }
-            let write_result = host.save_annotations(&reader.borrow().annotations);
-            match write_result {
-                Ok(()) => {
-                    epub_apply_highlights(&view, &reader, None);
-                    rebuild_notes();
-                    host.notify("Redid annotation change");
-                }
+            let store = reader.borrow().store.clone();
+            match store.redo() {
+                Ok(true) => host.notify("Redid annotation change"),
+                Ok(false) => host.notify("Nothing to redo"),
                 Err(e) => host.notify(&format!("Could not redo: {e}")),
             }
-            sync_epub_undo_redo_buttons(&reader, &undo_button, &redo_button);
         })
     };
     {
@@ -1864,16 +1789,9 @@ pub fn show_epub_reader(
         let reader = reader.clone();
         let view = web_view.clone();
         let host = host.clone();
-        let rebuild_notes = rebuild_notes.clone();
-        let undo_button = undo_button.clone();
-        let redo_button = redo_button.clone();
         Rc::new(move |kind, color, note| {
             let reader = reader.clone();
-            let view_for_apply = view.clone();
             let host = host.clone();
-            let rebuild_notes = rebuild_notes.clone();
-            let undo_button = undo_button.clone();
-            let redo_button = redo_button.clone();
             view.evaluate_javascript(
                 &epub_selection_js(true),
                 None,
@@ -1912,17 +1830,9 @@ pub fn show_epub_reader(
                         note,
                     );
                     annotation.color = color;
-                    let id = annotation.id.clone();
-                    push_epub_undo_snapshot(&reader);
-                    reader.borrow_mut().annotations.upsert(annotation);
-                    let write_result = host.save_annotations(&reader.borrow().annotations);
-                    match write_result {
-                        Ok(()) => {
-                            epub_apply_highlights(&view_for_apply, &reader, Some(&id));
-                            sync_epub_undo_redo_buttons(&reader, &undo_button, &redo_button);
-                            host.notify("Added");
-                            rebuild_notes();
-                        }
+                    let store = reader.borrow().store.clone();
+                    match store.add(annotation) {
+                        Ok(()) => host.notify("Added"),
                         Err(e) => host.notify(&e),
                     }
                 },
@@ -2075,8 +1985,10 @@ pub fn show_epub_reader(
             let finish = {
                 let hash = hash.clone();
                 let unregistered = unregistered.clone();
+                let store = reader.borrow().store.clone();
                 Rc::new(move || {
                     if !unregistered.replace(true) {
+                        store.clear_listeners();
                         crate::unregister_window(&hash);
                     }
                 })
@@ -2128,7 +2040,7 @@ fn export_notes(
     let (items, bookmarks) = {
         let r = reader.borrow();
         let spine = &r.spine;
-        let items = crate::export::items_from_sidecar(&r.annotations, &[], &|c| {
+        let items = crate::export::items_from_sidecar(&r.store.sidecar(), &[], &|c| {
             spine.iter().position(|p| p == c).map(|i| i + 1)
         });
         let bookmarks = r

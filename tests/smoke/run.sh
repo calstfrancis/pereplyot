@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Headless smoke test: drives the real binary under Xvfb and checks the sidecar it writes.
-# Usage: tests/smoke/run.sh [path/to/pereplyot]   (needs Xvfb, xdotool, ImageMagick, python3)
+# Usage: [SMOKE_CASES="plain epub"] [SMOKE_KEEP=1] tests/smoke/run.sh [path/to/pereplyot]   (needs Xvfb, xdotool, ImageMagick, python3)
 # PDFIUM_LIB_PATH must point at a directory containing libpdfium.so.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -77,6 +77,15 @@ reader_window() {
 
 screenshot() { import -window root "$1" 2>/dev/null; }
 
+snippets() {
+    annotations_json | python3 -c 'import sys,json
+try:
+    d=json.load(sys.stdin)
+    print(" | ".join((a.get("snippet") or "").strip() for a in d.get("annotations",[])))
+except Exception:
+    print("")'
+}
+
 annotations_json() {
     local f
     f="$(find "$WORK/h/data" -path '*annotations*' -name '*.json' 2>/dev/null | head -1)"
@@ -148,6 +157,21 @@ except Exception as e:
     bare_expect="$(printf '%s' "$expect" | tr -cd '[:alnum:] ')"
     check "$label: dragging over a line highlights that line" "$([ "$bare_got" = "$bare_expect" ] && echo 1 || echo 0)" "(got '$got')" "$known_geometry"
     check "$label: the quote keeps its punctuation" "$([ "$got" = "$expect" ] && echo 1 || echo 0)" "(got '$got')" "${known_punct:-$known_geometry}"
+    if [ "$label" = plain ]; then
+        local on off
+        on="$(python3 "$HERE/text_bands.py" "$WORK/$label-marked.png" --has-highlight)"
+        check "$label: the highlight is drawn on the page" "$([ "${on:-0}" -gt 200 ] && echo 1 || echo 0)" "(amber pixels: $on)"
+        xdotool key ctrl+z
+        sleep 1
+        screenshot "$WORK/$label-undone.png"
+        off="$(python3 "$HERE/text_bands.py" "$WORK/$label-undone.png" --has-highlight)"
+        check "$label: Ctrl+Z removes it from the page and the saved file" "$([ "${off:-1}" -lt 20 ] && [ -z "$(snippets)" ] && echo 1 || echo 0)" "(amber pixels: $off, saved: '$(snippets)')"
+        xdotool key ctrl+shift+z
+        sleep 1
+        screenshot "$WORK/$label-redone.png"
+        on="$(python3 "$HERE/text_bands.py" "$WORK/$label-redone.png" --has-highlight)"
+        check "$label: Ctrl+Shift+Z brings it back" "$([ "${on:-0}" -gt 200 ] && [ -n "$(snippets)" ] && echo 1 || echo 0)" "(amber pixels: $on, saved: '$(snippets)')"
+    fi
     stop_app
 }
 
@@ -175,16 +199,25 @@ try:
 except Exception:
     print("")')"
     check "epub: dragging over a paragraph highlights it" "$([ "$got" = "The quick brown fox jumps over the lazy dog." ] && echo 1 || echo 0)" "(got '$got')"
+    xdotool key ctrl+z
+    sleep 1
+    got="$(snippets)"
+    check "epub: Ctrl+Z removes the highlight from the saved file" "$([ -z "$got" ] && echo 1 || echo 0)" "(got '$got')"
+    xdotool key ctrl+shift+z
+    sleep 1
+    got="$(snippets)"
+    check "epub: Ctrl+Shift+Z brings it back" "$([ "$got" = "The quick brown fox jumps over the lazy dog." ] && echo 1 || echo 0)" "(got '$got')"
     stop_app
 }
 
 # Line order in the fixtures: "Page N", fox, Pack, Sphinx.
 KNOWN_PUNCT="fond-core select_text_range drops glyphs outside the drag's vertical band (.,\" etc.)"
 KNOWN_ROTATE="fond-core select_text_range assumes lines run along the page x axis; fails on /Rotate 90 pages with upright text"
-run_pdf_case plain plain.pdf y 2 "Pack my box with five dozen liquor jugs." "" "$KNOWN_PUNCT"
-run_pdf_case cropbox cropbox.pdf y 2 "Pack my box with five dozen liquor jugs." "" "$KNOWN_PUNCT"
-run_pdf_case rotated rotated.pdf y 2 "Pack my box with five dozen liquor jugs." "$KNOWN_ROTATE"
-run_epub_case
+want() { [ -z "${SMOKE_CASES:-}" ] || [[ " $SMOKE_CASES " == *" $1 "* ]]; }
+want plain && run_pdf_case plain plain.pdf y 2 "Pack my box with five dozen liquor jugs." "" "$KNOWN_PUNCT"
+want cropbox && run_pdf_case cropbox cropbox.pdf y 2 "Pack my box with five dozen liquor jugs." "" "$KNOWN_PUNCT"
+want rotated && run_pdf_case rotated rotated.pdf y 2 "Pack my box with five dozen liquor jugs." "$KNOWN_ROTATE"
+want epub && run_epub_case
 
 echo
 if [ "$FAILS" -eq 0 ]; then echo "smoke: all passed"; else echo "smoke: $FAILS failed"; exit 1; fi

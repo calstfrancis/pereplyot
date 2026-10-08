@@ -20,6 +20,7 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use gtk4::Orientation;
 
+pub mod annotation_store;
 pub mod annotations;
 pub mod epub;
 pub mod export;
@@ -179,6 +180,23 @@ pub(crate) fn page_text(page: &pdfium_render::prelude::PdfPage) -> String {
     page.text()
         .map(|t| t.chars().iter().filter_map(|c| c.unicode_char()).collect())
         .unwrap_or_default()
+}
+
+/// Give `widget` keyboard focus without letting GTK scroll the enclosing ScrolledWindow to reveal
+/// it. Focusing a page widget taller than the window otherwise jumps the view away from the text
+/// that was just marked.
+pub(crate) fn grab_focus_keeping_scroll(widget: &impl IsA<gtk4::Widget>) {
+    let scrolled = widget
+        .ancestor(gtk4::ScrolledWindow::static_type())
+        .and_then(|a| a.downcast::<gtk4::ScrolledWindow>().ok());
+    let saved = scrolled
+        .as_ref()
+        .map(|s| (s.hadjustment().value(), s.vadjustment().value()));
+    widget.grab_focus();
+    if let (Some(s), Some((h, v))) = (scrolled, saved) {
+        s.hadjustment().set_value(h);
+        s.vadjustment().set_value(v);
+    }
 }
 
 /// Let keys 1-4 choose a colour while a selection popover is open. The popover takes keyboard
