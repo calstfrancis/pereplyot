@@ -149,7 +149,6 @@ pub(super) fn install_notes_sidebar(
                     fond_annot::AnnotationKind::Underline => "Underline",
                     fond_annot::AnnotationKind::Strikeout => "Strikeout",
                     fond_annot::AnnotationKind::Note => "Note",
-                    #[allow(unreachable_patterns)]
                     // AnnotationKind is non_exhaustive from fond-core's next rev
                     _ => "Annotation",
                 };

@@ -23,9 +23,15 @@
 - Internal: a headless smoke test (`tests/smoke/run.sh`, run in CI) drives the real app under
   Xvfb through open → select → mark for PDF (plain, cropped, rotated) and EPUB, and checks
   the saved annotation, that the highlight is drawn, and that Ctrl+Z / Ctrl+Shift+Z undo and redo it.
-- Known, not yet fixed (tracked in the smoke test): in the shared selection code, dragging
-  along a line can drop its trailing punctuation from the saved quote, and a drag on an
-  upright page that carries `/Rotate 90` selects the whole page.
+- **Fixed: a highlight dragged along a line no longer loses its trailing full stop, comma or
+  quote mark** (it was kept only if the pointer happened to cross the glyph's ink), so quotes
+  saved and exported by Typst/LaTeX/Markdown are complete.
+- **Fixed: dragging over one line of an upright page that carries `/Rotate 90` selected the
+  whole page.** Selection now follows the page as it is displayed (landscape scans stored on
+  a portrait sheet are common).
+- **Annotation files from a newer version are no longer set aside as damaged.** An
+  annotation kind or field this version doesn't know is kept untouched through a load and
+  save (fond-core now tolerates both).
 
 ## [0.10.0] "Fair Copy" — 2026-10-06
 

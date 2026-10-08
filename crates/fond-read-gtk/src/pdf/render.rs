@@ -120,7 +120,6 @@ pub(super) fn render_pdf_page_texture(
             }
             fond_annot::AnnotationKind::Underline => fond_doc::MarkupKind::Underline,
             fond_annot::AnnotationKind::Strikeout => fond_doc::MarkupKind::Strikeout,
-            #[allow(unreachable_patterns)]
             // AnnotationKind is non_exhaustive from fond-core's next rev
             _ => continue,
         };

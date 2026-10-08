@@ -441,7 +441,6 @@ pub(super) fn save_drag_annotation(
                 fond_annot::AnnotationKind::Underline => "Underline added",
                 fond_annot::AnnotationKind::Strikeout => "Strikeout added",
                 fond_annot::AnnotationKind::Note => "Annotation added",
-                #[allow(unreachable_patterns)]
                 // AnnotationKind is non_exhaustive from fond-core's next rev
                 _ => "Annotation added",
             };

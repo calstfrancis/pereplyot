@@ -211,12 +211,10 @@ except Exception:
 }
 
 # Line order in the fixtures: "Page N", fox, Pack, Sphinx.
-KNOWN_PUNCT="fond-core select_text_range drops glyphs outside the drag's vertical band (.,\" etc.)"
-KNOWN_ROTATE="fond-core select_text_range assumes lines run along the page x axis; fails on /Rotate 90 pages with upright text"
 want() { [ -z "${SMOKE_CASES:-}" ] || [[ " $SMOKE_CASES " == *" $1 "* ]]; }
-want plain && run_pdf_case plain plain.pdf y 2 "Pack my box with five dozen liquor jugs." "" "$KNOWN_PUNCT"
-want cropbox && run_pdf_case cropbox cropbox.pdf y 2 "Pack my box with five dozen liquor jugs." "" "$KNOWN_PUNCT"
-want rotated && run_pdf_case rotated rotated.pdf y 2 "Pack my box with five dozen liquor jugs." "$KNOWN_ROTATE"
+want plain && run_pdf_case plain plain.pdf y 2 "Pack my box with five dozen liquor jugs."
+want cropbox && run_pdf_case cropbox cropbox.pdf y 2 "Pack my box with five dozen liquor jugs."
+want rotated && run_pdf_case rotated rotated.pdf y 2 "Pack my box with five dozen liquor jugs."
 want epub && run_epub_case
 
 echo
