@@ -45,6 +45,7 @@ pub(super) struct PdfUi {
     pub(super) search_next: gtk4::Button,
     pub(super) search_count: gtk4::Label,
     pub(super) link_back: gtk4::Button,
+    pub(super) link_forward: gtk4::Button,
     pub(super) hint: gtk4::Label,
     pub(super) picture: gtk4::Picture,
     pub(super) scroll: gtk4::ScrolledWindow,

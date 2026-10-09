@@ -266,6 +266,40 @@ except Exception:
     stop_app
 }
 
+same_view() { # same_view A B -> 1 when the text on the page of two screenshots is the same
+    local ga gb n
+    ga="$(text_bands "$1")"; gb="$(text_bands "$2")"
+    [ -n "$ga" ] && [ -n "$gb" ] || { echo 0; return; }
+    read -r ax0 ay0 ax1 ay1 <<<"$ga"
+    read -r bx0 by0 bx1 by1 <<<"$gb"
+    convert "$1" -crop "$((ax1 - ax0 + 1))x$((ay1 - ay0 + 1))+$ax0+$ay0" +repage "$WORK/cmp-a.png"
+    convert "$2" -crop "$((bx1 - bx0 + 1))x$((by1 - by0 + 1))+$bx0+$by0" +repage "$WORK/cmp-b.png"
+    n="$(compare -metric AE -fuzz 8% "$WORK/cmp-a.png" "$WORK/cmp-b.png" null: 2>&1 | grep -oE '^[0-9]+' | head -1)"
+    [ "${n:-999999}" -lt 60 ] && echo 1 || echo 0
+}
+
+run_history_case() {
+    start_app "$FX/plain.pdf"
+    local w
+    w="$(reader_window)" || { check "history: reader window opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
+    sleep 2
+    xdotool windowfocus "$w" 2>/dev/null
+    screenshot "$WORK/hist-a.png"
+    xdotool key End
+    sleep 1.5
+    screenshot "$WORK/hist-b.png"
+    xdotool key alt+Left
+    sleep 1.5
+    screenshot "$WORK/hist-c.png"
+    xdotool key alt+Right
+    sleep 1.5
+    screenshot "$WORK/hist-d.png"
+    check "history: End moves to another page" "$([ "$(same_view "$WORK/hist-a.png" "$WORK/hist-b.png")" = 0 ] && echo 1 || echo 0)"
+    check "history: Alt+Left goes back to the page you came from" "$(same_view "$WORK/hist-a.png" "$WORK/hist-c.png")"
+    check "history: Alt+Right goes forward again" "$(same_view "$WORK/hist-b.png" "$WORK/hist-d.png")"
+    stop_app
+}
+
 run_epub_case() {
     start_app "$FX/book.epub"
     local w
@@ -330,6 +364,7 @@ want() { [ -z "${SMOKE_CASES:-}" ] || [[ " $SMOKE_CASES " == *" $1 "* ]]; }
 want plain && run_pdf_case plain plain.pdf y 2 "Pack my box with five dozen liquor jugs."
 want cropbox && run_pdf_case cropbox cropbox.pdf y 2 "Pack my box with five dozen liquor jugs."
 want rotated && run_pdf_case rotated rotated.pdf y 2 "Pack my box with five dozen liquor jugs."
+want history && run_history_case
 want thumbs && run_thumbs_case
 want reading && run_reading_case
 want epub && run_epub_case

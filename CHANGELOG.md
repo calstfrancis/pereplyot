@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- **Back and Forward through everywhere you have jumped.** Back used to exist only for links.
+  Now every jump is remembered, whether it came from a link, the Contents, a thumbnail, a note
+  or bookmark in the sidebar, typing a page number, Home/End, or a search result: **Alt+Left**
+  returns to where you were and **Alt+Right** goes forward again, with the status bar saying
+  which page each leads to. Stepping through search results counts as one trip, not one entry
+  per match.
 - **Reading mode: a PDF that reads like an EPUB.** The old Text view is now **Reading** (the
   named toggle in the status bar, or `T`): the document re-set as clean, restylable text.
   Running headers, footers and page numbers are removed from the flow; two-column pages read

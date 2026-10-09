@@ -101,6 +101,8 @@ pub(super) fn install_search(ui: &PdfUi) {
                                     .flatten();
                                 if let Some(page) = first {
                                     r.search_current = 0;
+                                    let from = r.page;
+                                    r.history.record(from, page, JumpKind::Search);
                                     r.page = page;
                                 }
                                 search_count.set_text(&label(&r, scanning.get()));
@@ -111,6 +113,7 @@ pub(super) fn install_search(ui: &PdfUi) {
                             scrollbar_ticks::queue_ticks(&reader);
                             if let Some(page) = first_page {
                                 crate::perf::mark("search first match shown");
+                                notify_nav_changed(&reader);
                                 goto_search_match(page, None);
                             }
                         }
@@ -177,6 +180,8 @@ pub(super) fn install_search(ui: &PdfUi) {
                     r.search_current - 1
                 };
                 let page = r.search_matches[r.search_current].page;
+                let from = r.page;
+                r.history.record(from, page, JumpKind::Search);
                 r.page = page;
                 search_count.set_text(&format!(
                     "{} of {}",
@@ -186,6 +191,7 @@ pub(super) fn install_search(ui: &PdfUi) {
                 (previous_page, page)
             };
             scrollbar_ticks::queue_ticks(&reader);
+            notify_nav_changed(&reader);
             goto_search_match(page, Some(previous_page));
         });
     }
@@ -202,6 +208,8 @@ pub(super) fn install_search(ui: &PdfUi) {
                 let previous_page = r.search_matches[r.search_current].page;
                 r.search_current = (r.search_current + 1) % r.search_matches.len();
                 let page = r.search_matches[r.search_current].page;
+                let from = r.page;
+                r.history.record(from, page, JumpKind::Search);
                 r.page = page;
                 search_count.set_text(&format!(
                     "{} of {}",
@@ -211,6 +219,7 @@ pub(super) fn install_search(ui: &PdfUi) {
                 (previous_page, page)
             };
             scrollbar_ticks::queue_ticks(&reader);
+            notify_nav_changed(&reader);
             goto_search_match(page, Some(previous_page));
         });
     }

@@ -6,17 +6,10 @@ pub(super) struct SidebarParts {
     pub(super) notes_scroll: gtk4::ScrolledWindow,
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn build_sidebar(
-    continuous_scroll: &gtk4::ScrolledWindow,
-    continuous_toggle: &gtk4::ToggleButton,
     outline_entries: &[fond_doc::PdfOutlineEntry],
     reader: &Rc<RefCell<ReaderState>>,
-    render: &Rc<dyn Fn()>,
 ) -> SidebarParts {
-    let render = render.clone();
-    let continuous_scroll = continuous_scroll.clone();
-    let continuous_toggle = continuous_toggle.clone();
     let reader = reader.clone();
     // Contents/Notes sidebar: persistent (not a popover) so it stays visible while
     // navigating, per Cal's request. Both panels share one Paned start-child slot via a
@@ -37,20 +30,12 @@ pub(super) fn build_sidebar(
             }
             if let Some(page) = entry.page {
                 let reader = reader.clone();
-                let render = render.clone();
-                let continuous_toggle = continuous_toggle.clone();
-                let continuous_scroll = continuous_scroll.clone();
                 row.connect_clicked(move |_| {
                     let target = {
                         let r = reader.borrow();
                         (page.saturating_sub(1)).min(r.count.saturating_sub(1))
                     };
-                    if continuous_toggle.is_active() {
-                        scroll_continuous_to_page(&reader, &continuous_scroll, target);
-                    } else {
-                        reader.borrow_mut().page = target;
-                        render();
-                    }
+                    jump(&reader, target, JumpKind::Outline);
                 });
             } else {
                 row.set_sensitive(false);
@@ -69,8 +54,7 @@ pub(super) fn build_sidebar(
     // or `adw::ViewSwitcher`, to match the rest of this reader's hand-built toggle style and
     // to get `ToggleButton::set_group`'s native radio behaviour (exactly one active, clicking
     // the active one again does nothing) for free.
-    let (thumbnails_scroll, trigger_thumbnails) =
-        build_thumbnails_sidebar(&reader, &render, &continuous_toggle, &continuous_scroll);
+    let (thumbnails_scroll, trigger_thumbnails) = build_thumbnails_sidebar(&reader);
 
     let outline_tab_toggle = gtk4::ToggleButton::with_label("Outline");
     let thumbnails_tab_toggle = gtk4::ToggleButton::with_label("Thumbnails");

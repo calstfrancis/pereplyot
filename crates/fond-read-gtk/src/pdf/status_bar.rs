@@ -7,6 +7,7 @@ pub(super) struct StatusBarParts {
     pub(super) search_next: gtk4::Button,
     pub(super) search_count: gtk4::Label,
     pub(super) link_back: gtk4::Button,
+    pub(super) link_forward: gtk4::Button,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -65,7 +66,12 @@ pub(super) fn build_status_bar(
     link_back.set_visible(false);
     link_back.set_tooltip_text(Some("Return to where you followed a link from (Alt+Left)"));
     statusbar.append(&nav);
+    let link_forward = gtk4::Button::new();
+    link_forward.add_css_class("flat");
+    link_forward.set_visible(false);
+    link_forward.set_tooltip_text(Some("Go forward again after going back (Alt+Right)"));
     statusbar.append(&link_back);
+    statusbar.append(&link_forward);
     statusbar.append(&search_entry);
     statusbar.append(&search_count);
     statusbar.append(&search_prev);
@@ -104,5 +110,6 @@ pub(super) fn build_status_bar(
         search_next,
         search_count,
         link_back,
+        link_forward,
     }
 }

@@ -19,9 +19,6 @@ pub(super) const THUMBNAIL_GRID_WIDTH: u32 = 140;
 /// long document.
 pub(super) fn build_thumbnails_sidebar(
     reader: &Rc<RefCell<ReaderState>>,
-    render: &Rc<dyn Fn()>,
-    continuous_toggle: &gtk4::ToggleButton,
-    continuous_scroll: &gtk4::ScrolledWindow,
 ) -> (gtk4::ScrolledWindow, Rc<dyn Fn()>) {
     let count = reader.borrow().count;
 
@@ -50,16 +47,8 @@ pub(super) fn build_thumbnails_sidebar(
 
         {
             let reader = reader.clone();
-            let render = render.clone();
-            let continuous_toggle = continuous_toggle.clone();
-            let continuous_scroll = continuous_scroll.clone();
             button.connect_clicked(move |_| {
-                if continuous_toggle.is_active() {
-                    scroll_continuous_to_page(&reader, &continuous_scroll, page);
-                } else {
-                    reader.borrow_mut().page = page;
-                    render();
-                }
+                jump(&reader, page, JumpKind::Thumbnail);
             });
         }
 

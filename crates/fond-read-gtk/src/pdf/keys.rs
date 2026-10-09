@@ -4,7 +4,6 @@ pub(super) fn install_keys(ui: &PdfUi) {
     let PdfUi {
         reader,
         reader_tab,
-        render,
         undo,
         redo,
         quick_mark,
@@ -17,11 +16,10 @@ pub(super) fn install_keys(ui: &PdfUi) {
         zoom_out,
         zoom_in,
         zoom_fit_width,
-        continuous_toggle,
         text_toggle,
         search_entry,
         link_back,
-        continuous_scroll,
+        link_forward,
         ..
     } = ui.clone();
     {
@@ -35,12 +33,10 @@ pub(super) fn install_keys(ui: &PdfUi) {
         let prev = prev.clone();
         let next = next.clone();
         let reader = reader.clone();
-        let render = render.clone();
-        let continuous_toggle = continuous_toggle.clone();
-        let continuous_scroll = continuous_scroll.clone();
         let view_for_focus = view.clone();
         let bookmark_button = bookmark_button.clone();
         let link_back_key = link_back.clone();
+        let link_forward_key = link_forward.clone();
         let zoom_in_key = zoom_in.clone();
         let zoom_out_key = zoom_out.clone();
         let zoom_fit_key = zoom_fit_width.clone();
@@ -65,6 +61,13 @@ pub(super) fn install_keys(ui: &PdfUi) {
                 && link_back_key.is_visible()
             {
                 link_back_key.emit_clicked();
+                return glib::Propagation::Stop;
+            }
+            if modifiers.contains(gdk::ModifierType::ALT_MASK)
+                && matches!(keyval, gdk::Key::Right | gdk::Key::KP_Right)
+                && link_forward_key.is_visible()
+            {
+                link_forward_key.emit_clicked();
                 return glib::Propagation::Stop;
             }
             if modifiers.contains(gdk::ModifierType::CONTROL_MASK) {
@@ -206,22 +209,12 @@ pub(super) fn install_keys(ui: &PdfUi) {
                     return glib::Propagation::Stop;
                 }
                 gdk::Key::Home | gdk::Key::KP_Home => {
-                    if continuous_toggle.is_active() {
-                        scroll_continuous_to_page(&reader, &continuous_scroll, 0);
-                    } else {
-                        reader.borrow_mut().page = 0;
-                        render();
-                    }
+                    jump(&reader, 0, JumpKind::Key);
                     return glib::Propagation::Stop;
                 }
                 gdk::Key::End | gdk::Key::KP_End => {
                     let last = reader.borrow().count.saturating_sub(1);
-                    if continuous_toggle.is_active() {
-                        scroll_continuous_to_page(&reader, &continuous_scroll, last);
-                    } else {
-                        reader.borrow_mut().page = last;
-                        render();
-                    }
+                    jump(&reader, last, JumpKind::Key);
                     return glib::Propagation::Stop;
                 }
                 _ => {}

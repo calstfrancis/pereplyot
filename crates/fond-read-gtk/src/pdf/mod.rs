@@ -83,6 +83,7 @@ use context_menu::*;
 use continuous::*;
 use dialogs::*;
 use drag_preview::*;
+use link_nav::{jump, notify_nav_changed, JumpKind, NavHistory, NavUi};
 use links::*;
 use nav::*;
 use ocr::*;
@@ -140,9 +141,9 @@ struct ReaderState {
     continuous_offsets: Vec<f64>,
     /// Jump to a page because a link was followed (records where we came from); set once the
     /// widgets it drives exist.
-    link_goto: Option<Rc<dyn Fn(u16)>>,
+    nav: Option<NavUi>,
     /// Pages we followed links away from, most recent last, for the Back button.
-    nav_back: Vec<u16>,
+    history: NavHistory,
     /// While the Text view is showing: where "go to page" navigation is redirected, and how
     /// zoom steps are applied (to the text size instead of the page render).
     text_goto: Option<Rc<dyn Fn(u16)>>,
@@ -385,6 +386,7 @@ pub fn show_pdf_reader(
         search_next,
         search_count,
         link_back,
+        link_forward,
     } = status_bar::build_status_bar(
         &header_end,
         &text_toggle,
@@ -446,22 +448,9 @@ pub fn show_pdf_reader(
         sidebar_box,
         notes_rows,
         notes_scroll,
-    } = sidebar::build_sidebar(
-        &continuous_scroll,
-        &continuous_toggle,
-        &outline_entries,
-        &reader,
-        &render,
-    );
-    let (rebuild_notes, quiet_notes) = notes::install_notes_sidebar(
-        host,
-        &reader,
-        &render,
-        &continuous_toggle,
-        &continuous_scroll,
-        &bookmark_button,
-        &notes_rows,
-    );
+    } = sidebar::build_sidebar(&outline_entries, &reader);
+    let (rebuild_notes, quiet_notes) =
+        notes::install_notes_sidebar(host, &reader, &bookmark_button, &notes_rows);
     {
         let store = reader.borrow().store.clone();
         let rebuild_notes = rebuild_notes.clone();
@@ -565,6 +554,7 @@ pub fn show_pdf_reader(
         search_next: search_next.clone(),
         search_count: search_count.clone(),
         link_back: link_back.clone(),
+        link_forward: link_forward.clone(),
         hint: hint.clone(),
         picture: picture.clone(),
         scroll: scroll.clone(),

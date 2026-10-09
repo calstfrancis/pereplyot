@@ -3,9 +3,6 @@ use super::*;
 pub(super) fn install_notes_sidebar(
     host: &Rc<dyn ReaderHost>,
     reader: &Rc<RefCell<ReaderState>>,
-    render: &Rc<dyn Fn()>,
-    continuous_toggle: &gtk4::ToggleButton,
-    continuous_scroll: &gtk4::ScrolledWindow,
     bookmark_button: &gtk4::Button,
     notes_rows: &gtk4::Box,
 ) -> (Rc<dyn Fn()>, Rc<Cell<bool>>) {
@@ -15,9 +12,6 @@ pub(super) fn install_notes_sidebar(
         let notes_rows = notes_rows.clone();
         let host = host.clone();
         let reader = reader.clone();
-        let render = render.clone();
-        let continuous_toggle = continuous_toggle.clone();
-        let continuous_scroll = continuous_scroll.clone();
         let bookmark_button = bookmark_button.clone();
         let rebuild_notes_cell_inner = rebuild_notes_cell.clone();
         let quiet_notes = quiet_notes.clone();
@@ -68,19 +62,11 @@ pub(super) fn install_notes_sidebar(
                     row.append(&remove_button);
                     {
                         let reader = reader.clone();
-                        let render = render.clone();
-                        let continuous_toggle = continuous_toggle.clone();
-                        let continuous_scroll = continuous_scroll.clone();
                         crate::make_jump(&label, move || {
                             let target = (page_num.saturating_sub(1))
                                 .min(reader.borrow().count.saturating_sub(1) as u32)
                                 as u16;
-                            if continuous_toggle.is_active() {
-                                scroll_continuous_to_page(&reader, &continuous_scroll, target);
-                            } else {
-                                reader.borrow_mut().page = target;
-                                render();
-                            }
+                            jump(&reader, target, JumpKind::Annotation);
                         });
                     }
                     {
@@ -140,19 +126,11 @@ pub(super) fn install_notes_sidebar(
 
                 {
                     let reader = reader.clone();
-                    let render = render.clone();
-                    let continuous_toggle = continuous_toggle.clone();
-                    let continuous_scroll = continuous_scroll.clone();
                     crate::make_jump(&header_label, move || {
                         let target = (page_num.saturating_sub(1))
                             .min(reader.borrow().count.saturating_sub(1) as u32)
                             as u16;
-                        if continuous_toggle.is_active() {
-                            scroll_continuous_to_page(&reader, &continuous_scroll, target);
-                        } else {
-                            reader.borrow_mut().page = target;
-                            render();
-                        }
+                        jump(&reader, target, JumpKind::Annotation);
                     });
                 }
 

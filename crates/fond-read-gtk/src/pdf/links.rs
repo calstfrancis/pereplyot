@@ -39,7 +39,7 @@ pub(super) fn follow_link(
     render_w: f64,
     render_h: f64,
 ) -> bool {
-    let (target, goto) = {
+    let target = {
         let r = reader.borrow();
         if r.rotation != 0 || render_w < 1.0 || render_h < 1.0 {
             return false;
@@ -48,13 +48,11 @@ pub(super) fn follow_link(
             return false;
         };
         let (x, y) = geom.px_to_pdf(px, py, render_w, render_h);
-        (link_at(&r, page, x, y), r.link_goto.clone())
+        link_at(&r, page, x, y)
     };
     match target {
         Some(LinkTarget::Page(p)) => {
-            if let Some(goto) = goto {
-                goto(p);
-            }
+            jump(reader, p, JumpKind::Link);
             true
         }
         Some(LinkTarget::Uri(uri)) => {
