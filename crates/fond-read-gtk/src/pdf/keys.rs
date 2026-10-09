@@ -9,6 +9,8 @@ pub(super) fn install_keys(ui: &PdfUi) {
         quick_mark,
         reflow_popover,
         palette,
+        palette_choice,
+        style_drop,
         view,
         prev,
         next,
@@ -41,6 +43,8 @@ pub(super) fn install_keys(ui: &PdfUi) {
         let zoom_out_key = zoom_out.clone();
         let zoom_fit_key = zoom_fit_width.clone();
         let palette_for_keys = palette.clone();
+        let palette_choice_key = palette_choice.clone();
+        let style_drop_key = style_drop.clone();
         let quick_mark_for_keys = quick_mark.clone();
         let reflow_popover_for_keys = reflow_popover.clone();
         let text_toggle_key = text_toggle.clone();
@@ -185,6 +189,18 @@ pub(super) fn install_keys(ui: &PdfUi) {
                     crate::palette::select_color(&palette_for_keys, true, i);
                     return glib::Propagation::Stop;
                 }
+            }
+            if modifiers.is_empty() && matches!(keyval, gdk::Key::a | gdk::Key::A) {
+                let area = MARK_KIND_OPTIONS.len() as u32 - 1;
+                if palette_choice_key.get().is_none() {
+                    crate::palette::select_color(&palette_for_keys, true, 0);
+                }
+                style_drop_key.set_selected(if style_drop_key.selected() == area {
+                    0
+                } else {
+                    area
+                });
+                return glib::Propagation::Stop;
             }
             // Left/Right, Up/Down, Space/Backspace, and Page_Up/Page_Down reuse the
             // prev/next buttons' own click handlers (continuous-scroll-aware,

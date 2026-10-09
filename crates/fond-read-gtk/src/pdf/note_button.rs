@@ -13,7 +13,7 @@ pub(super) fn install_note_button(ui: &PdfUi) {
         let reader = reader.clone();
         let dialog = reader_window.clone();
         note_button.connect_clicked(move |_| {
-            show_pdf_note_dialog(&host, &reader, &dialog);
+            show_pdf_note_dialog(&host, &reader, &dialog, None);
         });
     }
 }

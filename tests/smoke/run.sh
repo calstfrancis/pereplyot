@@ -494,6 +494,36 @@ run_figures_case() {
     stop_app
 }
 
+run_area_case() {
+    start_app "$FX/figures.pdf"
+    local w
+    w="$(reader_window)" || { check "area: reader window opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
+    sleep 2
+    xdotool windowfocus "$w" 2>/dev/null
+    xdotool key a
+    sleep 0.5
+    xdotool mousemove 200 300 mousedown 1 mousemove 400 380 mousemove 600 450 mouseup 1
+    sleep 1.5
+    screenshot "$WORK/area.png"
+    local saved outline
+    saved="$(annotations_json | python3 -c 'import sys,json
+try:
+    a=json.load(sys.stdin)["annotations"][0]
+    r=a.get("rect") or []
+    print(a.get("kind"), len(r), "ok" if len(r)==4 and r[2]>r[0] and r[3]>r[1] else "bad")
+except Exception:
+    print("")')"
+    check "area: the Area tool (A) saves a page rectangle" "$([[ "$saved" == "area 4 ok" ]] && echo 1 || echo 0)" "(got '$saved')"
+    xdotool key ctrl+z
+    sleep 1
+    check "area: Ctrl+Z removes the clip" "$([ -z "$(annotations_json | python3 -c 'import sys,json
+try:
+    print(len(json.load(sys.stdin)["annotations"]))
+except Exception:
+    print(0)' | grep -v '^0$')" ] && echo 1 || echo 0)" "(annotations left: $(annotations_json | head -c 80))"
+    stop_app
+}
+
 run_epub_case() {
     start_app "$FX/book.epub"
     local w
@@ -566,6 +596,7 @@ want hover && run_hover_case
 want thumbs && run_thumbs_case
 want reading && run_reading_case
 want figures && run_figures_case
+want area && run_area_case
 want epub && run_epub_case
 want mixed && run_mixed_case
 

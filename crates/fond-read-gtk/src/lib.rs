@@ -22,6 +22,7 @@ use gtk4::Orientation;
 
 pub mod annotation_store;
 pub mod annotations;
+pub mod clip;
 pub mod epub;
 pub mod export;
 pub mod fsutil;

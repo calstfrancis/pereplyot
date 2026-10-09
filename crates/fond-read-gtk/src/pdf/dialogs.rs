@@ -8,10 +8,10 @@ pub(super) fn export_notes(
     title: &str,
     reader_window: &adw::Window,
 ) {
-    let (items, bookmarks) = {
+    let (items, bookmarks, clips, path) = {
         let r = reader.borrow();
-        let items =
-            crate::export::items_from_sidecar(&r.store.sidecar(), &r.page_labels, &|_| None);
+        let items = crate::export::items_with_figures(&r.store.sidecar(), &r.page_labels);
+        let clips = crate::export::clips_of(&r.store.sidecar());
         let bookmarks = r
             .bookmarks
             .iter()
@@ -24,9 +24,17 @@ pub(super) fn export_notes(
                 format!("p. {label}")
             })
             .collect();
-        (items, bookmarks)
+        (items, bookmarks, clips, r.path.clone())
     };
-    crate::export::show_export_dialog(host, reader_window, title, items, bookmarks);
+    crate::export::show_export_dialog(
+        host,
+        reader_window,
+        title,
+        items,
+        bookmarks,
+        Some(path),
+        clips,
+    );
 }
 
 /// A small modal that anchors the reader's *current* physical page to its own printed page
@@ -163,6 +171,7 @@ pub(super) fn show_pdf_note_dialog(
     host: &Rc<dyn ReaderHost>,
     reader: &Rc<RefCell<ReaderState>>,
     reader_window: &adw::Window,
+    at: Option<[f64; 2]>,
 ) {
     let current_page = reader.borrow().page as u32 + 1;
 
@@ -249,7 +258,7 @@ pub(super) fn show_pdf_note_dialog(
                 return;
             }
 
-            let annotation = fond_annot::Annotation::drawn(
+            let mut annotation = fond_annot::Annotation::drawn(
                 fond_annot::AnnotationKind::Note,
                 current_page,
                 selection_quads.clone(),
@@ -257,6 +266,11 @@ pub(super) fn show_pdf_note_dialog(
                 Some(text),
                 None,
             );
+            if selection_quads.is_empty() {
+                annotation.set_position(Some(
+                    at.unwrap_or_else(|| sticky_default_position(&reader.borrow(), current_page)),
+                ));
+            }
             let store = reader.borrow().store.clone();
             match store.add(annotation) {
                 Ok(()) => {
@@ -269,4 +283,27 @@ pub(super) fn show_pdf_note_dialog(
     }
 
     dialog.present();
+}
+
+/// Where a sticky note goes when nobody chose a spot: down the page's top-right corner, below
+/// the ones already there.
+fn sticky_default_position(r: &ReaderState, page: u32) -> [f64; 2] {
+    let stacked = r
+        .store
+        .sidecar()
+        .annotations
+        .iter()
+        .filter(|a| a.page == Some(page) && shapes::shape_of(a) == shapes::Shape::Sticky)
+        .count() as f64;
+    let Some(geom) = r.geom((page - 1) as u16) else {
+        return [20.0, 780.0];
+    };
+    let (dw, dh) = geom.display_size();
+    let (x, y) = geom.px_to_pdf(
+        dw as f64 - shapes::STICKY_PT - 12.0,
+        12.0 + stacked * (shapes::STICKY_PT + 6.0),
+        dw as f64,
+        dh as f64,
+    );
+    [x, y]
 }

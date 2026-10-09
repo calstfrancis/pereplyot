@@ -90,6 +90,7 @@ pub(super) fn open_pdf(
         text_zoom: None,
         text_search: None,
         derived_outline: None,
+        notes_focus: None,
         figure_waiters: Vec::new(),
         page_labels,
         rotation: 0,

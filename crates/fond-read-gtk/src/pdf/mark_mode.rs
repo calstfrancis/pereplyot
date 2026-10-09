@@ -45,6 +45,9 @@ pub(super) fn install_mark_mode(ui: &PdfUi) {
                 Some(fond_annot::AnnotationKind::Highlight) => "Drag over text to highlight it",
                 Some(fond_annot::AnnotationKind::Underline) => "Drag over text to underline it",
                 Some(fond_annot::AnnotationKind::Strikeout) => "Drag over text to strike it out",
+                Some(fond_annot::AnnotationKind::Area) => {
+                    "Drag a box round a figure, table or equation to clip it"
+                }
                 Some(_) => "Drag over the page",
             };
             hint.set_text(text);

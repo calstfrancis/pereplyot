@@ -28,7 +28,15 @@ pub(super) fn export_notes(
             .collect();
         (items, bookmarks)
     };
-    crate::export::show_export_dialog(host, reader_window, title, items, bookmarks);
+    crate::export::show_export_dialog(
+        host,
+        reader_window,
+        title,
+        items,
+        bookmarks,
+        None,
+        Vec::new(),
+    );
 }
 
 /// Replace the stylesheet registered on `view`'s `UserContentManager` with one built from the

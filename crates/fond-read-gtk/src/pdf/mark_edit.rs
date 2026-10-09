@@ -77,8 +77,28 @@ fn set_selected(reader: &Rc<RefCell<ReaderState>>, id: Option<String>) {
     if reader.borrow().mark_edit.selected == id {
         return;
     }
-    reader.borrow_mut().mark_edit.selected = id;
+    reader.borrow_mut().mark_edit.selected = id.clone();
     mark_layer::redraw_all(reader);
+    if let Some(id) = id {
+        let focus = reader.borrow().notes_focus.clone();
+        if let Some(focus) = focus {
+            focus(&id);
+        }
+    }
+}
+
+/// Outline the mark `id` for a moment, so the eye finds it after a jump from the Notes list.
+pub(super) fn flash(reader: &Rc<RefCell<ReaderState>>, id: &str) {
+    reader.borrow_mut().mark_edit.hovered = Some(id.to_string());
+    mark_layer::redraw_all(reader);
+    let reader = reader.clone();
+    let id = id.to_string();
+    glib::timeout_add_local_once(std::time::Duration::from_millis(1600), move || {
+        if reader.borrow().mark_edit.hovered.as_deref() == Some(id.as_str()) {
+            reader.borrow_mut().mark_edit.hovered = None;
+            mark_layer::redraw_all(&reader);
+        }
+    });
 }
 
 /// Delete removes the selected mark and Escape lets go of it. Returns whether the key was used.

@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+- **Area capture.** Press **A** (or choose *Area* in the mark-style menu) and drag a box round a
+  figure, table or equation: it is kept as a dashed, tinted rectangle on the page with the text
+  the page has inside it. Right-click it to add a note, a tag or a colour. When you export
+  notes, each clipped area becomes a picture at print sharpness in a `…-figures` folder beside
+  the file and a figure in the output — `#figure(image(…), caption: […])` in Typst, an image in
+  Markdown, a `figure` in LaTeX; the Typst is compiled by the real `typst` in a test.
+- **Sticky notes.** A note that isn't tied to text now has an icon on the page where you put it
+  (*right-click ▸ Add a note here*), and shows in the Notes list like any other.
+- **A bubble on every mark that has a note**, beside the highlight, so you can see at a glance
+  which ones you commented on.
+- **A richer Notes list.** Each card has a colour stripe, the kind and page, the quote, your note
+  and its tags. Click a card to jump to its mark, which flashes; click a mark on the page and its
+  card lights up and scrolls into view. *This page* narrows the list to the page you are
+  reading (and follows you), and a tag narrows it to that tag.
+- **Tags.** Type `#method` in a note and it is a tag; or pick from the tags already in use in
+  the mark's right-click menu. Tags are kept in the annotation file in a way older versions
+  of Kartoteka and Sputnik carry along untouched.
+- **Change a mark after the fact.** Right-click a mark to change its colour or switch it between
+  highlight, underline and strikeout, and *Merge with N overlapping marks* folds marks that
+  cross into one (their notes and tags joined).
 - **Figures and tables in Reading mode.** A chart, a diagram or a ruled table with a "Figure 3." or
   "Table 2." caption beside it now appears in the text as a picture of that part of the page,
   with its caption underneath or above as an ordinary paragraph; the axis labels and table cells

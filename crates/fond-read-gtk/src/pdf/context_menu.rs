@@ -44,6 +44,10 @@ pub(super) fn show_pdf_context_menu(
             )
         });
 
+    let click_point = page_geom
+        .filter(|_| render_w > 0 && render_h > 0)
+        .map(|g| g.px_to_pdf(click_x, click_y, render_w as f64, render_h as f64))
+        .map(|(x, y)| [x, y]);
     let popover = gtk4::Popover::new();
     popover.set_parent(parent);
     popover.set_pointing_to(Some(&gdk::Rectangle::new(
@@ -105,6 +109,35 @@ pub(super) fn show_pdf_context_menu(
             }
             rows.append(&kind_row);
 
+            if shapes::shape_of(&annotation) != shapes::Shape::Sticky {
+                rows.append(&colour_row(reader, &popover, &annotation));
+            }
+            if shapes::shape_of(&annotation) == shapes::Shape::Text
+                && annotation.kind != fond_annot::AnnotationKind::Note
+            {
+                rows.append(&kind_buttons(reader, &popover, &annotation));
+            }
+            let overlapping = overlapping_ids(&reader.borrow(), page, &annotation);
+            if !overlapping.is_empty() {
+                let merge = popover_button(
+                    &format!(
+                        "Merge with {} overlapping mark{}",
+                        overlapping.len(),
+                        if overlapping.len() == 1 { "" } else { "s" }
+                    ),
+                    false,
+                );
+                let host = host.clone();
+                let reader = reader.clone();
+                let popover = popover.clone();
+                let id = id.clone();
+                merge.connect_clicked(move |_| {
+                    popover.popdown();
+                    merge_marks(&host, &reader, page, &id, &overlapping);
+                });
+                rows.append(&merge);
+            }
+
             // Re-read from the page rather than trusting `snippet`, which for annotations
             // saved before `selection_text` existed has its words run together.
             let marked_text = selection_text(&reader.borrow(), page, &annotation.quadpoints)
@@ -145,6 +178,7 @@ pub(super) fn show_pdf_context_menu(
             let note_widget =
                 note_edit_widget(annotation.note.as_deref(), move |text| save_note(&text));
             rows.append(&note_widget);
+            rows.append(&tag_chips(reader, &popover, &annotation));
 
             rows.append(&popover_separator());
             let delete_button = popover_button("Delete annotation", true);
@@ -175,7 +209,7 @@ pub(super) fn show_pdf_context_menu(
                 if has_selection_here {
                     "Create note from selection…"
                 } else {
-                    "Add note here"
+                    "Add a note here"
                 },
                 false,
             );
@@ -185,7 +219,7 @@ pub(super) fn show_pdf_context_menu(
                 let popover = popover.clone();
                 let reader_window = reader_window.clone();
                 add_note.connect_clicked(move |_| {
-                    show_pdf_note_dialog(&host, &reader, &reader_window);
+                    show_pdf_note_dialog(&host, &reader, &reader_window, click_point);
                     popover.popdown();
                 });
             }
@@ -212,4 +246,253 @@ pub(super) fn show_pdf_context_menu(
         crate::grab_focus_keeping_scroll(&parent);
     });
     popover.popup();
+}
+
+/// A row of the palette's colours; choosing one recolours the mark.
+fn colour_row(
+    reader: &Rc<RefCell<ReaderState>>,
+    popover: &gtk4::Popover,
+    annotation: &fond_annot::Annotation,
+) -> gtk4::Widget {
+    let row = gtk4::Box::new(Orientation::Horizontal, 2);
+    row.set_margin_top(2);
+    for colour in crate::palette::HIGHLIGHT_COLORS.iter() {
+        let button = gtk4::Button::new();
+        button.add_css_class("flat");
+        button.set_tooltip_text(Some(colour.hex));
+        if let Some(swatch) = color_swatch(Some(colour.hex)) {
+            button.set_child(Some(&swatch));
+        }
+        if annotation
+            .color
+            .as_deref()
+            .is_some_and(|c| c.eq_ignore_ascii_case(colour.hex))
+        {
+            button.add_css_class("suggested-action");
+        }
+        let (reader, popover, id, hex) = (
+            reader.clone(),
+            popover.clone(),
+            annotation.id.clone(),
+            colour.hex.to_string(),
+        );
+        button.connect_clicked(move |_| {
+            popover.popdown();
+            let store = reader.borrow().store.clone();
+            let _ = store.update(&id, |a| a.color = Some(hex.clone()));
+        });
+        row.append(&button);
+    }
+    row.upcast()
+}
+
+/// Highlight, Underline and Strikeout as buttons; choosing one changes the mark's kind.
+fn kind_buttons(
+    reader: &Rc<RefCell<ReaderState>>,
+    popover: &gtk4::Popover,
+    annotation: &fond_annot::Annotation,
+) -> gtk4::Widget {
+    let row = gtk4::Box::new(Orientation::Horizontal, 0);
+    row.add_css_class("linked");
+    row.set_margin_top(2);
+    for (label, kind) in MARK_KIND_OPTIONS.iter().take(3) {
+        let button = gtk4::ToggleButton::with_label(label);
+        button.set_active(annotation.kind == *kind);
+        let (reader, popover, id, kind) = (
+            reader.clone(),
+            popover.clone(),
+            annotation.id.clone(),
+            *kind,
+        );
+        button.connect_clicked(move |_| {
+            popover.popdown();
+            let store = reader.borrow().store.clone();
+            let _ = store.update(&id, |a| a.kind = kind);
+        });
+        row.append(&button);
+    }
+    row.upcast()
+}
+
+fn bounds_of(quads: &[[f64; 8]]) -> Option<[f64; 4]> {
+    let mut out: Option<[f64; 4]> = None;
+    for q in quads {
+        let xs = [q[0], q[2], q[4], q[6]];
+        let ys = [q[1], q[3], q[5], q[7]];
+        let b = [
+            xs.iter().cloned().fold(f64::INFINITY, f64::min),
+            ys.iter().cloned().fold(f64::INFINITY, f64::min),
+            xs.iter().cloned().fold(f64::NEG_INFINITY, f64::max),
+            ys.iter().cloned().fold(f64::NEG_INFINITY, f64::max),
+        ];
+        out = Some(match out {
+            Some(o) => [
+                o[0].min(b[0]),
+                o[1].min(b[1]),
+                o[2].max(b[2]),
+                o[3].max(b[3]),
+            ],
+            None => b,
+        });
+    }
+    out
+}
+
+fn quads_touch(a: &[[f64; 8]], b: &[[f64; 8]]) -> bool {
+    a.iter().any(|qa| {
+        let ra = bounds_of(std::slice::from_ref(qa));
+        b.iter().any(|qb| {
+            let rb = bounds_of(std::slice::from_ref(qb));
+            matches!((ra, rb), (Some(x), Some(y))
+                if x[0] <= y[2] && y[0] <= x[2] && x[1] <= y[3] && y[1] <= x[3])
+        })
+    })
+}
+
+/// Other text marks on `page` whose lines cross those of `annotation`.
+fn overlapping_ids(r: &ReaderState, page: u16, annotation: &fond_annot::Annotation) -> Vec<String> {
+    if annotation.quadpoints.is_empty() {
+        return Vec::new();
+    }
+    r.store
+        .sidecar()
+        .annotations
+        .iter()
+        .filter(|a| {
+            a.id != annotation.id
+                && a.page == Some(page as u32 + 1)
+                && shapes::shape_of(a) == shapes::Shape::Text
+                && quads_touch(&annotation.quadpoints, &a.quadpoints)
+        })
+        .map(|a| a.id.clone())
+        .collect()
+}
+
+/// Fold the marks `others` into `id`: all their lines, their notes and tags, one mark.
+fn merge_marks(
+    host: &Rc<dyn ReaderHost>,
+    reader: &Rc<RefCell<ReaderState>>,
+    page: u16,
+    id: &str,
+    others: &[String],
+) {
+    let store = reader.borrow().store.clone();
+    let mut quads: Vec<[f64; 8]> = Vec::new();
+    let mut notes: Vec<String> = Vec::new();
+    let mut tags: Vec<String> = Vec::new();
+    for a in std::iter::once(id.to_string())
+        .chain(others.iter().cloned())
+        .filter_map(|i| store.get(&i))
+    {
+        for q in &a.quadpoints {
+            if !quads.contains(q) {
+                quads.push(*q);
+            }
+        }
+        if let Some(n) = a.note.as_deref().filter(|n| !n.trim().is_empty()) {
+            if !notes.iter().any(|x| x == n) {
+                notes.push(n.to_string());
+            }
+        }
+        for t in a.explicit_tags() {
+            if !tags.contains(&t) {
+                tags.push(t);
+            }
+        }
+    }
+    quads.sort_by(|a, b| {
+        let key = |q: &[f64; 8]| (-q[1].max(q[3]).max(q[5]).max(q[7]), q[0].min(q[2]));
+        key(a)
+            .partial_cmp(&key(b))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let snippet = selection_text(&reader.borrow(), page, &quads);
+    let result = store.update(id, |a| {
+        a.quadpoints = quads.clone();
+        if snippet.is_some() {
+            a.snippet = snippet.clone();
+        }
+        a.note = (!notes.is_empty()).then(|| notes.join("\n\n"));
+        a.set_explicit_tags(&tags);
+    });
+    if let Err(e) = result {
+        host.notify(&e);
+        return;
+    }
+    for other in others {
+        let _ = store.remove(other);
+    }
+    host.notify("Marks merged");
+}
+
+/// The tags already in use, to put on this mark with one click (a new tag is typed as #tag in
+/// the note), and the ones it has, to take off.
+fn tag_chips(
+    reader: &Rc<RefCell<ReaderState>>,
+    popover: &gtk4::Popover,
+    annotation: &fond_annot::Annotation,
+) -> gtk4::Widget {
+    let column = gtk4::Box::new(Orientation::Vertical, 2);
+    let mine = annotation.explicit_tags();
+    let in_use = notes::all_tags(&reader.borrow().store.sidecar());
+    let chips: Vec<(String, bool)> = mine
+        .iter()
+        .map(|t| (t.clone(), true))
+        .chain(
+            in_use
+                .into_iter()
+                .filter(|t| !mine.contains(t) && !annotation.tags().contains(t))
+                .take(8)
+                .map(|t| (t, false)),
+        )
+        .collect();
+    if chips.is_empty() {
+        return column.upcast();
+    }
+    let caption = gtk4::Label::new(Some("Tags — click to add or remove"));
+    caption.add_css_class("dim-label");
+    caption.add_css_class("caption");
+    caption.set_xalign(0.0);
+    caption.set_margin_top(4);
+    column.append(&caption);
+    let flow = gtk4::FlowBox::new();
+    flow.set_selection_mode(gtk4::SelectionMode::None);
+    flow.set_max_children_per_line(4);
+    for (tag, on) in chips {
+        let chip = gtk4::ToggleButton::with_label(&format!("#{tag}"));
+        chip.add_css_class("flat");
+        chip.add_css_class("caption");
+        chip.set_active(on);
+        let (reader, popover, id) = (reader.clone(), popover.clone(), annotation.id.clone());
+        chip.connect_clicked(move |_| {
+            popover.popdown();
+            let store = reader.borrow().store.clone();
+            let _ = store.update(&id, |a| {
+                let mut tags = a.explicit_tags();
+                if let Some(i) = tags.iter().position(|t| *t == tag) {
+                    tags.remove(i);
+                } else {
+                    tags.push(tag.clone());
+                }
+                a.set_explicit_tags(&tags);
+            });
+        });
+        flow.append(&chip);
+    }
+    column.append(&flow);
+    column.upcast()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn marks_whose_lines_cross_touch_and_distant_ones_do_not() {
+        let line = |x0: f64, x1: f64, top: f64| [x0, top, x1, top, x0, top - 10.0, x1, top - 10.0];
+        let a = [line(10.0, 100.0, 700.0)];
+        assert!(quads_touch(&a, &[line(90.0, 150.0, 695.0)]));
+        assert!(!quads_touch(&a, &[line(10.0, 100.0, 650.0)]));
+        assert_eq!(bounds_of(&a), Some([10.0, 690.0, 100.0, 700.0]));
+    }
 }

@@ -95,37 +95,47 @@ pub(super) struct Mark {
     pub kind: fond_doc::MarkupKind,
     pub quads: Vec<[f64; 8]>,
     pub rgba: [u8; 4],
+    pub shape: shapes::Shape,
+    /// The annotation has a comment, which is shown as a small bubble beside the mark.
+    pub has_note: bool,
 }
 
 pub(super) fn marks_for(r: &ReaderState, page: u16, geom: PageGeom) -> Vec<Mark> {
     let current_page = page as u32 + 1;
     let mut marks = Vec::new();
-    // A freestanding Note (no quadpoints) is skipped; a Note made from a text selection carries
-    // real quadpoints and is drawn like a highlight. Each mark keeps its own colour.
+    // A Note made from a text selection carries quadpoints and is drawn like a highlight; a
+    // freestanding one is an icon at its position; an Area is an outlined rectangle. Each mark
+    // keeps its own colour.
     for a in r
         .store
         .sidecar()
         .annotations
         .iter()
-        .filter(|a| a.page == Some(current_page) && !a.quadpoints.is_empty())
+        .filter(|a| a.page == Some(current_page))
     {
+        let anchor = shapes::anchor_quads(a);
+        if anchor.is_empty() {
+            continue;
+        }
         let kind = match a.kind {
-            fond_annot::AnnotationKind::Highlight | fond_annot::AnnotationKind::Note => {
-                fond_doc::MarkupKind::Highlight
-            }
+            fond_annot::AnnotationKind::Highlight
+            | fond_annot::AnnotationKind::Note
+            | fond_annot::AnnotationKind::Area => fond_doc::MarkupKind::Highlight,
             fond_annot::AnnotationKind::Underline => fond_doc::MarkupKind::Underline,
             fond_annot::AnnotationKind::Strikeout => fond_doc::MarkupKind::Strikeout,
             _ => continue,
         };
         let quads = match &r.mark_edit.preview {
             Some((id, quads)) if *id == a.id => quads,
-            _ => &a.quadpoints,
+            _ => &anchor,
         };
         marks.push(Mark {
             id: Some(a.id.clone()),
             kind,
             quads: geom.quads_to_display(quads),
             rgba: annotation_rgba(a.color.as_deref()),
+            shape: shapes::shape_of(a),
+            has_note: a.note.as_deref().is_some_and(|n| !n.trim().is_empty()),
         });
     }
     // The current search match is drawn in its own colour on top of saved marks, and a "Select
@@ -137,6 +147,8 @@ pub(super) fn marks_for(r: &ReaderState, page: u16, geom: PageGeom) -> Vec<Mark>
                 kind: fond_doc::MarkupKind::Highlight,
                 quads: geom.quads_to_display(&current.quads),
                 rgba: SEARCH_MATCH_RGBA,
+                shape: shapes::Shape::Text,
+                has_note: false,
             });
         }
     }
@@ -147,6 +159,8 @@ pub(super) fn marks_for(r: &ReaderState, page: u16, geom: PageGeom) -> Vec<Mark>
                 kind: fond_doc::MarkupKind::Highlight,
                 quads: geom.quads_to_display(quads),
                 rgba: SELECTION_RGBA,
+                shape: shapes::Shape::Text,
+                has_note: false,
             });
         }
     }

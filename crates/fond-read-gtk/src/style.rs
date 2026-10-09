@@ -21,6 +21,8 @@ pub(crate) fn ensure() {
          .pinned-figure { background-color: @card_bg_color; border-radius: 8px; \
                           box-shadow: 0 2px 10px alpha(black, 0.35); } \
          .figure-grip { background-color: alpha(@window_fg_color, 0.06); border-radius: 8px 8px 0 0; } \
+         .note-card { padding: 4px 6px; border-radius: 6px; } \
+         .note-card-active { background-color: alpha(@accent_bg_color, 0.14); } \
          .reading-position { background-color: @accent_bg_color; } \
          .reading-position-label { background-color: @accent_bg_color; color: @accent_fg_color; \
                                    border-radius: 10px; padding: 1px 10px; }",

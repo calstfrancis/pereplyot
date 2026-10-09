@@ -86,7 +86,15 @@ pub fn show_annotations_dialog(
         export_button.connect_clicked(move |_| {
             let sidecar = host.load_annotations();
             let items = crate::export::items_from_sidecar(&sidecar, &page_labels, &|_| None);
-            crate::export::show_export_dialog(&host, &parent, &reader_title, items, Vec::new());
+            crate::export::show_export_dialog(
+                &host,
+                &parent,
+                &reader_title,
+                items,
+                Vec::new(),
+                None,
+                Vec::new(),
+            );
         });
     }
     header.pack_end(&export_button);

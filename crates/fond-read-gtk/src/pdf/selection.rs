@@ -388,7 +388,7 @@ pub(super) fn show_selection_popover(
         rows.append(&action(
             "Add note…",
             Rc::new(move || {
-                show_pdf_note_dialog(&ctx.host, &ctx.reader, &ctx.reader_window);
+                show_pdf_note_dialog(&ctx.host, &ctx.reader, &ctx.reader_window, None);
             }),
         ));
     }
@@ -417,6 +417,52 @@ pub(super) fn show_selection_popover(
     popover.popup();
 }
 
+/// Clip the dragged rectangle as an area, with the text the page has inside it.
+fn save_area(
+    host: &Rc<dyn ReaderHost>,
+    reader: &Rc<RefCell<ReaderState>>,
+    page: u16,
+    start: (f64, f64),
+    end: (f64, f64),
+    color: &str,
+) -> bool {
+    let rect = [
+        start.0.min(end.0),
+        start.1.min(end.1),
+        start.0.max(end.0),
+        start.1.max(end.1),
+    ];
+    let text = {
+        let r = reader.borrow();
+        fond_doc::select_text_in_rect(
+            r.pdfium,
+            r.bytes(),
+            page,
+            rect[0] as f32,
+            rect[1] as f32,
+            rect[2] as f32,
+            rect[3] as f32,
+        )
+        .ok()
+        .flatten()
+        .map(|sel| sel.text)
+        .filter(|t| !t.trim().is_empty())
+    };
+    let annotation =
+        fond_annot::Annotation::area(page as u32 + 1, rect, text, None, Some(color.to_string()));
+    let store = reader.borrow().store.clone();
+    match store.add(annotation) {
+        Ok(()) => {
+            host.notify("Area clipped — right-click it to add a note");
+            true
+        }
+        Err(e) => {
+            host.notify(&e);
+            false
+        }
+    }
+}
+
 pub(super) fn save_drag_annotation(
     host: &Rc<dyn ReaderHost>,
     reader: &Rc<RefCell<ReaderState>>,
@@ -436,6 +482,10 @@ pub(super) fn save_drag_annotation(
     let Some(draw_kind) = draw_kind else {
         return false;
     };
+
+    if draw_kind == fond_annot::AnnotationKind::Area {
+        return save_area(host, reader, page, start, end, &draw_color);
+    }
 
     // Prefer the actual text under the drag, line-aware (a straight vertical drag through a
     // paragraph selects each in-between line in full, not just the narrow column under the
@@ -517,7 +567,7 @@ pub(super) fn annotation_at_pdf_point(
         .rev()
         .find(|a| {
             a.page == Some(page_num)
-                && a.quadpoints.iter().any(|q| {
+                && shapes::anchor_quads(a).iter().any(|q| {
                     let min_x = q[0].min(q[2]).min(q[4]).min(q[6]) as f32;
                     let max_x = q[0].max(q[2]).max(q[4]).max(q[6]) as f32;
                     let min_y = q[1].min(q[3]).min(q[5]).min(q[7]) as f32;

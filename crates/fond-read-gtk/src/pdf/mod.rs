@@ -31,6 +31,7 @@ mod mark_edit;
 mod mark_layer;
 mod open_pdf;
 mod scrollbar_ticks;
+mod shapes;
 mod tiles;
 use open_pdf::OpenedPdf;
 mod render_actions;
@@ -164,6 +165,8 @@ struct ReaderState {
     /// finds.
     /// Reading-mode figures asked for from the render thread and not yet delivered.
     figure_waiters: Vec<FigureWaiter>,
+    /// Lights up the Notes list's card for a mark selected on the page.
+    notes_focus: Option<NotesFocus>,
     derived_outline: Option<Rc<dyn Fn(Vec<fond_doc::PdfOutlineEntry>)>>,
     /// Inclusive range of pages that currently have widgets in continuous mode.
     continuous_window: (u16, u16),
@@ -288,15 +291,18 @@ pub(crate) fn annotation_rgba(hex: Option<&str>) -> [u8; 4] {
 type QuickMarkSlot = Rc<RefCell<Option<Rc<dyn Fn(usize)>>>>;
 /// Self-referential slot for the notes-sidebar rebuild closure — a row's own delete button
 /// needs to trigger a fresh rebuild of the list it lives in.
+/// Called with an annotation id to light up its card in the Notes list.
+type NotesFocus = Rc<dyn Fn(&str)>;
 type RebuildNotesCell = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 
 /// The mark-style `DropDown` beside the colour palette, shared by both readers. "Select
 /// text" isn't here — it's the palette's own first button in the PDF reader, and the EPUB
 /// reader's native selection is always available.
-pub(crate) const MARK_KIND_OPTIONS: [(&str, fond_annot::AnnotationKind); 3] = [
+pub(crate) const MARK_KIND_OPTIONS: [(&str, fond_annot::AnnotationKind); 4] = [
     ("Highlight", fond_annot::AnnotationKind::Highlight),
     ("Underline", fond_annot::AnnotationKind::Underline),
     ("Strikeout", fond_annot::AnnotationKind::Strikeout),
+    ("Area", fond_annot::AnnotationKind::Area),
 ];
 
 const READER_BASE_WIDTH: f64 = 820.0;
@@ -587,8 +593,14 @@ fn build_reader(
             refresh_outline();
         }));
     }
-    let (rebuild_notes, quiet_notes) =
-        notes::install_notes_sidebar(host, &reader, &bookmark_button, &notes_rows);
+    let (rebuild_notes, quiet_notes) = notes::install_notes_sidebar(
+        host,
+        &reader,
+        &bookmark_button,
+        &notes_rows,
+        &notes_scroll,
+        &page_entry,
+    );
     {
         let store = reader.borrow().store.clone();
         let rebuild_notes = rebuild_notes.clone();

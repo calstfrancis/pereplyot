@@ -42,12 +42,66 @@ pub(super) fn build_mark_layer(
                 blue as f64 / 255.0,
                 alpha as f64 / 255.0,
             );
-            for quad in &mark.quads {
-                let rect = band(mark.kind, quad_rect(quad, geom, uw, uh));
-                let (x0, y0, x1, y1) = rotate_rect(rect, rotation, uw, uh);
-                cr.rectangle(x0, y0, x1 - x0, y1 - y0);
+            match mark.shape {
+                shapes::Shape::Sticky => {
+                    if let Some(quad) = mark.quads.first() {
+                        let (x0, y0, x1, y1) =
+                            rotate_rect(quad_rect(quad, geom, uw, uh), rotation, uw, uh);
+                        shapes::draw_bubble(cr, x0, y0, (x1 - x0).min(y1 - y0), mark.rgba);
+                    }
+                    continue;
+                }
+                shapes::Shape::Area => {
+                    for quad in &mark.quads {
+                        let (x0, y0, x1, y1) =
+                            rotate_rect(quad_rect(quad, geom, uw, uh), rotation, uw, uh);
+                        cr.rectangle(x0, y0, x1 - x0, y1 - y0);
+                    }
+                    cr.set_source_rgba(
+                        red as f64 / 255.0,
+                        green as f64 / 255.0,
+                        blue as f64 / 255.0,
+                        0.14,
+                    );
+                    let _ = cr.fill_preserve();
+                    cr.set_source_rgba(
+                        red as f64 / 255.0,
+                        green as f64 / 255.0,
+                        blue as f64 / 255.0,
+                        0.95,
+                    );
+                    cr.set_line_width(2.0);
+                    cr.set_dash(&[6.0, 3.0], 0.0);
+                    let _ = cr.stroke();
+                    cr.set_dash(&[], 0.0);
+                }
+                shapes::Shape::Text => {
+                    for quad in &mark.quads {
+                        let rect = band(mark.kind, quad_rect(quad, geom, uw, uh));
+                        let (x0, y0, x1, y1) = rotate_rect(rect, rotation, uw, uh);
+                        cr.rectangle(x0, y0, x1 - x0, y1 - y0);
+                    }
+                    let _ = cr.fill();
+                }
             }
-            let _ = cr.fill();
+            if mark.has_note {
+                if let Some(quad) = mark.quads.first() {
+                    let (_, y0, x1, y1) =
+                        rotate_rect(quad_rect(quad, geom, uw, uh), rotation, uw, uh);
+                    let size = ((y1 - y0) * 0.85).clamp(9.0, 14.0);
+                    let at = match mark.shape {
+                        shapes::Shape::Area => (x1 - size - 3.0, y0 + 3.0),
+                        _ => (x1 + 2.0, y0 - size * 0.3),
+                    };
+                    shapes::draw_bubble(
+                        cr,
+                        at.0,
+                        at.1,
+                        size,
+                        [mark.rgba[0], mark.rgba[1], mark.rgba[2], 255],
+                    );
+                }
+            }
         }
         if rotation == 0 {
             draw_edit_chrome(cr, &r, page, geom, &marks_for(&r, page, geom), w, h);

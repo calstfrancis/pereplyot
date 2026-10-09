@@ -61,7 +61,7 @@ pub(super) fn build_header(
     redo_button.set_tooltip_text(Some("Redo (Ctrl+Shift+Z)"));
     redo_button.set_sensitive(false);
 
-    let mode_labels: Vec<&str> = MARK_KIND_OPTIONS.iter().map(|(l, _)| *l).collect();
+    let mode_labels: Vec<&str> = MARK_KIND_OPTIONS[..3].iter().map(|(l, _)| *l).collect();
     let mode_drop = gtk4::DropDown::from_strings(&mode_labels);
     mode_drop.set_tooltip_text(Some("What kind of mark to apply to the selection"));
     let palette_choice: Rc<Cell<usize>> = Rc::new(Cell::new(0));
