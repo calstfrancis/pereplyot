@@ -95,7 +95,6 @@ pub(super) fn build_sidebar(
         outline_tab_toggle.set_tooltip_text(Some("This PDF has no table of contents"));
         thumbnails_tab_toggle.set_active(true);
         sidebar_tab_stack.set_visible_child_name("thumbnails");
-        trigger_thumbnails();
     } else {
         outline_tab_toggle.set_active(true);
         sidebar_tab_stack.set_visible_child_name("outline");
@@ -110,6 +109,7 @@ pub(super) fn build_sidebar(
     }
     {
         let sidebar_tab_stack = sidebar_tab_stack.clone();
+        let trigger_thumbnails = trigger_thumbnails.clone();
         thumbnails_tab_toggle.connect_toggled(move |btn| {
             if btn.is_active() {
                 sidebar_tab_stack.set_visible_child_name("thumbnails");
@@ -119,6 +119,18 @@ pub(super) fn build_sidebar(
     }
 
     let sidebar_box = gtk4::Box::new(Orientation::Vertical, 0);
+    // Thumbnails are drawn when the sidebar is actually on screen, not when it is built: a PDF
+    // without an outline opens on the Thumbnails tab, and drawing every page of a scanned book
+    // behind a hidden sidebar cost seconds of work and ~150 MB for nothing.
+    {
+        let thumbnails_tab_toggle = thumbnails_tab_toggle.clone();
+        let trigger_thumbnails = trigger_thumbnails.clone();
+        sidebar_box.connect_map(move |_| {
+            if thumbnails_tab_toggle.is_active() {
+                trigger_thumbnails();
+            }
+        });
+    }
     sidebar_box.append(&sidebar_tabs_row);
     sidebar_box.append(&sidebar_tab_stack);
 

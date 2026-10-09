@@ -12,6 +12,22 @@ fn started() -> Option<Instant> {
     START.get().copied().flatten()
 }
 
+/// `mark`, with the process's resident memory appended.
+pub fn mark_rss(label: &str) {
+    if started().is_none() {
+        return;
+    }
+    let rss_mb = std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|s| {
+            s.lines()
+                .find(|l| l.starts_with("VmRSS:"))
+                .and_then(|l| l.split_whitespace().nth(1)?.parse::<f64>().ok())
+        })
+        .map_or(0.0, |kb| kb / 1024.0);
+    mark(&format!("{label} [rss {rss_mb:.0} MB]"));
+}
+
 pub fn mark(label: &str) {
     if let Some(t) = started() {
         eprintln!("PERF {:>9.1} {label}", t.elapsed().as_secs_f64() * 1000.0);

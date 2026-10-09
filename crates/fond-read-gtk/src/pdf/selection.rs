@@ -92,8 +92,7 @@ pub(super) fn drag_pdf_points(geom: &DragGeometry) -> Option<((f64, f64), (f64, 
 /// together. Each line's box is shrunk to its middle band so neighbouring lines' glyph boxes,
 /// which often overlap vertically, don't leak in.
 pub(super) fn selection_text(r: &ReaderState, page: u16, quads: &[[f64; 8]]) -> Option<String> {
-    let document = r.pdfium.load_pdf_from_byte_slice(&r.bytes, None).ok()?;
-    let pdf_page = document.pages().get(page).ok()?;
+    let pdf_page = r.doc.as_ref()?.pages().get(page).ok()?;
     let text = pdf_page.text().ok()?;
     let lines: Vec<String> = quads
         .iter()
@@ -153,7 +152,7 @@ pub(super) fn select_drag_text(
         let r = reader.borrow();
         fond_doc::select_text_range(
             r.pdfium,
-            &r.bytes,
+            r.bytes(),
             page,
             start.0 as f32,
             start.1 as f32,
@@ -197,7 +196,7 @@ pub(super) fn apply_selection_mark(
         // A selection made in the Text view has no page geometry yet; find the quote on the
         // page so the mark also shows on the page image.
         let r = ctx.reader.borrow();
-        quads = fond_doc::search_document(r.pdfium, &r.bytes, &text)
+        quads = fond_doc::search_document(r.pdfium, r.bytes(), &text)
             .unwrap_or_default()
             .into_iter()
             .find(|m| m.page == page)
@@ -399,7 +398,7 @@ pub(super) fn save_drag_annotation(
         let r = reader.borrow();
         fond_doc::select_text_range(
             r.pdfium,
-            &r.bytes,
+            r.bytes(),
             page,
             start.0 as f32,
             start.1 as f32,

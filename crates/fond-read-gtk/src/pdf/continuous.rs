@@ -24,6 +24,7 @@ pub(super) fn build_continuous_view(
     if !reader.borrow().continuous_pictures.is_empty() {
         return;
     }
+    let _span = crate::perf::span(|| "build continuous view".to_string());
     let (count, zoom, current_page) = {
         let r = reader.borrow();
         (r.count, r.zoom, r.page)
@@ -43,7 +44,7 @@ pub(super) fn build_continuous_view(
 
         // Plausible size from the page's own point dimensions — cheap metadata, not a
         // rasterization — so the layout is correct before this page's texture has rendered.
-        let pts = reader.borrow().display_size(page);
+        let pts = reader.borrow().layout_size(page);
         let w = (READER_BASE_WIDTH * zoom) as u32;
         let h = if pts.0 > 0.0 {
             (w as f32 * pts.1 / pts.0) as u32

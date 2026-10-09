@@ -221,12 +221,37 @@ except Exception:
     stop_app
 }
 
+run_mixed_case() {
+    start_app "$FX/mixed.pdf"
+    local w
+    w="$(reader_window)" || { check "mixed: reader window opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
+    sleep 2
+    xdotool windowfocus "$w" 2>/dev/null
+    for _ in 1 2 3; do xdotool key Next; sleep 0.4; done
+    sleep 1.5
+    screenshot "$WORK/mixed.png"
+    local geom
+    geom="$(text_bands "$WORK/mixed.png")"
+    if [ -z "$geom" ]; then check "mixed: text found on the page reached by paging" 0; stop_app; return; fi
+    read -r x0 y0 x1 y1 <<<"$geom"
+    local y=$(( (y0 + y1) / 2 ))
+    xdotool mousemove $((x0 - 6)) "$y" mousedown 1 mousemove $(( (x0 + x1) / 2 )) "$y" mousemove $((x1 + 6)) "$y" mouseup 1
+    sleep 1
+    xdotool key 1
+    sleep 1
+    local got
+    got="$(annotations_json | python3 "$HERE/page_snippets.py")"
+    check "mixed: after paging through pages of different sizes, a highlight lands on page 4" "$([ "$got" = "4:Page 4 of the mixed document" ] && echo 1 || echo 0)" "(got '$got')"
+    stop_app
+}
+
 # Line order in the fixtures: "Page N", fox, Pack, Sphinx.
 want() { [ -z "${SMOKE_CASES:-}" ] || [[ " $SMOKE_CASES " == *" $1 "* ]]; }
 want plain && run_pdf_case plain plain.pdf y 2 "Pack my box with five dozen liquor jugs."
 want cropbox && run_pdf_case cropbox cropbox.pdf y 2 "Pack my box with five dozen liquor jugs."
 want rotated && run_pdf_case rotated rotated.pdf y 2 "Pack my box with five dozen liquor jugs."
 want epub && run_epub_case
+want mixed && run_mixed_case
 
 echo
 if [ "$FAILS" -eq 0 ]; then echo "smoke: all passed"; else echo "smoke: $FAILS failed"; exit 1; fi

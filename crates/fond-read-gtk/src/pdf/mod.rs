@@ -55,6 +55,8 @@ mod page_entry;
 mod page_number;
 mod popout;
 mod prev_next;
+mod scan;
+mod scan_thread;
 mod search;
 mod search_thread;
 mod session;
@@ -87,9 +89,12 @@ use thumbnails::*;
 /// Live state of an open PDF reader window.
 struct ReaderState {
     pdfium: &'static fond_doc::Pdfium,
-    bytes: Vec<u8>,
-    /// The document, parsed once and kept open for rendering and page geometry; every
-    /// `fond_doc` helper that takes `bytes` re-parses the whole file on each call.
+    /// The file's bytes, read only if something asks: a few `fond_doc` helpers take raw bytes
+    /// and re-parse them on each call. Reading eagerly cost the whole file in memory for every
+    /// open document, and a second copy besides.
+    bytes: std::cell::OnceCell<Vec<u8>>,
+    /// The document, parsed once and kept open for rendering and page geometry, loaded from the
+    /// file path so PDFium reads it on demand instead of holding a copy.
     doc: Option<pdfium_render::prelude::PdfDocument<'static>>,
     page: u16,
     count: u16,
@@ -146,6 +151,10 @@ struct ReaderState {
     continuous_window: (u16, u16),
     /// Finished page pictures, reused across scrolling, zooming back and forth, and redraws.
     textures: TextureCache,
+    /// Whether the background scan has read every page's size yet. Until it has, layout assumes
+    /// every page is the size of `layout_page`.
+    scanned: bool,
+    layout_page: u16,
     /// Where the document lives, for threads that open their own copy.
     path: std::path::PathBuf,
     /// The search in progress, if any; replacing it cancels it.
@@ -177,6 +186,11 @@ struct ReaderState {
 }
 
 impl ReaderState {
+    fn bytes(&self) -> &[u8] {
+        self.bytes
+            .get_or_init(|| std::fs::read(&self.path).unwrap_or_default())
+    }
+
     fn geom(&self, page: u16) -> Option<PageGeom> {
         if let Some(cached) = self.page_geoms.borrow().get(&page) {
             return *cached;
@@ -186,12 +200,22 @@ impl ReaderState {
             Some(doc) => PageGeom::read_doc(doc, page),
             None => self
                 .pdfium
-                .load_pdf_from_byte_slice(&self.bytes, None)
+                .load_pdf_from_byte_slice(self.bytes(), None)
                 .ok()
                 .and_then(|d| PageGeom::read_doc(&d, page)),
         };
         self.page_geoms.borrow_mut().insert(page, geom);
         geom
+    }
+
+    /// The size layout should give `page`: its real size once the scan has run, and until then
+    /// the starting page's size for every page, so opening never reads them all up front.
+    fn layout_size(&self, page: u16) -> (f32, f32) {
+        if self.scanned {
+            self.display_size(page)
+        } else {
+            self.display_size(self.layout_page)
+        }
     }
 
     /// On-screen point size of `page` — for layout only, so falls back to US Letter.
@@ -564,10 +588,11 @@ pub fn show_pdf_reader(
     popout::install_popout(&ui);
     export::install_export(&ui);
     search::install_search(&ui);
+    scan::install_scan(&ui);
     session::install_session(&ui, start_page);
     // @wiring
 
     warn_if_no_text_layer(host, &reader, blob);
-    crate::perf::mark("pdf reader presented");
+    crate::perf::mark_rss("pdf reader presented");
     reader_tab.present();
 }

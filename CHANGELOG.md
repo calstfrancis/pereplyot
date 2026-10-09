@@ -10,6 +10,16 @@
   one), finished pages are kept in a texture cache so scrolling back is instant, and the
   page you are on is always drawn first. Measured on a 600-page scan: no main-thread stall
   while paging or zooming (it was 24 ms per page at 2×).
+- **Large PDFs open faster and use far less memory.** Opening used to parse the whole file
+  four times and hold two copies of it in memory, and read every page's label and size on the
+  window thread. The file is now opened once and read on demand, and page sizes and printed
+  page labels are read by a background thread (the scroll view is laid out assuming pages
+  match the first one, and rebuilt only if some page really differs). A 125 MB scan now
+  shows its first page in 160 ms (was 284) and sits at 340 MB (was 640).
+- **Fixed: a PDF without an outline drew every page as a thumbnail behind the hidden
+  sidebar.** Scanned books have no outline, so the Thumbnails tab was "open" and rendered all
+  600 pages on the window thread for nothing — seconds of work and ~150 MB. Thumbnails are
+  now drawn when the sidebar is shown.
 - **Search no longer freezes the window.** Searching a PDF scanned every page on the same thread
   as the window — 330 ms of frozen interface on a 600-page book, growing with length. The
   search now runs on its own thread: the first match is shown within a few milliseconds

@@ -87,4 +87,39 @@ with zipfile.ZipFile(out / "book.epub", "w") as z:
     )
     z.writestr("OEBPS/c1.xhtml", chap.format(t="One", p=LINES[0]))
     z.writestr("OEBPS/c2.xhtml", chap.format(t="Two", p=LINES[1]))
+
+
+def mixed():
+    """Pages of different sizes (portrait, landscape, small) with roman then arabic page labels."""
+    sizes = ["[0 0 612 792]", "[0 0 792 612]", "[0 0 400 500]", "[0 0 612 792]", "[0 0 595 842]"]
+    objs = []
+
+    def add(body=None):
+        objs.append(body)
+        return len(objs)
+
+    cat = add()
+    pages_obj = add()
+    font = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    kids = []
+    for n, media in enumerate(sizes, 1):
+        stream = f"BT /F1 14 Tf 40 {int(media.split()[3].rstrip(']')) - 60} Td (Page {n} of the mixed document) Tj ET"
+        c = add(f"<< /Length {len(stream)} >>\nstream\n{stream}\nendstream")
+        kids.append(add(f"<< /Type /Page /Parent {pages_obj} 0 R /MediaBox {media} /Resources << /Font << /F1 {font} 0 R >> >> /Contents {c} 0 R >>"))
+    objs[cat - 1] = f"<< /Type /Catalog /Pages {pages_obj} 0 R /PageLabels << /Nums [0 << /S /r >> 2 << /S /D /St 1 >>] >> >>"
+    objs[pages_obj - 1] = f"<< /Type /Pages /Kids [{' '.join(f'{k} 0 R' for k in kids)}] /Count {len(kids)} >>"
+    data = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for i, body in enumerate(objs, 1):
+        offsets.append(len(data))
+        data += f"{i} 0 obj\n{body}\nendobj\n".encode("latin-1")
+    xref = len(data)
+    data += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n".encode()
+    for off in offsets:
+        data += f"{off:010d} 00000 n \n".encode()
+    data += f"trailer\n<< /Size {len(objs) + 1} /Root {cat} 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+    return bytes(data)
+
+
+(out / "mixed.pdf").write_bytes(mixed())
 print("fixtures in", out)

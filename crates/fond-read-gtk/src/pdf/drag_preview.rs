@@ -110,7 +110,13 @@ pub(super) fn build_drag_preview_overlay(
                     let (sx, sy) = geom.px_to_pdf(x0, y0, w, h);
                     let (ex, ey) = geom.px_to_pdf(x1, y1, w, h);
                     let sel = fond_doc::select_text_range(
-                        r.pdfium, &r.bytes, page, sx as f32, sy as f32, ex as f32, ey as f32,
+                        r.pdfium,
+                        r.bytes(),
+                        page,
+                        sx as f32,
+                        sy as f32,
+                        ex as f32,
+                        ey as f32,
                     )
                     .ok()
                     .flatten()?;

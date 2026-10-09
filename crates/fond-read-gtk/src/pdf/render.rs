@@ -67,7 +67,7 @@ pub(super) fn render_open(
     width: u32,
 ) -> Option<fond_doc::RenderedPage> {
     let Some(doc) = &r.doc else {
-        return fond_doc::render_page(r.pdfium, &r.bytes, page, width).ok();
+        return fond_doc::render_page(r.pdfium, r.bytes(), page, width).ok();
     };
     let pdf_page = doc.pages().get(page).ok()?;
     let config = pdfium_render::prelude::PdfRenderConfig::new()
@@ -154,7 +154,7 @@ fn overlay_for(r: &ReaderState, page: u16, geom: Option<PageGeom>) -> (Overlay, 
 /// The page's size on screen in logical pixels (unrotated, then swapped for a quarter turn).
 pub(super) fn logical_page_size(r: &ReaderState, page: u16) -> (u32, u32) {
     let lw = (READER_BASE_WIDTH * r.zoom).max(1.0);
-    let (pw, ph) = r.display_size(page);
+    let (pw, ph) = r.layout_size(page);
     let lh = (lw * ph as f64 / (pw as f64).max(1.0)).round().max(1.0);
     let (lw, lh) = (lw as u32, lh as u32);
     if r.rotation % 180 == 90 {

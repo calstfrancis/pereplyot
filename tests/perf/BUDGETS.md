@@ -60,3 +60,19 @@ Still open: the stall while the window and the continuous-scroll layout are buil
 the per-page geometry of every page), and the scan's memory, which still holds the whole file
 twice (see "What this says", point 3). Sharpness on a HiDPI display was checked by eye: the
 same text at 2× is crisp where the 1× render, scaled up, is soft.
+
+## After Phase 1c (open once, scan in the background, lazy thumbnails) — 2026-10-09
+
+| | paper-50 | book-600 | scan-600 | budget |
+|---|---:|---:|---:|---|
+| launch → reader window up | 137 ms | 120 ms | 160 ms | ≤ 300 ms ✔ |
+| stall at open | 69 ms | 70 ms | 53 ms | ≤ 16 ms ✘ (building the 600-page scroll view) |
+| memory after open | 200 MB | 223 MB | **339 MB** | ≤ 300 MB + 1.5 × file ✔ (scan limit 487) |
+| memory after paging | 296 MB | 312 MB | 437 MB | |
+| peak memory | 357 MB | 385 MB | 636 MB | |
+
+The scan's memory was dominated by two things, both fixed: the file held twice, and drawing
+all 600 thumbnails behind a hidden sidebar.
+
+Still open: the open stall is now mostly creating 600 page widgets; making the scroll view
+virtual (only widgets near the viewport) would remove it.
