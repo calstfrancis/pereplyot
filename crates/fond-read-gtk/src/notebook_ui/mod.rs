@@ -115,6 +115,10 @@ pub(crate) fn refresh_from_source(q: &mut Quote) {
         q.note = a.note.clone().unwrap_or_default();
         q.colour = a.color.clone().unwrap_or_default();
         q.page = a.page.unwrap_or(q.page);
+        if let Some(label) = crate::page_label_of(&a) {
+            q.label = label;
+            q.chapter = false;
+        }
     }
 }
 
@@ -135,6 +139,7 @@ pub fn quote_of(doc: &DocRef, label: &str, a: &fond_annot::Annotation) -> Quote 
         text: words(a),
         note: a.note.clone().unwrap_or_default(),
         area: a.kind == fond_annot::AnnotationKind::Area,
+        chapter: a.page.is_none() && crate::page_label_of(a).is_none(),
     }
 }
 
@@ -148,6 +153,7 @@ pub fn end_of(doc: &DocRef, label: &str, a: &fond_annot::Annotation) -> End {
         colour: a.color.clone().unwrap_or_default(),
         title: doc.title.clone(),
         text: words(a),
+        chapter: a.page.is_none() && crate::page_label_of(a).is_none(),
     }
 }
 

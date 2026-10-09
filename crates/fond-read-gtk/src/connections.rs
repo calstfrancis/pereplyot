@@ -25,6 +25,9 @@ pub struct End {
     pub title: String,
     #[serde(default)]
     pub text: String,
+    /// `label` is a chapter number (an EPUB with no printed pages), not a page.
+    #[serde(default)]
+    pub chapter: bool,
 }
 
 impl End {
@@ -38,10 +41,11 @@ impl End {
         } else {
             self.label.clone()
         };
+        let place = format!("{} {page}", if self.chapter { "ch." } else { "p." });
         if self.title.is_empty() {
-            format!("p. {page}")
+            place
         } else {
-            format!("{}, p. {page}", self.title)
+            format!("{}, {place}", self.title)
         }
     }
 }
@@ -225,6 +229,7 @@ mod tests {
             colour: String::new(),
             title: "Smith".into(),
             text: "words".into(),
+            chapter: false,
         }
     }
 

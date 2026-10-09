@@ -15,6 +15,8 @@ fn annotations_dir() -> PathBuf {
 pub struct NoteHit {
     pub hash: String,
     pub area: bool,
+    /// The printed page of an EPUB annotation, when the book has page numbers.
+    pub label: Option<String>,
     pub path: Option<PathBuf>,
     pub doc_title: String,
     pub location: String,
@@ -90,8 +92,12 @@ pub fn search(library: &Library, query: &str, color_hex: Option<&str>) -> Vec<No
                     continue;
                 }
             }
+            let label = fond_read_gtk::page_label_of(&a);
             let location = match (a.page, a.chapter.as_deref()) {
                 (Some(p), _) => format!("p. {p}"),
+                (None, Some(_)) if label.is_some() => {
+                    format!("p. {}", label.as_deref().unwrap_or_default())
+                }
                 (None, Some(c)) => std::path::Path::new(c)
                     .file_name()
                     .map(|f| f.to_string_lossy().into_owned())
@@ -101,6 +107,7 @@ pub fn search(library: &Library, query: &str, color_hex: Option<&str>) -> Vec<No
             let hit = NoteHit {
                 hash: hash.clone(),
                 area: a.kind == fond_annot::AnnotationKind::Area,
+                label,
                 path: doc.map(|d| d.1.clone()),
                 doc_title: doc_title.clone(),
                 location,

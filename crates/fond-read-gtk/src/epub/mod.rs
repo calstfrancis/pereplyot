@@ -24,6 +24,8 @@ mod chrome;
 mod highlights;
 mod keys;
 mod open_book;
+mod page_label;
+mod pages;
 mod undo_redo;
 mod web_view_setup;
 use web_view_setup::*;
@@ -66,6 +68,8 @@ struct EpubReaderState {
     /// for the same idea applied to pages. Loaded once at open, rewritten on every add/
     /// remove, same lifecycle as `annotations`.
     bookmarks: Vec<usize>,
+    /// The book's printed pages, if it has any.
+    pages: Vec<pages::PageBreak>,
 }
 
 /// A built-in EPUB reader: renders each chapter with WebKitGTK (`webkit6`), which — unlike
@@ -141,8 +145,10 @@ pub fn show_epub_reader(
         .collect();
     bookmarks.sort_unstable();
 
+    let printed_pages = pages::read(&cache_dir, &book.spine);
     let reader = Rc::new(RefCell::new(EpubReaderState {
         cache_dir,
+        pages: printed_pages,
         spine: book.spine,
         index: start_index,
         store,
@@ -162,10 +168,15 @@ pub fn show_epub_reader(
     next.set_tooltip_text(Some("Next chapter"));
     let chapter_label = gtk4::Label::new(None);
     chapter_label.add_css_class("dim-label");
+    let page_label = gtk4::Label::new(None);
+    page_label.add_css_class("heading");
+    page_label.set_tooltip_text(Some("The printed page you are on"));
+    page_label.set_visible(false);
     let bookmark_button = gtk4::Button::new();
     bookmark_button.add_css_class("flat");
     let nav = gtk4::Box::new(Orientation::Horizontal, 6);
     nav.append(&prev);
+    nav.append(&page_label);
     nav.append(&chapter_label);
     nav.append(&next);
     nav.append(&bookmark_button);
@@ -343,9 +354,10 @@ pub fn show_epub_reader(
         let host = host.clone();
         let reader = reader.clone();
         let title = title.to_string();
+        let hash = hash.to_string();
         let dialog = reader_window.clone();
         export_button.connect_clicked(move |_| {
-            export_notes(&host, &reader, &title, &dialog);
+            export_notes(&host, &reader, &title, &hash, &dialog);
         });
     }
 
@@ -383,6 +395,7 @@ pub fn show_epub_reader(
         epub_redo: epub_redo.clone(),
     };
     search_wiring::install_search(&ui);
+    page_label::install_page_label(&reader, &web_view, &page_label);
     keys::install_keys(&ui);
     toggles::install_sidebar_toggles(&ui);
 

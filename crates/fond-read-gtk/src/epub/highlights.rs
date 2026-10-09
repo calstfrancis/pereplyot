@@ -34,6 +34,9 @@ pub(super) struct EpubSelectionCapture {
     pub(super) prefix: Option<String>,
     #[serde(default)]
     pub(super) suffix: Option<String>,
+    /// The printed page the selection starts on, if the book has page numbers.
+    #[serde(default)]
+    pub(super) page: Option<String>,
 }
 
 /// A JS function *expression* (no trailing call — callers append `(args)`) that finds each
@@ -149,12 +152,20 @@ pub(super) const EPUB_CAPTURE_SELECTION_JS: &str = r#"(function() {
     }
     return total;
   }
+  var page = null;
+  (window.__pp || []).forEach(function(p) {
+    var el = document.getElementById(p.id);
+    if (el && (el === range.startContainer ||
+        (el.compareDocumentPosition(range.startContainer) & Node.DOCUMENT_POSITION_FOLLOWING))) {
+      page = p.label;
+    }
+  });
   var fullText = document.body.textContent;
   var startIdx = textOffsetOf(range.startContainer, range.startOffset);
   var prefix = fullText.slice(Math.max(0, startIdx - 40), startIdx);
   var suffix = fullText.slice(startIdx + text.length, startIdx + text.length + 40);
   sel.removeAllRanges();
-  return JSON.stringify({ empty: false, text: text, prefix: prefix, suffix: suffix });
+  return JSON.stringify({ empty: false, text: text, prefix: prefix, suffix: suffix, page: page });
 })()"#;
 
 /// Serialize the annotations anchored to `chapter` into the JSON array
@@ -222,6 +233,8 @@ pub(super) fn epub_selection_js(clear: bool) -> String {
 pub(super) struct EpubSelection {
     pub(super) text: String,
     pub(super) chapter_number: usize,
+    /// The printed page, when the book has page numbers.
+    pub(super) page: Option<String>,
 }
 
 pub(super) fn show_epub_selection_popover(
@@ -325,6 +338,7 @@ pub(super) fn show_epub_selection_popover(
         let host = host.clone();
         let text = selection.text.clone();
         let chapter = selection.chapter_number;
+        let page = selection.page.clone();
         row(
             label,
             Rc::new(move || {
@@ -332,8 +346,8 @@ pub(super) fn show_epub_selection_popover(
                     crate::export::cite_snippet(
                         crate::export::preferred_format(),
                         &text,
-                        &chapter.to_string(),
-                        true,
+                        &page.clone().unwrap_or_else(|| chapter.to_string()),
+                        page.is_none(),
                         host.citation_key().as_deref(),
                     )
                 } else {
@@ -386,6 +400,7 @@ pub(super) fn build_apply_mark(
                     host.notify("Could not read selection");
                     return;
                 };
+                let capture_page = capture.page.clone();
                 let snippet = capture.text.filter(|t| !t.trim().is_empty());
                 let Some(snippet) = (!capture.empty).then_some(snippet).flatten() else {
                     host.notify("Select some text first");
@@ -398,6 +413,7 @@ pub(super) fn build_apply_mark(
                 let Some(chapter) = chapter else {
                     return;
                 };
+                let chapter_for_label = chapter.clone();
                 let mut annotation = fond_annot::Annotation::drawn_epub(
                     kind,
                     chapter,
@@ -407,6 +423,11 @@ pub(super) fn build_apply_mark(
                     note,
                 );
                 annotation.color = color;
+                {
+                    let r = reader.borrow();
+                    let label = page_label::label_for(&r, &chapter_for_label, capture_page);
+                    crate::set_page_label(&mut annotation, label.as_deref());
+                }
                 let store = reader.borrow().store.clone();
                 match store.add(annotation) {
                     Ok(()) => host.notify("Added"),
@@ -469,13 +490,21 @@ pub(super) fn install_selection_popover(
                         else {
                             return;
                         };
-                        let chapter_number = reader.borrow().index + 1;
+                        let (chapter_number, page) = {
+                            let r = reader.borrow();
+                            let chapter = r.spine.get(r.index).cloned().unwrap_or_default();
+                            (
+                                r.index + 1,
+                                page_label::label_for(&r, &chapter, capture.page.clone()),
+                            )
+                        };
                         show_epub_selection_popover(
                             &view_for_popover,
                             (x, y),
                             EpubSelection {
                                 text,
                                 chapter_number,
+                                page,
                             },
                             &host,
                             &apply_mark,

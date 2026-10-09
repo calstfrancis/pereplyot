@@ -19,9 +19,10 @@ const PREAMBLE_START: &str = "// --- pereplyot preamble: drawn by Pereplyot, saf
 const PREAMBLE_END: &str = "// --- end preamble ---";
 
 /// Defines `#pquote`, so the stored file compiles on its own.
-const PREAMBLE: &str = r#"#let pquote(hash: "", id: "", page: "", label: "", colour: "", title: "", key: "", text: "", note: "", area: false) = {
+const PREAMBLE: &str = r#"#let pquote(hash: "", id: "", page: "", label: "", colour: "", title: "", key: "", text: "", note: "", area: false, chapter: false) = {
   let shade = if colour == "" { luma(160) } else { rgb(colour) }
-  let where = if title != "" { title + ", p. " + label } else { "p. " + label }
+  let loc = (if chapter { "ch. " } else { "p. " }) + label
+  let where = if title != "" { title + ", " + loc } else { loc }
   block(width: 100%, inset: (left: 10pt, y: 4pt), stroke: (left: 3pt + shade), breakable: false)[
     #quote(block: true, attribution: [#where])[#text]
     #if note != "" [#emph(note)]
@@ -43,16 +44,27 @@ pub struct Quote {
     pub text: String,
     pub note: String,
     pub area: bool,
+    /// From an EPUB with no printed page numbers: `label` is a chapter number, not a page.
+    pub chapter: bool,
 }
 
 impl Quote {
-    /// The page as a person cites it.
+    /// The page (or chapter) as a person cites it: "12", "xii", "3".
     pub fn locator(&self) -> String {
         if self.label.is_empty() {
             self.page.to_string()
         } else {
             self.label.clone()
         }
+    }
+
+    /// "p. 12" or "ch. 3".
+    pub fn locator_text(&self) -> String {
+        format!(
+            "{} {}",
+            if self.chapter { "ch." } else { "p." },
+            self.locator()
+        )
     }
 
     pub fn link(&self) -> String {
@@ -124,6 +136,9 @@ fn quote_line(q: &Quote) -> String {
     if q.area {
         args.push("area: true".to_string());
     }
+    if q.chapter {
+        args.push("chapter: true".to_string());
+    }
     format!("#pquote({})\n", args.join(", "))
 }
 
@@ -193,6 +208,9 @@ fn parse_quote_line(line: &str) -> Option<Quote> {
             "page" => {
                 q.page = value.parse().ok()?;
                 seen_page = true;
+            }
+            "chapter" => {
+                q.chapter = value == "true";
             }
             "label" => q.label = value,
             "colour" => q.colour = value,
@@ -470,9 +488,9 @@ fn key_of(q: &Quote, opts: &ExportOptions) -> Option<String> {
 
 fn whence(q: &Quote) -> String {
     if q.title.is_empty() {
-        format!("p. {}", q.locator())
+        q.locator_text()
     } else {
-        format!("{}, p. {}", q.title, q.locator())
+        format!("{}, {}", q.title, q.locator_text())
     }
 }
 
@@ -500,7 +518,7 @@ fn to_typst(nb: &Notebook, opts: &ExportOptions) -> String {
                     out.push('\n');
                 }
                 let mut attribution = match key_of(q, opts) {
-                    Some(k) => typst_citation(&k, Some(&format!("p. {}", q.locator()))),
+                    Some(k) => typst_citation(&k, Some(&q.locator_text())),
                     None => typst_escape(&whence(q)),
                 };
                 if opts.links {
@@ -744,7 +762,7 @@ fn convert_text(text: &str, t: Target) -> String {
 
 fn md_cite(q: &Quote, opts: &ExportOptions) -> String {
     let base = match key_of(q, opts) {
-        Some(k) => format!("[@{k}, p. {}]", q.locator()),
+        Some(k) => format!("[@{k}, {}]", q.locator_text()),
         None => format!("({})", whence(q)),
     };
     if opts.links {
@@ -829,7 +847,11 @@ fn to_latex(nb: &Notebook, opts: &ExportOptions) -> String {
                     out.push('\n');
                 }
                 let cite = match key_of(q, opts) {
-                    Some(k) => format!("\\autocite[p.~{}]{{{k}}}", latex_escape(&q.locator())),
+                    Some(k) => format!(
+                        "\\autocite[{}~{}]{{{k}}}",
+                        if q.chapter { "ch." } else { "p." },
+                        latex_escape(&q.locator())
+                    ),
                     None => format!("({})", latex_escape(&whence(q))),
                 };
                 if let Some(image) = (opts.image_for)(q) {
@@ -886,6 +908,7 @@ mod tests {
             text: text.into(),
             note: String::new(),
             area: false,
+            chapter: false,
         }
     }
 

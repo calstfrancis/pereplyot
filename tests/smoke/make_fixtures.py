@@ -89,6 +89,97 @@ with zipfile.ZipFile(out / "book.epub", "w") as z:
     z.writestr("OEBPS/c2.xhtml", chap.format(t="Two", p=LINES[1]))
 
 
+def scholar_epub():
+    """A publisher-style EPUB: page-list navigation, in-text page breaks, note references that
+    point into a notes file, and enough text to fill several screens."""
+    import struct
+    import zlib
+
+    def png(w, h, rgb):
+        raw = b"".join(b"\x00" + bytes(rgb) * w for _ in range(h))
+
+        def chunk(tag, data):
+            body = tag + data
+            return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+
+        return (
+            b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw))
+            + chunk(b"IEND", b"")
+        )
+
+    words = "grace covenant liturgy scripture tradition narrative community witness".split()
+
+    def para(n, extra=""):
+        body = " ".join(words[(n + i) % len(words)] for i in range(70))
+        return f"<p>Paragraph {n}. {body}.{extra}</p>"
+
+    ns = 'xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"'
+
+    def pb(label, ident):
+        return f'<span epub:type="pagebreak" role="doc-pagebreak" id="{ident}" title="{label}"></span>'
+
+    c1 = [pb("41", "pg41")]
+    for n in range(1, 10):
+        extra = ""
+        if n == 2:
+            extra = ' See also<a epub:type="noteref" href="notes.xhtml#n1"><sup>1</sup></a> for the argument.'
+        if n == 5:
+            extra = ' A second point<sup><a href="notes.xhtml#n2">2</a></sup> follows.'
+        c1.append(para(n, extra))
+        if n == 3:
+            c1.append(pb("42", "pg42"))
+        if n == 6:
+            c1.append(pb("43", "pg43"))
+    c1.append('<p><img src="fig.png" alt="A figure" width="120" height="80"/></p>')
+    c2 = [pb("44", "pg44")]
+    for n in range(10, 17):
+        c2.append(para(n))
+        if n == 12:
+            c2.append(pb("45", "pg45"))
+    page = '<?xml version="1.0" encoding="UTF-8"?><html ' + ns + "><head><title>{t}</title></head><body><h1>{t}</h1>{b}</body></html>"
+    with zipfile.ZipFile(out / "scholar.epub", "w") as z:
+        z.writestr("mimetype", "application/epub+zip", compress_type=zipfile.ZIP_STORED)
+        z.writestr(
+            "META-INF/container.xml",
+            '<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+            '<rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>',
+        )
+        z.writestr(
+            "OEBPS/content.opf",
+            '<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id">'
+            '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">scholar-1</dc:identifier>'
+            "<dc:title>Scholar Book</dc:title><dc:language>en</dc:language></metadata>"
+            '<manifest><item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/>'
+            '<item id="c2" href="c2.xhtml" media-type="application/xhtml+xml"/>'
+            '<item id="notes" href="notes.xhtml" media-type="application/xhtml+xml"/>'
+            '<item id="fig" href="fig.png" media-type="image/png"/>'
+            '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/></manifest>'
+            '<spine><itemref idref="c1"/><itemref idref="c2"/><itemref idref="notes"/></spine></package>',
+        )
+        z.writestr(
+            "OEBPS/nav.xhtml",
+            '<?xml version="1.0"?><html ' + ns + "><body>"
+            '<nav epub:type="toc"><ol><li><a href="c1.xhtml">One</a></li><li><a href="c2.xhtml">Two</a></li><li><a href="notes.xhtml">Notes</a></li></ol></nav>'
+            '<nav epub:type="page-list"><ol>'
+            '<li><a href="c1.xhtml#pg41">41</a></li><li><a href="c1.xhtml#pg42">42</a></li><li><a href="c1.xhtml#pg43">43</a></li>'
+            '<li><a href="c2.xhtml#pg44">44</a></li><li><a href="c2.xhtml#pg45">45</a></li>'
+            "</ol></nav></body></html>",
+        )
+        z.writestr("OEBPS/c1.xhtml", page.format(t="One", b="".join(c1)))
+        z.writestr("OEBPS/c2.xhtml", page.format(t="Two", b="".join(c2)))
+        z.writestr(
+            "OEBPS/notes.xhtml",
+            page.format(
+                t="Notes",
+                b='<aside id="n1" epub:type="footnote"><p><a href="c1.xhtml">1.</a> See Smith (2019), p. 4, for the original argument.</p></aside>'
+                '<ol><li id="n2"><p>On this point compare Jones (2021), chapter 3. <a href="c1.xhtml">\u21a9</a></p></li></ol>',
+            ),
+        )
+        z.writestr("OEBPS/fig.png", png(120, 80, (200, 90, 60)))
+
+
 def mixed():
     """Pages of different sizes (portrait, landscape, small) with roman then arabic page labels."""
     sizes = ["[0 0 612 792]", "[0 0 792 612]", "[0 0 400 500]", "[0 0 612 792]", "[0 0 595 842]"]
@@ -123,3 +214,5 @@ def mixed():
 
 (out / "mixed.pdf").write_bytes(mixed())
 print("fixtures in", out)
+
+scholar_epub()

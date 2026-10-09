@@ -13,14 +13,12 @@ pub(super) fn export_notes(
     host: &Rc<dyn ReaderHost>,
     reader: &Rc<RefCell<EpubReaderState>>,
     title: &str,
+    hash: &str,
     reader_window: &adw::Window,
 ) {
     let (items, bookmarks) = {
         let r = reader.borrow();
-        let spine = &r.spine;
-        let items = crate::export::items_from_sidecar(&r.store.sidecar(), &[], &|c| {
-            spine.iter().position(|p| p == c).map(|i| i + 1)
-        });
+        let items = epub_items(&r.store.sidecar(), &r.spine, hash);
         let bookmarks = r
             .bookmarks
             .iter()
@@ -37,6 +35,47 @@ pub(super) fn export_notes(
         None,
         Vec::new(),
     );
+}
+
+/// Export items for an EPUB's annotations in reading order, each cited by its printed page when
+/// the book has page numbers and by chapter when it doesn't, with a link back to the passage.
+pub(super) fn epub_items(
+    sidecar: &fond_annot::AnnotationSidecar,
+    spine: &[String],
+    hash: &str,
+) -> Vec<crate::export::Item> {
+    let chapter_number = |c: &str| spine.iter().position(|p| p == c).map(|i| i + 1);
+    let mut keyed: Vec<((usize, Option<String>), crate::export::Item)> = Vec::new();
+    let mut one = sidecar.clone();
+    for a in &sidecar.annotations {
+        one.annotations = vec![a.clone()];
+        let link = |id: &str| {
+            Some(crate::deeplink::build(&crate::deeplink::DeepLink {
+                hash: hash.to_string(),
+                annotation: Some(id.to_string()),
+                page: None,
+            }))
+        };
+        let Some(mut item) =
+            fond_annot::export::items_with_links(&one, &[], &chapter_number, &|_| None, &link)
+                .into_iter()
+                .next()
+        else {
+            continue;
+        };
+        if let Some(label) = crate::page_label_of(a) {
+            item.locator = label;
+            item.is_chapter = false;
+        }
+        let at = a
+            .chapter
+            .as_deref()
+            .and_then(chapter_number)
+            .unwrap_or(usize::MAX);
+        keyed.push(((at, a.created.clone()), item));
+    }
+    keyed.sort_by(|a, b| a.0.cmp(&b.0));
+    keyed.into_iter().map(|(_, i)| i).collect()
 }
 
 /// Replace the stylesheet registered on `view`'s `UserContentManager` with one built from the

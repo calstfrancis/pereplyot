@@ -20,6 +20,15 @@ pub(super) fn install_chapter_load(
         let pending_search = pending_search.clone();
         web_view.connect_load_changed(move |view, event| {
             if event == webkit6::LoadEvent::Finished {
+                let script = {
+                    let r = reader.borrow();
+                    r.spine
+                        .get(r.index)
+                        .map(|chapter| page_label::chapter_pages_js(&r.pages, chapter))
+                };
+                if let Some(script) = script {
+                    view.evaluate_javascript(&script, None, None, gio::Cancellable::NONE, |_| {});
+                }
                 let scroll_to = pending_scroll.borrow_mut().take();
                 epub_apply_highlights(view, &reader, scroll_to.as_deref());
                 if let Some(percent) = pending_scroll_percent.borrow_mut().take() {

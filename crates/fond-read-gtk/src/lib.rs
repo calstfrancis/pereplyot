@@ -44,6 +44,25 @@ pub mod store;
 mod style;
 pub mod typography;
 
+const PAGE_LABEL_KEY: &str = "page_label";
+
+/// The printed page an EPUB annotation sits on ("xii", "214"), if the book has page numbers.
+/// Kept in the annotation's `extra`, so other apps carry it along untouched.
+pub fn page_label_of(a: &fond_annot::Annotation) -> Option<String> {
+    a.extra
+        .get(PAGE_LABEL_KEY)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+pub fn set_page_label(a: &mut fond_annot::Annotation, label: Option<&str>) {
+    match label.filter(|l| !l.is_empty()) {
+        Some(l) => a.extra.insert(PAGE_LABEL_KEY.into(), l.into()),
+        None => a.extra.remove(PAGE_LABEL_KEY),
+    };
+}
+
 /// A slot holding a "rebuild this list" closure, filled in after the widgets it rebuilds
 /// exist. Shared by both readers' notes sidebars.
 pub type RebuildCell = Rc<RefCell<Option<Rc<dyn Fn()>>>>;

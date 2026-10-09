@@ -783,6 +783,44 @@ run_launcher_case() {
     stop_app
 }
 
+run_scholar_case() {
+    start_app "$FX/scholar.epub"
+    local w
+    w="$(reader_window)" || { check "scholar: reader window opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
+    sleep 4
+    xdotool windowfocus "$w" 2>/dev/null
+    screenshot "$WORK/sc-0.png"
+    local nav
+    nav="$(python3 "$HERE/text_bands.py" "$WORK/sc-0.png" --ink-in 205 15 250 40)"
+    check "scholar: the printed page from the book's page list is shown (p. 41)" "$([ "${nav:-0}" -gt 60 ] && echo 1 || echo 0)" "(ink in the page label: $nav)"
+    xdotool mousemove 286 201 mousedown 1 mousemove 600 201 mousemove 968 201 mouseup 1
+    sleep 1
+    xdotool key 1
+    sleep 1
+    local labels
+    labels() { annotations_json | python3 -c 'import sys,json
+try:
+    print(" ".join(str(a.get("page_label")) for a in json.load(sys.stdin)["annotations"]))
+except Exception:
+    print("")'; }
+    check "scholar: a highlight remembers the printed page it is on" "$([ "$(labels)" = "41" ] && echo 1 || echo 0)" "(page labels: '$(labels)')"
+    for _ in $(seq 22); do xdotool mousemove 600 400 click 5; done
+    sleep 2
+    screenshot "$WORK/sc-1.png"
+    local geom x0 y0 x1 y1
+    geom="$(python3 "$HERE/text_bands.py" "$WORK/sc-1.png" --last-line)"
+    read -r x0 y0 x1 y1 <<<"$geom"
+    local y=$(( (y0 + y1) / 2 ))
+    xdotool mousemove $((x0 - 4)) "$y" mousedown 1 mousemove $(( (x0 + x1) / 2 )) "$y" mousemove $((x1 + 8)) "$y" mouseup 1
+    sleep 1
+    xdotool key 2
+    sleep 1
+    local second
+    second="$(labels | awk '{print $2}')"
+    check "scholar: further on, a highlight is on a later printed page" "$([[ "$second" =~ ^4[2-5]$ ]] && echo 1 || echo 0)" "(page labels: '$(labels)')"
+    stop_app
+}
+
 # Line order in the fixtures: "Page N", fox, Pack, Sphinx.
 want() { [ -z "${SMOKE_CASES:-}" ] || [[ " $SMOKE_CASES " == *" $1 "* ]]; }
 want plain && run_pdf_case plain plain.pdf y 2 "Pack my box with five dozen liquor jugs."
@@ -802,6 +840,7 @@ want epub && run_epub_case
 want mixed && run_mixed_case
 want notebook && run_notebook_case
 want connect && run_connect_case
+want scholar && run_scholar_case
 want launcher && run_launcher_case
 
 echo

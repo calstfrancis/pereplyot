@@ -43,7 +43,12 @@ fn hit_row(widgets: &Rc<Widgets>, hit: NoteHit) -> gtk4::ListBoxRow {
         hash: hit.hash.clone(),
         title: hit.doc_title.clone(),
     };
-    let label = hit.page.map(|p| p.to_string()).unwrap_or_default();
+    let label = match (&hit.label, hit.page) {
+        (Some(l), _) => l.clone(),
+        (None, Some(p)) => p.to_string(),
+        (None, None) => hit.location.clone(),
+    };
+    let chapter = hit.page.is_none() && hit.label.is_none();
     let quote = notebook::Quote {
         hash: hit.hash.clone(),
         id: hit.annotation_id.clone(),
@@ -55,6 +60,7 @@ fn hit_row(widgets: &Rc<Widgets>, hit: NoteHit) -> gtk4::ListBoxRow {
         text: hit.snippet.clone().unwrap_or_default(),
         note: hit.note.clone().unwrap_or_default(),
         area: hit.area,
+        chapter,
     };
     let to_notebook = gtk4::Button::from_icon_name("list-add-symbolic");
     to_notebook.add_css_class("flat");
@@ -81,6 +87,7 @@ fn hit_row(widgets: &Rc<Widgets>, hit: NoteHit) -> gtk4::ListBoxRow {
             colour: hit.color.clone().unwrap_or_default(),
             title: doc.title.clone(),
             text: hit.snippet.clone().unwrap_or_default(),
+            chapter,
         },
         {
             let widgets = widgets.clone();

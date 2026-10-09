@@ -158,8 +158,11 @@ pub(super) fn install_notes_sidebar(
                 if let Some(swatch) = color_swatch(annotation.color.as_deref()) {
                     header_box.append(&swatch);
                 }
-                let header_label =
-                    gtk4::Label::new(Some(&format!("Ch. {chapter_num} — {kind_label}")));
+                let place = match crate::page_label_of(&annotation) {
+                    Some(label) => format!("p. {label}"),
+                    None => format!("Ch. {chapter_num}"),
+                };
+                let header_label = gtk4::Label::new(Some(&format!("{place} — {kind_label}")));
                 header_label.set_xalign(0.0);
                 header_label.set_hexpand(true);
                 header_label.add_css_class("dim-label");
