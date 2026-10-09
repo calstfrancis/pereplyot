@@ -13,9 +13,9 @@ repository = "https://github.com/calstfrancis/pereplyot"
 # UI-agnostic). fond-bib (the vault Library/Note, for the Kartoteka launch mode) still comes
 # from Kartoteka and re-exports the same fond-annot types, so both must stay on one
 # fond-annot revision. Pinned by rev; bump deliberately.
-fond-bib = { git = "https://github.com/calstfrancis/kartoteka", rev = "20bb0ae4675b83992da85a7df17070ecb5a0fc79" }
-fond-annot = { git = "https://github.com/calstfrancis/fond-core", rev = "e26b9b975" }
-fond-doc = { git = "https://github.com/calstfrancis/fond-core", rev = "e26b9b975" }
+fond-bib = { git = "https://github.com/calstfrancis/kartoteka", rev = "3a643e4a5489260c321a36c64b4347cbd1ff8d04" }
+fond-annot = { git = "https://github.com/calstfrancis/fond-core", rev = "b910bc66d" }
+fond-doc = { git = "https://github.com/calstfrancis/fond-core", rev = "b910bc66d" }
 # Same version/features fond-doc builds it with, so the two unify into one crate — only
 # needed directly for page geometry (crop-box origin, /Rotate) that fond-doc doesn't expose.
 pdfium-render = { version = "0.8", default-features = false, features = ["pdfium_latest", "thread_safe", "sync"] }
