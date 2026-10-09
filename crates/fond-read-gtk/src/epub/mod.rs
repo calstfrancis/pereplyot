@@ -26,6 +26,7 @@ mod highlights;
 mod keys;
 mod open_book;
 mod page_label;
+mod paged;
 mod pages;
 mod undo_redo;
 mod web_view_setup;
@@ -75,6 +76,8 @@ struct EpubReaderState {
     lost: Vec<String>,
     /// Rebuilds the Notes list when `lost` changes.
     on_lost_changed: Option<Rc<dyn Fn()>>,
+    /// Turning pages rather than scrolling.
+    paginated: bool,
 }
 
 /// A built-in EPUB reader: renders each chapter with WebKitGTK (`webkit6`), which — unlike
@@ -156,6 +159,7 @@ pub fn show_epub_reader(
         pages: printed_pages,
         lost: Vec::new(),
         on_lost_changed: None,
+        paginated: host.epub_paginated(),
         spine: book.spine,
         index: start_index,
         store,
@@ -339,8 +343,21 @@ pub fn show_epub_reader(
         });
     }
 
-    let LayoutParts { notes_paned, paned } =
-        layout::build_layout(&content, &contents_scroll, &notes_scroll, &view);
+    let paged = paged::build(
+        host,
+        &reader,
+        &web_view,
+        &prev,
+        &next,
+        &pending_scroll_percent,
+    );
+    let LayoutParts { notes_paned, paned } = layout::build_layout(
+        &content,
+        &contents_scroll,
+        &notes_scroll,
+        &view,
+        &[paged.toggle.clone().upcast(), paged.spread.clone().upcast()],
+    );
     let reader_tab = crate::reader_host::open_reader_tab(window, title, &view);
     let reader_window = reader_tab.host_window.clone();
     crate::register_reader(hash, &reader_tab);
@@ -401,6 +418,7 @@ pub fn show_epub_reader(
         zoom_out_button: zoom_out_button.clone(),
         epub_undo: epub_undo.clone(),
         epub_redo: epub_redo.clone(),
+        page_turn: paged.turn.clone(),
     };
     search_wiring::install_search(&ui);
     {

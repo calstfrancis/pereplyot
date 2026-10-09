@@ -240,7 +240,9 @@ pub(super) fn epub_apply_highlights(
                     changed.then(|| r.on_lost_changed.clone()).flatten(),
                 )
             };
-            let script = format!("{EPUB_APPLY_HIGHLIGHTS_FN}({payload}, {scroll_json})");
+            let script = format!(
+                "{EPUB_APPLY_HIGHLIGHTS_FN}({payload}, {scroll_json}); if (window.__snap) window.__snap();"
+            );
             view_for_apply.evaluate_javascript(&script, None, None, gio::Cancellable::NONE, |_| {});
             if let Some(f) = lost_changed {
                 f();

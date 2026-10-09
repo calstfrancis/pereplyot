@@ -89,7 +89,7 @@ pub(super) fn apply_epub_style(
         return;
     };
     ucm.remove_all_style_sheets();
-    let css = typography.epub_css();
+    let css = typography.epub_css_for(super::paged::is_paged(view));
     if css.trim().is_empty() {
         return;
     }

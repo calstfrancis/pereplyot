@@ -20,6 +20,8 @@ pub(super) fn install_chapter_load(
         let pending_search = pending_search.clone();
         web_view.connect_load_changed(move |view, event| {
             if event == webkit6::LoadEvent::Finished {
+                let runtime = paged::load_script(reader.borrow().paginated, view.width());
+                view.evaluate_javascript(&runtime, None, None, gio::Cancellable::NONE, |_| {});
                 let script = {
                     let r = reader.borrow();
                     r.spine
@@ -33,10 +35,7 @@ pub(super) fn install_chapter_load(
                 let scroll_to = pending_scroll.borrow_mut().take();
                 epub_apply_highlights(view, &reader, scroll_to.as_deref());
                 if let Some(percent) = pending_scroll_percent.borrow_mut().take() {
-                    let script = format!(
-                        "window.scrollTo(0, Math.round((document.documentElement.scrollHeight - document.documentElement.clientHeight) * {}));",
-                        (percent.min(100) as f64) / 100.0
-                    );
+                    let script = format!("window.__setPercent({});", percent.min(100));
                     view.evaluate_javascript(&script, None, None, gio::Cancellable::NONE, |_| {});
                 }
                 if let Some(query) = pending_search.borrow_mut().take() {

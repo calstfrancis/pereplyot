@@ -150,6 +150,13 @@ pub trait ReaderHost {
 
     fn set_reading_mode(&self, _on: bool) {}
 
+    /// Whether this EPUB was last left in paginated (page-turning) mode rather than scrolling.
+    fn epub_paginated(&self) -> bool {
+        false
+    }
+
+    fn set_epub_paginated(&self, _on: bool) {}
+
     /// Where in the document the reader was: a 1-based page and how far down it (0 to 1), kept
     /// beside the progress so reopening can put you back on the line, not just the page.
     fn position(&self) -> Option<(u32, f32)> {

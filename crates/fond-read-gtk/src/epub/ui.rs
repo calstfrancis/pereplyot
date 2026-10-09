@@ -31,4 +31,5 @@ pub(super) struct EpubUi {
     pub(super) zoom_out_button: gtk4::Button,
     pub(super) epub_undo: Rc<dyn Fn()>,
     pub(super) epub_redo: Rc<dyn Fn()>,
+    pub(super) page_turn: Rc<dyn Fn(i32)>,
 }

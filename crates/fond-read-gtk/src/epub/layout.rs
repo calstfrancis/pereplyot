@@ -11,6 +11,7 @@ pub(super) fn build_layout(
     contents_scroll: &gtk4::ScrolledWindow,
     notes_scroll: &gtk4::ScrolledWindow,
     view: &adw::ToolbarView,
+    status_items: &[gtk4::Widget],
 ) -> LayoutParts {
     let content = content.clone();
     let contents_scroll = contents_scroll.clone();
@@ -47,17 +48,20 @@ pub(super) fn build_layout(
     // belongs at the bottom of the window, unlike the PDF reader's page nav/zoom. Per-tab
     // rather than a second bottom bar added by the host window itself, matching the PDF
     // reader (see its own `show_pdf_reader` for the fuller reasoning).
-    if let Some(footer_widget) = crate::reader_host::host_footer_widget() {
-        let statusbar = gtk4::Box::new(Orientation::Horizontal, 6);
-        statusbar.add_css_class("toolbar");
-        statusbar.add_css_class("fond-chrome");
-        statusbar.add_css_class("fond-statusbar");
-        let spacer = gtk4::Box::new(Orientation::Horizontal, 0);
-        spacer.set_hexpand(true);
-        statusbar.append(&spacer);
-        statusbar.append(&footer_widget);
-        view.add_bottom_bar(&statusbar);
+    let statusbar = gtk4::Box::new(Orientation::Horizontal, 6);
+    statusbar.add_css_class("toolbar");
+    statusbar.add_css_class("fond-chrome");
+    statusbar.add_css_class("fond-statusbar");
+    for item in status_items {
+        statusbar.append(item);
     }
+    let spacer = gtk4::Box::new(Orientation::Horizontal, 0);
+    spacer.set_hexpand(true);
+    statusbar.append(&spacer);
+    if let Some(footer_widget) = crate::reader_host::host_footer_widget() {
+        statusbar.append(&footer_widget);
+    }
+    view.add_bottom_bar(&statusbar);
 
     LayoutParts { notes_paned, paned }
 }

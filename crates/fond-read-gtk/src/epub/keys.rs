@@ -12,6 +12,8 @@ pub(super) fn install_keys(ui: &EpubUi) {
         zoom_out_button,
         epub_undo,
         epub_redo,
+        page_turn,
+        reader,
         ..
     } = ui;
     {
@@ -28,6 +30,8 @@ pub(super) fn install_keys(ui: &EpubUi) {
         let next = next.clone();
         let bookmark_button = bookmark_button.clone();
         let view_for_focus = web_view.clone();
+        let page_turn = page_turn.clone();
+        let reader = reader.clone();
         let zoom_in_key = zoom_in_button.clone();
         let zoom_out_key = zoom_out_button.clone();
         crate::reader_host::set_tab_key_handler(reader_tab, move |keyval, modifiers| {
@@ -66,6 +70,35 @@ pub(super) fn install_keys(ui: &EpubUi) {
                     }
                     gdk::Key::minus | gdk::Key::KP_Subtract => {
                         zoom_out_key.emit_clicked();
+                        return glib::Propagation::Stop;
+                    }
+                    _ => {}
+                }
+            }
+            // Paginated: the keys turn pages, and a chapter ends only when its pages do.
+            if reader.borrow().paginated && !modifiers.contains(gdk::ModifierType::CONTROL_MASK) {
+                let shift = modifiers.contains(gdk::ModifierType::SHIFT_MASK);
+                match keyval {
+                    gdk::Key::Right
+                    | gdk::Key::KP_Right
+                    | gdk::Key::Page_Down
+                    | gdk::Key::KP_Page_Down => {
+                        page_turn(1);
+                        return glib::Propagation::Stop;
+                    }
+                    gdk::Key::space if !shift => {
+                        page_turn(1);
+                        return glib::Propagation::Stop;
+                    }
+                    gdk::Key::Left
+                    | gdk::Key::KP_Left
+                    | gdk::Key::Page_Up
+                    | gdk::Key::KP_Page_Up => {
+                        page_turn(-1);
+                        return glib::Propagation::Stop;
+                    }
+                    gdk::Key::space => {
+                        page_turn(-1);
                         return glib::Propagation::Stop;
                     }
                     _ => {}

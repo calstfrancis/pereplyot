@@ -122,6 +122,12 @@ impl Typography {
     /// The stylesheet an EPUB chapter is shown with. Text size goes through the view's zoom
     /// instead (see `size`), so it is not part of this.
     pub fn epub_css(&self) -> String {
+        self.epub_css_for(false)
+    }
+
+    /// The EPUB stylesheet; paginated, the page's own columns set the width and margins, so the
+    /// text-width rule is left out.
+    pub fn epub_css_for(&self, paginated: bool) -> String {
         let mut css = String::new();
         if let Some((bg, fg, link)) = self.colours() {
             css.push_str(&format!(
@@ -139,12 +145,20 @@ impl Typography {
             ParagraphStyle::Space => "text-indent: 0; margin: 0 0 0.9em;",
         };
         let align = if self.justify { "justify" } else { "left" };
-        css.push_str(&format!(
-            "body {{ max-width: {}px !important; margin: 0 auto !important; \
-             padding: 0 {}px !important; line-height: {:.2} !important; }}\n\
-             p {{ {indent} text-align: {align} !important; line-height: {:.2} !important; }}\n",
-            self.width, self.margin, self.line_height, self.line_height
-        ));
+        if paginated {
+            css.push_str(&format!(
+                "body {{ line-height: {:.2} !important; }}\n\
+                 p {{ {indent} text-align: {align} !important; line-height: {:.2} !important; }}\n",
+                self.line_height, self.line_height
+            ));
+        } else {
+            css.push_str(&format!(
+                "body {{ max-width: {}px !important; margin: 0 auto !important; \
+                 padding: 0 {}px !important; line-height: {:.2} !important; }}\n\
+                 p {{ {indent} text-align: {align} !important; line-height: {:.2} !important; }}\n",
+                self.width, self.margin, self.line_height, self.line_height
+            ));
+        }
         css
     }
 

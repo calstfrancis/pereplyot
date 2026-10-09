@@ -866,6 +866,47 @@ PY
     stop_app
 }
 
+same_region() { # same_region A B X Y W H -> 1 when that rectangle looks the same in both screenshots
+    convert "$1" -crop "$5x$6+$3+$4" +repage "$WORK/_a.png" 2>/dev/null
+    convert "$2" -crop "$5x$6+$3+$4" +repage "$WORK/_b.png" 2>/dev/null
+    [ "$(compare -metric AE "$WORK/_a.png" "$WORK/_b.png" null: 2>&1 | awk '{print $1}')" = 0 ] && echo 1 || echo 0
+}
+
+run_pages_case() {
+    start_app "$FX/scholar.epub"
+    local w
+    w="$(reader_window)" || { check "pages: reader window opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
+    sleep 4
+    xdotool windowfocus "$w" 2>/dev/null
+    xdotool mousemove 47 791 click 1
+    sleep 2
+    screenshot "$WORK/pg-1.png"
+    local spread
+    spread="$(python3 "$HERE/text_bands.py" "$WORK/pg-1.png" --ink-in 90 780 140 802)"
+    check "pages: the Pages toggle shows where you are (1 / 2)" "$([ "${spread:-0}" -gt 40 ] && echo 1 || echo 0)" "(ink in the spread label: $spread)"
+    xdotool mousemove 600 400
+    xdotool key space
+    sleep 1.5
+    screenshot "$WORK/pg-2.png"
+    check "pages: Space turns to the next spread" "$([ "$(same_region "$WORK/pg-1.png" "$WORK/pg-2.png" 0 90 1240 660)" = 0 ] && [ "$(same_region "$WORK/pg-1.png" "$WORK/pg-2.png" 90 780 50 22)" = 0 ] && echo 1 || echo 0)"
+    xdotool key space
+    sleep 2.5
+    screenshot "$WORK/pg-3.png"
+    check "pages: past the last page it goes on to the next chapter, and the printed page moves on" "$([ "$(same_region "$WORK/pg-2.png" "$WORK/pg-3.png" 205 15 50 26)" = 0 ] && echo 1 || echo 0)"
+    xdotool key shift+space
+    sleep 2.5
+    screenshot "$WORK/pg-4.png"
+    check "pages: Shift+Space from the top of a chapter lands on the last page of the one before" "$([ "$(same_region "$WORK/pg-2.png" "$WORK/pg-4.png" 90 780 50 22)" = 1 ] && [ "$(same_region "$WORK/pg-2.png" "$WORK/pg-4.png" 205 15 50 26)" = 1 ] && echo 1 || echo 0)"
+    stop_app
+    start_app "$FX/scholar.epub" keep
+    reader_window >/dev/null
+    sleep 4
+    screenshot "$WORK/pg-5.png"
+    spread="$(python3 "$HERE/text_bands.py" "$WORK/pg-5.png" --ink-in 90 780 140 802)"
+    check "pages: it reopens paginated" "$([ "${spread:-0}" -gt 40 ] && echo 1 || echo 0)" "(ink in the spread label: $spread)"
+    stop_app
+}
+
 # Line order in the fixtures: "Page N", fox, Pack, Sphinx.
 want() { [ -z "${SMOKE_CASES:-}" ] || [[ " $SMOKE_CASES " == *" $1 "* ]]; }
 want plain && run_pdf_case plain plain.pdf y 2 "Pack my box with five dozen liquor jugs."
@@ -886,6 +927,7 @@ want mixed && run_mixed_case
 want notebook && run_notebook_case
 want connect && run_connect_case
 want scholar && run_scholar_case
+want pages && run_pages_case
 want launcher && run_launcher_case
 
 echo

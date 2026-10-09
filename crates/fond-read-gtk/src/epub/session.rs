@@ -15,7 +15,7 @@ pub(super) fn install_progress_saving(
     // (`evaluate_javascript`), so this returns `Propagation::Proceed` immediately and writes
     // the note in the callback — nothing after that write depends on the dialog still being
     // open, it just needs `state`/`key`, both cheap `Rc`/`String` clones.
-    const SCROLL_PERCENT_JS: &str = "(function() {\n  var el = document.documentElement;\n  var range = el.scrollHeight - el.clientHeight;\n  return range > 0 ? Math.round((el.scrollTop / range) * 100) : 0;\n})()";
+    const SCROLL_PERCENT_JS: &str = "(function() {\n  if (window.__percent) return window.__percent();\n  var el = document.documentElement;\n  var range = el.scrollHeight - el.clientHeight;\n  return range > 0 ? Math.round((el.scrollTop / range) * 100) : 0;\n})()";
     let last_percent: Rc<Cell<u8>> = Rc::new(Cell::new(start_percent.unwrap_or(0)));
     let closed = Rc::new(Cell::new(false));
     {

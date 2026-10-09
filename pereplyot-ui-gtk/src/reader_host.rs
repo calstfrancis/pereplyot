@@ -37,6 +37,8 @@ struct LocalMeta {
     citation_key: Option<String>,
     #[serde(default, skip_serializing_if = "is_false")]
     reading_mode: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    paginated: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     position: Option<(u32, f32)>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -174,6 +176,16 @@ impl ReaderHost for LocalReaderHost {
     fn set_reading_mode(&self, on: bool) {
         let mut meta = LocalMeta::load(&self.hash);
         meta.reading_mode = on;
+        meta.save(&self.hash);
+    }
+
+    fn epub_paginated(&self) -> bool {
+        LocalMeta::load(&self.hash).paginated
+    }
+
+    fn set_epub_paginated(&self, on: bool) {
+        let mut meta = LocalMeta::load(&self.hash);
+        meta.paginated = on;
         meta.save(&self.hash);
     }
 
@@ -467,6 +479,16 @@ impl ReaderHost for VaultReaderHost {
         meta.save(&self.hash);
     }
 
+    fn epub_paginated(&self) -> bool {
+        LocalMeta::load(&self.hash).paginated
+    }
+
+    fn set_epub_paginated(&self, on: bool) {
+        let mut meta = LocalMeta::load(&self.hash);
+        meta.paginated = on;
+        meta.save(&self.hash);
+    }
+
     fn position(&self) -> Option<(u32, f32)> {
         LocalMeta::load(&self.hash).position
     }
@@ -602,6 +624,16 @@ impl ReaderHost for ExternalPathReaderHost {
     fn set_reading_mode(&self, on: bool) {
         let mut meta = LocalMeta::load(&self.hash);
         meta.reading_mode = on;
+        meta.save(&self.hash);
+    }
+
+    fn epub_paginated(&self) -> bool {
+        LocalMeta::load(&self.hash).paginated
+    }
+
+    fn set_epub_paginated(&self, on: bool) {
+        let mut meta = LocalMeta::load(&self.hash);
+        meta.paginated = on;
         meta.save(&self.hash);
     }
 
