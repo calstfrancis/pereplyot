@@ -51,6 +51,7 @@ pub(super) fn build_drag_preview_overlay(
     reader: &Rc<RefCell<ReaderState>>,
     page_of: impl Fn() -> u16 + 'static,
 ) -> (gtk4::Overlay, gtk4::DrawingArea, DragRectCell) {
+    let page_of: Rc<dyn Fn() -> u16> = Rc::new(page_of);
     let live_rect: DragRectCell = Rc::new(Cell::new(None));
 
     let preview = gtk4::DrawingArea::new();
@@ -61,6 +62,7 @@ pub(super) fn build_drag_preview_overlay(
         let live_rect = live_rect.clone();
         let reader = reader.clone();
         let preview_cache: PreviewCache = Rc::new(RefCell::new(None));
+        let page_of = page_of.clone();
         preview.set_draw_func(move |_area, cr, w, h| {
             let Some((x0, y0, x1, y1)) = live_rect.get() else {
                 return;
@@ -137,6 +139,10 @@ pub(super) fn build_drag_preview_overlay(
 
     let overlay = gtk4::Overlay::new();
     overlay.set_child(Some(picture));
+    overlay.add_overlay(&mark_layer::build_mark_layer(reader, {
+        let page_of = page_of.clone();
+        move || page_of()
+    }));
     overlay.add_overlay(&preview);
 
     (overlay, preview, live_rect)

@@ -56,7 +56,6 @@ mod tests {
             width: 100,
             rotation: 0,
             invert: false,
-            overlay: 0,
         }
     }
 
@@ -65,7 +64,7 @@ mod tests {
     fn keys_hash_on_every_field() {
         let a = key(1);
         let mut b = key(1);
-        b.overlay = 7;
+        b.width = 200;
         assert_ne!(a, b);
         let mut c = key(1);
         c.invert = true;

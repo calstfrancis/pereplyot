@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- **Highlights are drawn over the page instead of into it.** Adding, undoing or recolouring a
+  highlight, moving to the next search match, and extending a selection used to re-render
+  the whole page with the marks baked into its pixels. The marks are now a separate layer of
+  rectangles over the page picture, so those changes repaint in a frame and the page itself is
+  never re-rendered or evicted from the texture cache. The facing page in Two-page view gets
+  its marks too.
 - **Pages are drawn on their own thread, at the screen's real resolution.** Page rendering used
   to run on the same thread as the window, so on a scanned book zooming or paging could
   freeze the whole interface for a frame or more, and pages were drawn at logical size, so

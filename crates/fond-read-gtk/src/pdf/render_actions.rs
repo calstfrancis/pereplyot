@@ -72,10 +72,10 @@ pub(super) fn build_render_actions(
             if two_page && page + 1 < count {
                 let (rw, rh) = paint_page(&reader, page + 1, &right_picture);
                 right_picture.set_size_request(rw as i32, rh as i32);
-                right_picture.set_visible(true);
+                set_facing_visible(&right_picture, true);
             } else {
                 // Not two-page mode, or an odd page count's last spread with no facing page.
-                right_picture.set_visible(false);
+                set_facing_visible(&right_picture, false);
             }
             let r = reader.borrow();
             update_page_display(
@@ -187,4 +187,10 @@ pub(super) fn build_render_actions(
         redo_button.connect_clicked(move |_| redo());
     }
     RenderActionsParts { render, undo, redo }
+}
+
+fn set_facing_visible(right_picture: &gtk4::Picture, visible: bool) {
+    if let Some(overlay) = right_picture.parent() {
+        overlay.set_visible(visible);
+    }
 }

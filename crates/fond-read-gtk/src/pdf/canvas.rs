@@ -48,7 +48,17 @@ pub(super) fn build_canvas(reader: &Rc<RefCell<ReaderState>>) -> CanvasParts {
     let spread_box = gtk4::Box::new(Orientation::Horizontal, 12);
     spread_box.set_halign(gtk4::Align::Center);
     spread_box.append(&picture_overlay);
-    spread_box.append(&right_picture);
+    let right_overlay = gtk4::Overlay::new();
+    right_overlay.set_child(Some(&right_picture));
+    right_overlay.add_overlay(&mark_layer::build_mark_layer(&reader, {
+        let reader = reader.clone();
+        move || reader.borrow().page + 1
+    }));
+    right_overlay.set_halign(gtk4::Align::Center);
+    right_overlay.set_valign(gtk4::Align::Start);
+    right_overlay.set_visible(false);
+    right_picture.set_visible(true);
+    spread_box.append(&right_overlay);
     let scroll = gtk4::ScrolledWindow::new();
     scroll.set_child(Some(&spread_box));
     scroll.set_vexpand(true);

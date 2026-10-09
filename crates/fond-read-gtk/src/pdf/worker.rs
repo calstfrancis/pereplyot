@@ -13,8 +13,6 @@ pub(super) struct RenderKey {
     pub width: u32,
     pub rotation: u16,
     pub invert: bool,
-    /// Hash of the overlay below, so a changed highlight is a different picture.
-    pub overlay: u64,
 }
 
 impl RenderKey {
@@ -23,17 +21,8 @@ impl RenderKey {
     }
 }
 
-/// The marks drawn over a page, already in the page's displayed point space.
-#[derive(Clone, Default)]
-pub(super) struct Overlay {
-    pub page_pts: (f32, f32),
-    pub marks: Vec<(fond_doc::MarkupKind, Vec<[f64; 8]>, [u8; 4])>,
-    pub highlights: Vec<(Vec<[f64; 8]>, [u8; 4])>,
-}
-
 pub(super) struct Job {
     pub key: RenderKey,
-    pub overlay: Overlay,
     /// Lower runs first; distance from the page being read.
     pub priority: u32,
 }
@@ -171,7 +160,7 @@ fn run(id: u64, path: PathBuf, shared: Arc<Shared>) {
 
 fn render(doc: &pdfium_render::prelude::PdfDocument<'_>, job: Job) -> Option<Rendered> {
     use pdfium_render::prelude::{PdfRenderConfig, Pixels};
-    let Job { key, overlay, .. } = job;
+    let Job { key, .. } = job;
     let page = doc.pages().get(key.page).ok()?;
     let config = PdfRenderConfig::new().set_target_width(key.width.max(1) as Pixels);
     let bitmap = page.render_with_config(&config).ok()?;
@@ -180,15 +169,6 @@ fn render(doc: &pdfium_render::prelude::PdfDocument<'_>, job: Job) -> Option<Ren
         height: bitmap.height() as u32,
         rgba: bitmap.as_rgba_bytes(),
     };
-    let (pw, ph) = overlay.page_pts;
-    for (kind, quads, rgba) in &overlay.marks {
-        let items: Vec<(fond_doc::MarkupKind, [f64; 8])> =
-            quads.iter().map(|q| (*kind, *q)).collect();
-        fond_doc::blend_annotations(&mut rp, pw, ph, &items, *rgba);
-    }
-    for (quads, rgba) in &overlay.highlights {
-        fond_doc::blend_highlights(&mut rp, pw, ph, quads, *rgba);
-    }
     if key.invert {
         super::render::invert_rgba(&mut rp.rgba);
     }

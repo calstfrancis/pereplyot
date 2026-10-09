@@ -80,20 +80,17 @@ pub(super) fn render_open(
     })
 }
 
-/// What the page's overlay (saved marks, the current search match, the live selection) looks
-/// like right now, in the page's displayed point space, plus a hash so it can key a cache.
-fn overlay_for(r: &ReaderState, page: u16, geom: Option<PageGeom>) -> (Overlay, u64) {
-    use std::hash::{Hash, Hasher};
-    let page_pts = geom.map(|g| g.display_size()).unwrap_or((0.0, 0.0));
-    let to_display = |quads: &[[f64; 8]]| match geom {
-        Some(g) => g.quads_to_display(quads),
-        None => quads.to_vec(),
-    };
+/// The marks drawn over a page — saved highlights, the current search match and the live
+/// selection — as rectangles in the page's displayed point space.
+pub(super) struct Mark {
+    pub kind: fond_doc::MarkupKind,
+    pub quads: Vec<[f64; 8]>,
+    pub rgba: [u8; 4],
+}
+
+pub(super) fn marks_for(r: &ReaderState, page: u16, geom: PageGeom) -> Vec<Mark> {
     let current_page = page as u32 + 1;
-    let mut overlay = Overlay {
-        page_pts,
-        ..Overlay::default()
-    };
+    let mut marks = Vec::new();
     // A freestanding Note (no quadpoints) is skipped; a Note made from a text selection carries
     // real quadpoints and is drawn like a highlight. Each mark keeps its own colour.
     for a in r
@@ -111,44 +108,33 @@ fn overlay_for(r: &ReaderState, page: u16, geom: Option<PageGeom>) -> (Overlay, 
             fond_annot::AnnotationKind::Strikeout => fond_doc::MarkupKind::Strikeout,
             _ => continue,
         };
-        overlay.marks.push((
+        marks.push(Mark {
             kind,
-            to_display(&a.quadpoints),
-            annotation_rgba(a.color.as_deref()),
-        ));
+            quads: geom.quads_to_display(&a.quadpoints),
+            rgba: annotation_rgba(a.color.as_deref()),
+        });
     }
     // The current search match is drawn in its own colour on top of saved marks, and a "Select
     // text" selection stays visible after the drag ends until a new one replaces it.
     if let Some(current) = r.search_matches.get(r.search_current) {
         if current.page == page {
-            overlay
-                .highlights
-                .push((to_display(&current.quads), SEARCH_MATCH_RGBA));
+            marks.push(Mark {
+                kind: fond_doc::MarkupKind::Highlight,
+                quads: geom.quads_to_display(&current.quads),
+                rgba: SEARCH_MATCH_RGBA,
+            });
         }
     }
     if let Some((sel_page, _, quads)) = &r.last_selection {
         if *sel_page == page {
-            overlay.highlights.push((to_display(quads), SELECTION_RGBA));
+            marks.push(Mark {
+                kind: fond_doc::MarkupKind::Highlight,
+                quads: geom.quads_to_display(quads),
+                rgba: SELECTION_RGBA,
+            });
         }
     }
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    let quads_hash = |h: &mut std::collections::hash_map::DefaultHasher, qs: &[[f64; 8]]| {
-        for q in qs {
-            for v in q {
-                v.to_bits().hash(h);
-            }
-        }
-    };
-    for (kind, quads, rgba) in &overlay.marks {
-        (*kind as u8).hash(&mut h);
-        rgba.hash(&mut h);
-        quads_hash(&mut h, quads);
-    }
-    for (quads, rgba) in &overlay.highlights {
-        rgba.hash(&mut h);
-        quads_hash(&mut h, quads);
-    }
-    (overlay, h.finish())
+    marks
 }
 
 /// The page's size on screen in logical pixels (unrotated, then swapped for a quarter turn).
@@ -175,27 +161,21 @@ pub(super) fn paint_page(
     let scale = picture.scale_factor().max(1) as u32;
     let mut r = reader.borrow_mut();
     let size = logical_page_size(&r, page);
-    let geom = r.geom(page);
-    let (overlay, overlay_hash) = overlay_for(&r, page, geom);
     let unrotated_w = (READER_BASE_WIDTH * r.zoom).max(1.0) as u32;
     let key = RenderKey {
         page,
         width: unrotated_w * scale,
         rotation: r.rotation,
         invert: r.invert_colors,
-        overlay: overlay_hash,
     };
+    mark_layer::redraw_beside(picture);
     if let Some(texture) = r.textures.get(&key) {
         picture.set_paintable(Some(&texture));
         return size;
     }
     let priority = (page as i32 - r.page as i32).unsigned_abs();
     if let Some(worker) = &r.worker {
-        worker.submit(Job {
-            key,
-            overlay,
-            priority,
-        });
+        worker.submit(Job { key, priority });
     }
     size
 }
