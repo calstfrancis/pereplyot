@@ -363,7 +363,7 @@ dependencies = [
 [[package]]
 name = "fond-bib"
 version = "0.1.0"
-source = "git+https://github.com/calstfrancis/kartoteka?rev=3a643e4a5489260c321a36c64b4347cbd1ff8d04#3a643e4a5489260c321a36c64b4347cbd1ff8d04"
+source = "git+https://github.com/calstfrancis/kartoteka?rev=6ad90d41ac8c9669a336dc025601e2fb27bfbb8d#6ad90d41ac8c9669a336dc025601e2fb27bfbb8d"
 dependencies = [
  "biblatex 0.11.0",
  "blake3",
