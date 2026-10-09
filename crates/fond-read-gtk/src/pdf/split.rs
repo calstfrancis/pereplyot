@@ -1,5 +1,8 @@
 use super::*;
 
+/// The widget name of a second pane's root, which keyboard focus is checked against.
+pub(super) const PANE_NAME: &str = "pereplyot-pane";
+
 /// What is showing in the second pane, and how to take it down.
 struct Active {
     view: adw::ToolbarView,

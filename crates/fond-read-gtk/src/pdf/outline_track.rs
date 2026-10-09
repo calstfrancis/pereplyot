@@ -27,23 +27,23 @@ pub(super) fn section_path(entries: &[fond_doc::PdfOutlineEntry], page: u32) -> 
 /// Keep the Contents list and the status bar's breadcrumb on the section being read.
 pub(super) fn install_outline_tracking(
     reader: &Rc<RefCell<ReaderState>>,
-    entries: Vec<fond_doc::PdfOutlineEntry>,
-    rows: Vec<gtk4::Button>,
+    entries: Rc<RefCell<Vec<fond_doc::PdfOutlineEntry>>>,
+    rows: Rc<RefCell<Vec<gtk4::Button>>>,
     scroll: gtk4::ScrolledWindow,
     breadcrumb: &gtk4::Label,
     page_entry: &gtk4::Entry,
-) {
+) -> Rc<dyn Fn()> {
     crate::style::ensure();
-    if entries.is_empty() {
-        breadcrumb.set_visible(false);
-        return;
-    }
+    breadcrumb.set_visible(false);
     let current: Rc<Cell<Option<usize>>> = Rc::new(Cell::new(None));
+    let current_reset = current.clone();
     let update: Rc<dyn Fn()> = {
         let reader = reader.clone();
         let breadcrumb = breadcrumb.clone();
         Rc::new(move || {
             let page = reader.borrow().page as u32 + 1;
+            let entries = entries.borrow();
+            let rows = rows.borrow();
             let path = section_path(&entries, page);
             let leaf = path.last().copied();
             if let Some(i) = current.get() {
@@ -91,7 +91,13 @@ pub(super) fn install_outline_tracking(
             });
         });
     }
-    glib::idle_add_local_once(move || update());
+    let initial = update.clone();
+    glib::idle_add_local_once(move || initial());
+    // After the entries are replaced: the old rows are gone, so forget which one was current.
+    Rc::new(move || {
+        current_reset.set(None);
+        update();
+    })
 }
 
 /// Scroll `scroll` just far enough that `row` is in view, with a little context above it.

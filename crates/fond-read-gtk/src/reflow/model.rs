@@ -27,6 +27,9 @@ pub struct RawPage {
     pub width: f32,
     pub height: f32,
     pub words: Vec<Word>,
+    /// The regions of the page drawn with pictures or lines rather than text, as `[x0, y0, x1, y1]`
+    /// in the same space as the words: touching ones are already joined into one.
+    pub graphics: Vec<[f32; 4]>,
 }
 
 /// Where a stretch of a paragraph's text came from on the page: `start..end` are char offsets
@@ -75,6 +78,16 @@ pub struct Paragraph {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Item {
-    Heading { level: u8, text: String, page: u16 },
+    Heading {
+        level: u8,
+        text: String,
+        page: u16,
+    },
+    /// A figure or table, kept as a picture of this part of `page` (`[x0, y0, x1, y1]`, page
+    /// points as displayed) instead of text.
+    Figure {
+        page: u16,
+        bbox: [f32; 4],
+    },
     Paragraph(Paragraph),
 }

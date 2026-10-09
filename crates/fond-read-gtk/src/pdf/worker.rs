@@ -42,7 +42,8 @@ pub(super) struct RenderKey {
     pub rotation: u16,
     pub tone: Tone,
     /// A small page for the sidebar, not a reading surface: queued behind every page job and
-    /// never discarded in favour of one.
+    /// never discarded in favour of one. With a `crop`, a figure for Reading mode instead, which
+    /// queues in a class of its own where nothing is discarded.
     pub thumb: bool,
     /// Device width of the whole page at the current zoom. Equal to `width` except for a tile's
     /// low-resolution backdrop, which is drawn smaller than the zoom it belongs to.
@@ -57,7 +58,9 @@ pub(super) struct RenderKey {
 impl RenderKey {
     /// Pages and their tiles, thumbnails and crops queue apart, so one never discards another.
     fn class(&self) -> u8 {
-        if self.thumb {
+        if self.thumb && self.crop.is_some() {
+            3
+        } else if self.thumb {
             1
         } else if self.crop.is_some() {
             2
@@ -146,6 +149,7 @@ impl RenderWorker {
         // pointless, and a newer picture of the same page replaces an older one.
         q.jobs.retain(|j| {
             j.key.class() != job.key.class()
+                || j.key.class() == 3
                 || (j.key.same_view(&job.key)
                     && (j.key.page != job.key.page
                         || j.key.tile != job.key.tile

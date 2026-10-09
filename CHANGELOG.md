@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+- **Figures and tables in Reading mode.** A chart, a diagram or a ruled table with a "Figure 3." or
+  "Table 2." caption beside it now appears in the text as a picture of that part of the page,
+  with its caption underneath or above as an ordinary paragraph; the axis labels and table cells
+  that used to be scrambled into the prose are gone from it. Only a drawing with a caption next
+  to it is taken for a figure, so underlines and boxed words are left alone.
+- **Search in Reading mode.** Hits are marked in the text, the current one strongly, and Next and
+  Previous scroll to it.
+- **A Contents for PDFs that have none.** A PDF with no outline of its own gets one from the
+  headings Reading mode finds, so the Outline tab, the highlighted section and the breadcrumb
+  work for it too once its text has been read.
+- **Scans you have recognised are searchable.** Search in the page view now looks through the
+  text recognised from a scanned page (once you have chosen *Recognise text*), and a recognised
+  scan opens straight into Reading mode the next time without asking again. Recognition
+  itself reads a scanned line as one type size, so a line of mixed tall and short letters no
+  longer turns into several paragraphs or a false heading; tested against the real Tesseract.
+- **Tesseract in the Flatpak.** The manifest now builds Tesseract and Leptonica with English
+  language data, so *Recognise text* works out of the box in the Flatpak. Other languages put in
+  `~/.local/share/pereplyot/tessdata` are used alongside it.
+- **Split view keeps its own keys.** Arrow keys, Space, Home/End, `+`/`-`, Ctrl+F, `T`, the 1–4
+  marking keys and Esc act on the pane you last clicked in, not always the first.
+- **Pinned figures come back.** Pins are kept with the document, with where each card sat, and
+  return when it is reopened.
+- **Set page numbering** is in the menu on a printed page number in Reading mode's margin, and
+  the margin numbers follow the numbering you set.
 - **Split view.** *More ▸ Split view: side by side* (or *top and bottom*) opens a second pane of
   the same document beside or below the first, for reading chapter 3 with the endnotes or a
   figure open in the other. Each pane has its own page, zoom, search and selection; they share
@@ -17,7 +41,7 @@
 - **Pin a figure.** Right-click a page, choose **Pin a region…** and drag a box round a figure or
   table: it stays on screen as a small floating card while you read on through the pages that
   keep referring to it. Drag a card by its title bar to move it, ✕ to unpin; up to four at
-  once. (Pins last for the reading session.)
+  once.
 - **Hover previews.** Rest the pointer on a link to somewhere in the document — a footnote
   marker, "Figure 3", a table of contents entry — and a small popover shows what is there, a
   crop of the destination page, so you can check it without leaving your place; click still

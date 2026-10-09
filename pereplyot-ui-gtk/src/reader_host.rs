@@ -39,6 +39,8 @@ struct LocalMeta {
     reading_mode: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     position: Option<(u32, f32)>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pins: Vec<(u32, [f32; 4], i32, i32)>,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -180,6 +182,16 @@ impl ReaderHost for LocalReaderHost {
     fn save_position(&self, page: u32, fraction: f32) {
         let mut meta = LocalMeta::load(&self.hash);
         meta.position = Some((page, fraction));
+        meta.save(&self.hash);
+    }
+
+    fn pins(&self) -> Vec<(u32, [f32; 4], i32, i32)> {
+        LocalMeta::load(&self.hash).pins
+    }
+
+    fn save_pins(&self, pins: &[(u32, [f32; 4], i32, i32)]) {
+        let mut meta = LocalMeta::load(&self.hash);
+        meta.pins = pins.to_vec();
         meta.save(&self.hash);
     }
 
@@ -448,6 +460,16 @@ impl ReaderHost for VaultReaderHost {
         meta.save(&self.hash);
     }
 
+    fn pins(&self) -> Vec<(u32, [f32; 4], i32, i32)> {
+        LocalMeta::load(&self.hash).pins
+    }
+
+    fn save_pins(&self, pins: &[(u32, [f32; 4], i32, i32)]) {
+        let mut meta = LocalMeta::load(&self.hash);
+        meta.pins = pins.to_vec();
+        meta.save(&self.hash);
+    }
+
     fn citation_key(&self) -> Option<String> {
         Some(self.key.clone())
     }
@@ -563,6 +585,16 @@ impl ReaderHost for ExternalPathReaderHost {
     fn save_position(&self, page: u32, fraction: f32) {
         let mut meta = LocalMeta::load(&self.hash);
         meta.position = Some((page, fraction));
+        meta.save(&self.hash);
+    }
+
+    fn pins(&self) -> Vec<(u32, [f32; 4], i32, i32)> {
+        LocalMeta::load(&self.hash).pins
+    }
+
+    fn save_pins(&self, pins: &[(u32, [f32; 4], i32, i32)]) {
+        let mut meta = LocalMeta::load(&self.hash);
+        meta.pins = pins.to_vec();
         meta.save(&self.hash);
     }
 

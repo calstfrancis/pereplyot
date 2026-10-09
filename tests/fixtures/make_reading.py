@@ -29,6 +29,13 @@ class Page:
         font = "/F2" if bold else "/F1"
         self.ops.append(f"BT {font} {size} Tf {rise} Ts 1 0 0 1 {x:.2f} {y:.2f} Tm ({esc(s)}) Tj ET")
 
+    def rect(self, x, y, w, h, rgb=(0.2, 0.4, 0.8)):
+        r, g, b = rgb
+        self.ops.append(f"{r} {g} {b} rg {x:.2f} {y:.2f} {w:.2f} {h:.2f} re f 0 g")
+
+    def rule(self, x0, y, x1, width=0.8):
+        self.ops.append(f"{width} w {x0:.2f} {y:.2f} m {x1:.2f} {y:.2f} l S")
+
     def stream(self):
         return "\n".join(self.ops)
 
@@ -282,8 +289,46 @@ def linked():
     write_pdf(OUT / "linked.pdf", [first, second, third])
 
 
+def figures():
+    """A page with a bar chart under its caption and a ruled table under its."""
+    p = Page()
+    y = 700
+    for line in wrap(BODY, 62)[:4]:
+        put_line(p, 72, y, line, 10)
+        y -= 12.5
+    for i, h in enumerate([40, 75, 55, 90]):
+        p.rect(110 + i * 50, 560, 30, h)
+    p.rule(100, 560, 320, 1.0)
+    p.rule(100, 560, 100, 1.0)
+    p.ops.append("1.0 w 100 560 m 100 660 l S")
+    p.text(82, 640, "90", 8)
+    p.text(82, 600, "45", 8)
+    p.text(205, 548, "Year", 8)
+    p.text(72, 512, "Figure 1. Readers per year, drawn as bars.", 9, bold=True)
+    y = 480
+    for line in wrap(BODY[5:], 62)[:3]:
+        put_line(p, 72, y, line, 10)
+        y -= 12.5
+    p.text(72, y - 16, "Table 1. The counts behind the chart.", 9, bold=True)
+    top = y - 30
+    p.rule(72, top, 360, 0.8)
+    p.text(80, top - 12, "Year", 9)
+    p.text(200, top - 12, "Readers", 9)
+    p.rule(72, top - 18, 360, 0.5)
+    for i, (yr, n) in enumerate([("2019", "40"), ("2020", "75"), ("2021", "55")]):
+        p.text(80, top - 32 - i * 14, yr, 9)
+        p.text(200, top - 32 - i * 14, n, 9)
+    p.rule(72, top - 32 - 3 * 14 + 4, 360, 0.8)
+    y = top - 32 - 3 * 14 - 20
+    for line in wrap(BODY[12:], 62)[:3]:
+        put_line(p, 72, y, line, 10)
+        y -= 12.5
+    write_pdf(OUT / "figures.pdf", [p])
+
+
 monograph()
 twocol()
 blank()
 citations()
 linked()
+figures()

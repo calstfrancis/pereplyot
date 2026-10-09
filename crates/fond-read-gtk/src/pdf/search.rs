@@ -1,6 +1,14 @@
 use super::search_thread::SearchEvent;
 use super::*;
 
+/// Repaint search hits in Reading mode, if it is showing.
+fn refresh_text_search(reader: &Rc<RefCell<ReaderState>>, scroll: bool) {
+    let paint = reader.borrow().text_search.clone();
+    if let Some(paint) = paint {
+        paint(scroll);
+    }
+}
+
 pub(super) fn install_search(ui: &PdfUi) {
     let PdfUi {
         reader,
@@ -27,6 +35,10 @@ pub(super) fn install_search(ui: &PdfUi) {
         let continuous_toggle = continuous_toggle.clone();
         let continuous_scroll = continuous_scroll.clone();
         Rc::new(move |page: u16, previous_page: Option<u16>| {
+            if reader.borrow().text_search.is_some() {
+                refresh_text_search(&reader, true);
+                return;
+            }
             if continuous_toggle.is_active() {
                 scroll_continuous_to_page(&reader, &continuous_scroll, page);
                 render_continuous_page(&reader, page);
@@ -66,6 +78,7 @@ pub(super) fn install_search(ui: &PdfUi) {
                 search_count.set_text("Searching…");
             }
             scrollbar_ticks::queue_ticks(&reader);
+            refresh_text_search(&reader, false);
             if let Some(page) = cleared_page {
                 render();
                 render_continuous_page(&reader, page);
@@ -111,6 +124,9 @@ pub(super) fn install_search(ui: &PdfUi) {
                             search_prev.set_sensitive(true);
                             search_next.set_sensitive(true);
                             scrollbar_ticks::queue_ticks(&reader);
+                            if first_page.is_none() {
+                                refresh_text_search(&reader, false);
+                            }
                             if let Some(page) = first_page {
                                 crate::perf::mark("search first match shown");
                                 notify_nav_changed(&reader);
@@ -156,6 +172,7 @@ pub(super) fn install_search(ui: &PdfUi) {
                 search_next.set_sensitive(false);
                 search_count.set_text("");
                 scrollbar_ticks::queue_ticks(&reader);
+                refresh_text_search(&reader, false);
                 render();
                 if let Some(page) = cleared_page {
                     render_continuous_page(&reader, page);

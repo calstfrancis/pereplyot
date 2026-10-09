@@ -2,6 +2,7 @@
 
 pub mod citations;
 pub mod extract;
+pub mod figures;
 pub mod layout;
 pub mod margin;
 pub mod model;
@@ -48,6 +49,7 @@ mod tests {
         for item in &items {
             match item {
                 Item::Heading { level, text, page } => eprintln!("H{level} p{page}: {text}"),
+                Item::Figure { page, bbox } => eprintln!("figure p{page}: {bbox:?}"),
                 Item::Paragraph(p) => eprintln!(
                     "P {}.. ({} chars, markers {:?}, notes {:?}, breaks {:?})",
                     p.text.chars().take(40).collect::<String>(),
@@ -158,6 +160,89 @@ printf '5\\t1\\t1\\t1\\t1\\t3\\t1000\\t600\\t300\\t60\\t95\\tagain.\\n'\n",
             super::ocr::ocr_page(&doc, 0, std::path::Path::new("/nonexistent"), "eng", &cache);
         assert_eq!(again.expect("from the cache").words.len(), 3);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The real Tesseract, when this machine has one with English data (it is skipped otherwise).
+    #[test]
+    fn a_real_scan_is_read_by_the_real_tesseract() {
+        let Some(program) = super::ocr::tesseract() else {
+            eprintln!("no tesseract; skipping");
+            return;
+        };
+        let Ok(pdfium) = crate::pdfium::get() else {
+            eprintln!("no PDFium library; skipping");
+            return;
+        };
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/scan.pdf");
+        let doc = pdfium.load_pdf_from_file(&path, None).unwrap();
+        assert!(
+            extract_page(&doc, 0).map_or(true, |p| p.words.is_empty()),
+            "the fixture has a text layer"
+        );
+        let cache = std::env::temp_dir().join(format!("pereplyot-real-ocr-{}", std::process::id()));
+        let Some(page) = super::ocr::ocr_page(&doc, 0, &program, "eng", &cache) else {
+            eprintln!("tesseract has no English data; skipping");
+            return;
+        };
+        let items = flow_of(&[page]);
+        let all: String = paragraphs(&items)
+            .iter()
+            .map(|p| p.text.clone())
+            .collect::<Vec<_>>()
+            .join("\n");
+        for word in ["hidden", "community", "liturgy", "testimony", "authority"] {
+            assert!(
+                all.to_lowercase().contains(word),
+                "{word} missing from {all:?}"
+            );
+        }
+        assert_eq!(paragraphs(&items).len(), 2, "{all:?}");
+        let _ = std::fs::remove_dir_all(&cache);
+    }
+
+    #[test]
+    fn a_chart_and_a_table_become_pictures_beside_their_captions() {
+        let Some(items) = flow("figures.pdf") else {
+            return;
+        };
+        let kinds: Vec<String> = items
+            .iter()
+            .map(|i| match i {
+                Item::Figure { .. } => "figure".to_string(),
+                Item::Heading { text, .. } => format!("heading {text}"),
+                Item::Paragraph(p) => p.text.chars().take(12).collect(),
+            })
+            .collect();
+        let figures: Vec<usize> = (0..items.len())
+            .filter(|&i| matches!(items[i], Item::Figure { .. }))
+            .collect();
+        assert_eq!(figures.len(), 2, "{kinds:?}");
+        let caption = |prefix: &str| {
+            items
+                .iter()
+                .position(|i| matches!(i, Item::Paragraph(p) if p.text.starts_with(prefix)))
+                .unwrap_or_else(|| panic!("no {prefix} caption in {kinds:?}"))
+        };
+        assert_eq!(figures[0] + 1, caption("Figure 1."), "{kinds:?}");
+        assert_eq!(figures[1], caption("Table 1.") + 1, "{kinds:?}");
+        let all: String = paragraphs(&items)
+            .iter()
+            .map(|p| p.text.clone())
+            .collect::<Vec<_>>()
+            .join("\n");
+        for label in ["Readers per", "90", "2019", "2020"] {
+            let leaked =
+                all.lines().any(|l| l.split(' ').any(|w| w == label)) && label != "Readers per";
+            assert!(!leaked, "{label} leaked into the text: {all}");
+        }
+        let Item::Figure { bbox, .. } = items[figures[0]] else {
+            unreachable!()
+        };
+        assert!(
+            bbox[2] - bbox[0] > 200.0 && bbox[3] - bbox[1] > 80.0,
+            "{bbox:?}"
+        );
     }
 
     fn raw_pages(name: &str) -> Option<Vec<super::model::RawPage>> {

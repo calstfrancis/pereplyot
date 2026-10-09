@@ -3,6 +3,7 @@
 
 text_bands.py IMG            -> "x0 y0 x1 y1" of all dark text inside the PDF page area
 text_bands.py IMG --has-search-match -> number of blue search-match pixels in the PDF page area
+text_bands.py IMG --has-figure-blue -> number of the fixture chart's bar-blue pixels anywhere in the window
 text_bands.py IMG --has-highlight -> number of amber highlight pixels in the PDF page area
 text_bands.py IMG --highlight-box -> "x0 y0 x1 y1" of the amber highlight pixels in the PDF page area
 text_bands.py IMG --ink-in X0 Y0 X1 Y1 -> number of darker-than-page pixels in that rectangle of the window
@@ -10,6 +11,13 @@ text_bands.py IMG --sidebar-ink -> number of text pixels on the first thumbnail 
 text_bands.py IMG --last-line -> "x0 y0 x1 y1" of the lowest text line in the EPUB content area
 """
 import subprocess, sys
+
+if "--has-figure-blue" in sys.argv:
+    raw = subprocess.run(
+        ["convert", sys.argv[1], "-depth", "8", "rgb:-"], capture_output=True
+    ).stdout
+    print(sum(1 for i in range(0, len(raw) - 2, 3) if raw[i] < 90 and 70 < raw[i + 1] < 140 and raw[i + 2] > 170))
+    sys.exit(0)
 
 if "--has-search-match" in sys.argv:
     W0, H0, X0, Y0 = 800, 645, 100, 95

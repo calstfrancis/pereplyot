@@ -17,6 +17,10 @@ const LEFT_WIDTH: i32 = 64;
 
 type PageLabelClick = Rc<dyn Fn(u16, &gtk4::Widget)>;
 
+/// Draws part of a page: (page, region in page points as displayed, width in logical pixels, what
+/// to call with the finished picture).
+pub type FigureSource = Rc<dyn Fn(u16, [f32; 4], i32, Rc<dyn Fn(gtk4::gdk::Texture)>)>;
+
 /// One saved mark to paint onto the text: which page, the quoted text and (when known) where it
 /// sits on the page, its colour and style.
 pub struct TextMark {
@@ -111,6 +115,9 @@ pub struct ReadingView {
     draining: Cell<bool>,
     content_pending: Cell<bool>,
     active_marker: Cell<Option<(i32, i32)>>,
+    headings: RefCell<Vec<fond_doc::PdfOutlineEntry>>,
+    /// Where pictures of figures and tables come from.
+    pub figure_source: RefCell<Option<FigureSource>>,
 }
 
 fn escape(s: &str) -> String {
@@ -178,6 +185,23 @@ impl ReadingView {
         );
         buffer.create_tag(Some("para"), &[]);
         buffer.create_tag(
+            Some("figure"),
+            &[
+                ("justification", &gtk4::Justification::Center),
+                ("pixels-above-lines", &14i32),
+                ("pixels-below-lines", &14i32),
+            ],
+        );
+        for (name, alpha) in [("search-hit", 0.28f64), ("search-current", 0.6)] {
+            buffer.create_tag(
+                Some(name),
+                &[(
+                    "background-rgba",
+                    &gtk4::gdk::RGBA::new(0.26, 0.52, 0.96, alpha as f32),
+                )],
+            );
+        }
+        buffer.create_tag(
             Some("marker-active"),
             &[(
                 "background-rgba",
@@ -209,6 +233,8 @@ impl ReadingView {
             draining: Cell::new(false),
             content_pending: Cell::new(false),
             active_marker: Cell::new(None),
+            headings: RefCell::new(Vec::new()),
+            figure_source: RefCell::new(None),
         });
         view.install_signals();
         let weak: Weak<ReadingView> = Rc::downgrade(&view);
@@ -495,9 +521,10 @@ impl ReadingView {
         if starts.last().map_or(true, |(_, p)| *p < page) {
             starts.push((offset, page));
             drop(starts);
-            let label = (self.page_label)(page);
+            let page_label = self.page_label.clone();
             let click = self.on_page_label_click.borrow().clone();
             let build: Builder = Rc::new(move |_| {
+                let label = page_label(page);
                 let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
                 let text = gtk4::Label::new(None);
                 text.set_markup(&format!("<span size=\"small\">{}</span>", escape(&label)));
@@ -530,6 +557,11 @@ impl ReadingView {
             Item::Heading { level, text, page } => {
                 let start = buffer.char_count();
                 self.note_page_start(start, *page);
+                self.headings.borrow_mut().push(fond_doc::PdfOutlineEntry {
+                    title: text.clone(),
+                    depth: (*level as u32).saturating_sub(1),
+                    page: Some(page + 1),
+                });
                 let mut end = buffer.end_iter();
                 let tag = match level {
                     1 => "h1",
@@ -539,6 +571,47 @@ impl ReadingView {
                 buffer.insert_with_tags_by_name(&mut end, &format!("{text}\n"), &[tag]);
             }
             Item::Paragraph(p) => self.append_paragraph(p),
+            Item::Figure { page, bbox } => self.append_figure(*page, *bbox),
+        }
+    }
+
+    fn append_figure(&self, page: u16, bbox: [f32; 4]) {
+        let buffer = self.text_view.buffer();
+        let start = buffer.char_count();
+        self.note_page_start(start, page);
+        let anchor = buffer.create_child_anchor(&mut buffer.end_iter());
+        buffer.insert(&mut buffer.end_iter(), "\n");
+        if let Some(tag) = buffer.tag_table().lookup("figure") {
+            buffer.apply_tag(
+                &tag,
+                &buffer.iter_at_offset(start),
+                &buffer.iter_at_offset(start + 2),
+            );
+        }
+        let (w, h) = ((bbox[2] - bbox[0]).max(1.0), (bbox[3] - bbox[1]).max(1.0));
+        let shown_w = ((w * 1.35).round() as i32).clamp(160, 640);
+        let shown_h = (shown_w as f32 * h / w).round() as i32;
+        let picture = gtk4::Picture::new();
+        picture.set_size_request(shown_w, shown_h.max(24));
+        picture.set_can_shrink(false);
+        picture.set_halign(gtk4::Align::Center);
+        picture.update_property(&[gtk4::accessible::Property::Label(
+            "A figure or table from the page, shown as a picture",
+        )]);
+        self.text_view.add_child_at_anchor(&picture, &anchor);
+        let source = self.figure_source.borrow().clone();
+        if let Some(source) = source {
+            let weak = picture.downgrade();
+            source(
+                page,
+                bbox,
+                shown_w,
+                Rc::new(move |texture| {
+                    if let Some(picture) = weak.upgrade() {
+                        picture.set_paintable(Some(&texture));
+                    }
+                }),
+            );
         }
     }
 
@@ -630,6 +703,11 @@ impl ReadingView {
         if self.paras.borrow().is_empty() {
             *self.handle.borrow_mut() = None;
         }
+    }
+
+    /// The headings laid out so far, as outline entries.
+    pub fn headings(&self) -> Vec<fond_doc::PdfOutlineEntry> {
+        self.headings.borrow().clone()
     }
 
     pub fn loaded_pages(&self) -> u16 {
@@ -848,6 +926,43 @@ impl ReadingView {
                 applied.push(name);
             }
         }
+    }
+
+    /// Show search hits in the text: every hit lightly, `current` strongly. Returns where the
+    /// current one starts so the caller can scroll to it.
+    pub fn apply_search(
+        &self,
+        hits: &[(u16, Vec<[f32; 4]>)],
+        current: Option<usize>,
+    ) -> Option<i32> {
+        const MAX_PAINTED: usize = 1500;
+        let buffer = self.text_view.buffer();
+        let table = buffer.tag_table();
+        let (all, now) = (table.lookup("search-hit")?, table.lookup("search-current")?);
+        buffer.remove_tag(&all, &buffer.start_iter(), &buffer.end_iter());
+        buffer.remove_tag(&now, &buffer.start_iter(), &buffer.end_iter());
+        let top = table.size() - 1;
+        now.set_priority(top);
+        all.set_priority(top - 1);
+        let mut first = None;
+        let near = current.unwrap_or(0).saturating_sub(MAX_PAINTED / 2);
+        for (i, (page, rects)) in hits.iter().enumerate().skip(near).take(MAX_PAINTED) {
+            let tag = if Some(i) == current { &now } else { &all };
+            for (a, b) in self.ranges_for_rects(*page, rects) {
+                buffer.apply_tag(tag, &buffer.iter_at_offset(a), &buffer.iter_at_offset(b));
+                if Some(i) == current && first.is_none() {
+                    first = Some(a);
+                }
+            }
+        }
+        first
+    }
+
+    pub fn scroll_to_offset(&self, offset: i32) {
+        let buffer = self.text_view.buffer();
+        let mark = buffer.create_mark(None, &buffer.iter_at_offset(offset), true);
+        self.text_view.scroll_to_mark(&mark, 0.15, true, 0.0, 0.3);
+        buffer.delete_mark(&mark);
     }
 
     fn find_quote(&self, mark: &TextMark) -> Option<(i32, i32)> {

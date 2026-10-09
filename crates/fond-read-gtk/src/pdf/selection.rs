@@ -38,7 +38,7 @@ pub(super) fn paint_text_marks(
 }
 
 /// Quadpoints (PDF user space) as rectangles in page points as displayed, origin top left.
-fn display_rects(geom: PageGeom, quads: &[[f64; 8]]) -> Vec<[f32; 4]> {
+pub(super) fn display_rects(geom: PageGeom, quads: &[[f64; 8]]) -> Vec<[f32; 4]> {
     let (_, height) = geom.display_size();
     geom.quads_to_display(quads)
         .iter()

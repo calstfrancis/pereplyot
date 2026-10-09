@@ -11,6 +11,7 @@ pub(super) fn install_text_view(ui: &PdfUi) {
         page_entry,
         page_of_label,
         bookmark_button,
+        page_num_button,
         continuous_toggle,
         text_toggle,
         hint,
@@ -47,6 +48,7 @@ pub(super) fn install_text_view(ui: &PdfUi) {
                     let mut r = reader.borrow_mut();
                     r.text_goto = None;
                     r.text_zoom = None;
+                    r.text_search = None;
                 }
                 view_stack.set_visible_child_name("continuous");
                 let page = reader.borrow().page;
@@ -63,25 +65,39 @@ pub(super) fn install_text_view(ui: &PdfUi) {
             if !continuous_toggle.is_active() {
                 continuous_toggle.set_active(true);
             }
-            let (count, page_labels) = {
-                let r = reader.borrow();
-                (r.count, r.page_labels.clone())
-            };
+            let count = reader.borrow().count;
             let existing = reflow.borrow().clone();
             let view = match existing {
                 Some(v) => v,
                 None => {
-                    let labels = page_labels.clone();
+                    let labels_from = reader.clone();
                     let view = crate::reflow::view::ReadingView::new(
                         count,
                         Rc::new(move |page| {
-                            labels
-                                .get(page as usize)
-                                .and_then(|l| l.clone())
+                            labels_from
+                                .try_borrow()
+                                .ok()
+                                .and_then(|r| r.page_labels.get(page as usize).cloned().flatten())
                                 .unwrap_or_else(|| (page + 1).to_string())
                         }),
                     );
                     view_stack.add_named(&view.scroll, Some("text"));
+                    {
+                        let reader = reader.clone();
+                        let scale_from = view.text_view.clone();
+                        *view.figure_source.borrow_mut() = Some(Rc::new(
+                            move |page, region, width, done| {
+                                figures::request(
+                                    &reader,
+                                    scale_from.scale_factor(),
+                                    page,
+                                    region,
+                                    width,
+                                    done,
+                                );
+                            },
+                        ));
+                    }
                     *reflow.borrow_mut() = Some(view.clone());
 
                     let make_ctx: Rc<dyn Fn() -> MarkCtx> = {
@@ -218,6 +234,32 @@ pub(super) fn install_text_view(ui: &PdfUi) {
                 let bookmark_button = bookmark_button.clone();
                 let mut r = reader.borrow_mut();
                 r.text_zoom = Some(Rc::new(move |factor| view_zoom.scale_font(factor)));
+                let view_search = view.clone();
+                let reader_for_search = reader.clone();
+                r.text_search = Some(Rc::new(move |scroll| {
+                    let hits: Vec<(u16, Vec<[f32; 4]>)>;
+                    let current;
+                    {
+                        let r = reader_for_search.borrow();
+                        current = (!r.search_matches.is_empty()).then_some(r.search_current);
+                        hits = r
+                            .search_matches
+                            .iter()
+                            .map(|m| {
+                                let rects = r
+                                    .geom(m.page)
+                                    .map(|g| display_rects(g, &m.quads))
+                                    .unwrap_or_default();
+                                (m.page, rects)
+                            })
+                            .collect();
+                    }
+                    if let Some(at) = view_search.apply_search(&hits, current) {
+                        if scroll {
+                            view_search.scroll_to_offset(at);
+                        }
+                    }
+                }));
                 r.text_goto = Some(Rc::new(move |page| {
                     view_goto.scroll_to_page(page);
                     let mut r = reader_for_goto.borrow_mut();
@@ -244,6 +286,14 @@ pub(super) fn install_text_view(ui: &PdfUi) {
                 let view_for_marks = view.clone();
                 *view.on_content.borrow_mut() = Some(Rc::new(move || {
                     paint_text_marks(&reader_for_marks, &view_for_marks);
+                    let derive = reader_for_marks.borrow().derived_outline.clone();
+                    if let Some(derive) = derive {
+                        derive(view_for_marks.headings());
+                    }
+                    let paint = reader_for_marks.borrow().text_search.clone();
+                    if let Some(paint) = paint {
+                        paint(false);
+                    }
                 }));
                 // A mark added, changed, removed or undone repaints here as it does on the page.
                 let store = reader.borrow().store.clone();
@@ -280,11 +330,13 @@ pub(super) fn install_text_view(ui: &PdfUi) {
                 let host_click = host_for_labels.clone();
                 let reader_click = reader.clone();
                 let text_toggle_click = btn.clone();
+                let page_num_click = page_num_button.clone();
                 *view.on_page_label_click.borrow_mut() = Some(Rc::new(move |page, parent| {
                     show_page_label_menu(
                         &host_click,
                         &reader_click,
                         &text_toggle_click,
+                        &page_num_click,
                         page,
                         parent,
                     );
@@ -317,6 +369,7 @@ fn show_page_label_menu(
     host: &Rc<dyn ReaderHost>,
     reader: &Rc<RefCell<ReaderState>>,
     text_toggle: &gtk4::ToggleButton,
+    page_num_button: &gtk4::Button,
     page: u16,
     parent: &gtk4::Widget,
 ) {
@@ -357,6 +410,19 @@ fn show_page_label_menu(
         });
     }
     rows.append(&original);
+    let numbering = popover_button("Set page numbering…", false);
+    numbering.set_sensitive(page_num_button.is_sensitive());
+    {
+        let popover = popover.clone();
+        let reader = reader.clone();
+        let page_num_button = page_num_button.clone();
+        numbering.connect_clicked(move |_| {
+            popover.popdown();
+            reader.borrow_mut().page = page;
+            page_num_button.emit_clicked();
+        });
+    }
+    rows.append(&numbering);
     popover.set_child(Some(&rows));
     popover.connect_closed(|p| {
         let p = p.clone();

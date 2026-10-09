@@ -30,6 +30,59 @@ build-options:
     CARGO_NET_OFFLINE: 'true'
 
 modules:
+  # Tesseract (Apache-2.0) and Leptonica (BSD-2-Clause) for "Recognise text" on scanned
+  # documents, with English data (tessdata_fast, Apache-2.0); other languages are downloaded on
+  # demand into ~/.local/share/pereplyot/tessdata. Pereplyot hands Tesseract its pages as PPM on
+  # stdin, so Leptonica is built without the image-format libraries.
+  - name: leptonica
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+      - -DBUILD_SHARED_LIBS=ON
+      - -DSW_BUILD=OFF
+      - -DENABLE_ZLIB=OFF
+      - -DENABLE_PNG=OFF
+      - -DENABLE_GIF=OFF
+      - -DENABLE_JPEG=OFF
+      - -DENABLE_TIFF=OFF
+      - -DENABLE_WEBP=OFF
+      - -DENABLE_OPENJPEG=OFF
+    cleanup:
+      - /include
+      - /lib/cmake
+      - /lib/pkgconfig
+    sources:
+      - type: archive
+        url: https://github.com/DanBloomberg/leptonica/releases/download/1.84.1/leptonica-1.84.1.tar.gz
+        sha256: 2b3e1254b1cca381e77c819b59ca99774ff43530209b9aeb511e1d46588a64f6
+
+  - name: tesseract
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+      - -DCMAKE_PREFIX_PATH=/app
+      - -DBUILD_TRAINING_TOOLS=OFF
+      - -DBUILD_TESTS=OFF
+      - -DDISABLE_CURL=ON
+      - -DDISABLE_ARCHIVE=ON
+      - -DOPENMP_BUILD=OFF
+      - -DGRAPHICS_DISABLED=ON
+    post-install:
+      - install -Dm644 eng.traineddata /app/share/tessdata/eng.traineddata
+    cleanup:
+      - /include
+      - /lib/cmake
+      - /lib/pkgconfig
+    sources:
+      - type: archive
+        url: https://github.com/tesseract-ocr/tesseract/archive/refs/tags/5.5.0.tar.gz
+        sha256: f2fb34ca035b6d087a42875a35a7a5c4155fa9979c6132365b1e5a28ebc3fc11
+      - type: file
+        url: https://github.com/tesseract-ocr/tessdata_fast/raw/refs/tags/4.1.0/eng.traineddata
+        sha256: 7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2
+
   - name: pereplyot
     buildsystem: simple
     sources:

@@ -246,6 +246,26 @@ run_reading_case() {
     right="$(python3 "$HERE/text_bands.py" "$WORK/reading.png" --ink-in 770 380 960 440)"
     check "reading: the printed page number is in the left margin" "$([ "${left:-0}" -gt 6 ] && echo 1 || echo 0)" "(ink: $left)"
     check "reading: the footnote is in the right margin beside its line" "$([ "${right:-0}" -gt 80 ] && echo 1 || echo 0)" "(ink: $right)"
+    xdotool mousemove 29 27 click 1
+    sleep 1
+    screenshot "$WORK/reading-contents.png"
+    local crumb
+    crumb="$(python3 "$HERE/text_bands.py" "$WORK/reading-contents.png" --ink-in 915 54 985 72)"
+    check "reading: a PDF with no outline gets Contents from the headings Reading mode finds" "$([ "${crumb:-0}" -gt 20 ] && echo 1 || echo 0)" "(breadcrumb ink: $crumb)"
+    xdotool mousemove 29 27 click 1
+    sleep 0.5
+    xdotool key ctrl+f
+    sleep 0.4
+    xdotool type --delay 30 "liturgy"
+    xdotool key Return
+    sleep 2
+    screenshot "$WORK/reading-search.png"
+    local blue
+    blue="$(python3 "$HERE/text_bands.py" "$WORK/reading-search.png" --has-search-match)"
+    check "reading: a search hit is marked in the text" "$([ "${blue:-0}" -gt 100 ] && echo 1 || echo 0)" "(blue pixels: $blue)"
+    xdotool key Escape
+    xdotool windowfocus "$w" 2>/dev/null
+    sleep 0.3
     xdotool mousemove 110 205 mousedown 1 mousemove 400 205 mousemove 650 205 mouseup 1
     sleep 1
     xdotool key 1
@@ -367,8 +387,16 @@ run_pin_case() {
     local ink
     ink="$(python3 "$HERE/text_bands.py" "$WORK/pin.png" --ink-in 495 125 965 195)"
     check "pin: a pinned region stays on screen while you scroll to other pages" "$([ "${ink:-0}" -gt 200 ] && echo 1 || echo 0)" "(ink in the card: $ink)"
+    stop_app
+    start_app "$FX/linked.pdf" keep
+    w="$(reader_window)" || { check "pin: reader window reopens" 0; stop_app; return; }
+    sleep 3.5
+    screenshot "$WORK/pin-back.png"
+    local back
+    back="$(python3 "$HERE/text_bands.py" "$WORK/pin-back.png" --ink-in 495 125 965 195)"
+    check "pin: a pinned figure is back after reopening the document" "$([ "${back:-0}" -gt 200 ] && echo 1 || echo 0)" "(ink in the card: $back)"
     local grip_before grip_after
-    grip_before="$(python3 "$HERE/text_bands.py" "$WORK/pin.png" --ink-in 495 93 965 121)"
+    grip_before="$(python3 "$HERE/text_bands.py" "$WORK/pin-back.png" --ink-in 495 93 965 121)"
     xdotool mousemove 953 107 click 1
     sleep 1
     screenshot "$WORK/pin-closed.png"
@@ -428,6 +456,17 @@ run_split_case() {
     amber_right="$(python3 "$HERE/text_bands.py" "$WORK/split-marked.png" --amber-in 520 90 985 700)"
     saved="$(snippets)"
     check "split: a mark made in one pane is saved and shows in both" "$([ -n "$saved" ] && [ "${amber_left:-0}" -gt 120 ] && [ "${amber_right:-0}" -gt 120 ] && echo 1 || echo 0)" "(saved '$saved', amber left $amber_left, right $amber_right)"
+    local lbox0 rbox0 lbox1 rbox1
+    lbox0="$(python3 "$HERE/text_bands.py" "$WORK/split-marked.png" --ink-box 20 90 485 700)"
+    rbox0="$(python3 "$HERE/text_bands.py" "$WORK/split-marked.png" --ink-box 520 90 985 700)"
+    xdotool mousemove 530 100 click 1
+    sleep 0.3
+    xdotool key ctrl+plus
+    sleep 1.5
+    screenshot "$WORK/split-zoomed.png"
+    lbox1="$(python3 "$HERE/text_bands.py" "$WORK/split-zoomed.png" --ink-box 20 90 485 700)"
+    rbox1="$(python3 "$HERE/text_bands.py" "$WORK/split-zoomed.png" --ink-box 520 90 985 700)"
+    check "split: a key pressed in the second pane acts on that pane alone" "$([ "$rbox1" != "$rbox0" ] && [ "$lbox1" = "$lbox0" ] && echo 1 || echo 0)" "(left '$lbox0' -> '$lbox1', right '$rbox0' -> '$rbox1')"
     xdotool mousemove 771 28 click 1
     sleep 1
     xdotool mousemove 757 196 click 1
@@ -437,6 +476,21 @@ run_split_case() {
     bar_open="$(python3 "$HERE/text_bands.py" "$WORK/split-marked.png" --ink-in 600 733 985 760)"
     bar_closed="$(python3 "$HERE/text_bands.py" "$WORK/split-closed.png" --ink-in 600 733 985 760)"
     check "split: the same menu row closes it" "$([ "${bar_open:-0}" -gt 150 ] && [ "${bar_closed:-999}" -lt 30 ] && echo 1 || echo 0)" "(second status bar ink open $bar_open, closed $bar_closed)"
+    stop_app
+}
+
+run_figures_case() {
+    start_app "$FX/figures.pdf"
+    local w
+    w="$(reader_window)" || { check "figures: reader window opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
+    sleep 2
+    xdotool windowfocus "$w" 2>/dev/null
+    xdotool key t
+    sleep 4
+    screenshot "$WORK/figures.png"
+    local blue
+    blue="$(python3 "$HERE/text_bands.py" "$WORK/figures.png" --has-figure-blue)"
+    check "figures: the chart is drawn in the text as a picture" "$([ "${blue:-0}" -gt 1500 ] && echo 1 || echo 0)" "(bar pixels: $blue)"
     stop_app
 }
 
@@ -511,6 +565,7 @@ want pin && run_pin_case
 want hover && run_hover_case
 want thumbs && run_thumbs_case
 want reading && run_reading_case
+want figures && run_figures_case
 want epub && run_epub_case
 want mixed && run_mixed_case
 

@@ -385,7 +385,7 @@ struct Draft {
     x1: f32,
 }
 
-fn leaf_paragraphs(lines: &[Line], body: f32) -> Vec<Draft> {
+fn leaf_paragraphs(lines: &[Line], body: f32, captions: &[[f32; 4]]) -> Vec<Draft> {
     if lines.is_empty() {
         return Vec::new();
     }
@@ -427,10 +427,14 @@ fn leaf_paragraphs(lines: &[Line], body: f32) -> Vec<Draft> {
     for (i, line) in lines.iter().enumerate() {
         let level = heading_level(line);
         let prev = i.checked_sub(1).map(|p| &lines[p]);
+        let starts_caption = captions
+            .iter()
+            .any(|c| line.y0 >= c[1] - 1.0 && line.y1 <= c[3] + 1.0 && line.x0 >= c[0] - 1.0);
         let breaks = match (prev, drafts.last()) {
             (Some(p), Some(d)) => {
                 let gap = line.y1 - p.y1;
-                d.heading != level
+                starts_caption
+                    || d.heading != level
                     || gap > leading + 0.55 * body
                     || (line.x0 - left > 0.9 * body && level.is_none())
                     || (level.is_none() && (p.x1 - left) < 0.72 * width && ends_sentence(&p.text()))
@@ -529,6 +533,8 @@ pub struct Assembler {
     furniture: Furniture,
     body: f32,
     items: Vec<Item>,
+    /// Figures that come next in the flow, placed after the paragraph being built.
+    waiting: Vec<Item>,
     pending: Option<Pending>,
     /// The most recent note placed, as (index of its paragraph, index in that paragraph's notes);
     /// an index equal to `items.len()` is the pending paragraph. A note that runs over to the next
@@ -542,6 +548,7 @@ impl Assembler {
             furniture,
             body,
             items: Vec::new(),
+            waiting: Vec::new(),
             pending: None,
             last_note: None,
         }
@@ -551,13 +558,14 @@ impl Assembler {
         if let Some(p) = self.pending.take() {
             self.items.push(Item::Paragraph(p.paragraph));
         }
+        self.items.append(&mut self.waiting);
     }
 
     fn paragraph_at(&mut self, i: usize) -> Option<&mut Paragraph> {
         if i < self.items.len() {
             match &mut self.items[i] {
                 Item::Paragraph(p) => Some(p),
-                Item::Heading { .. } => None,
+                Item::Heading { .. } | Item::Figure { .. } => None,
             }
         } else if i == self.items.len() {
             self.pending.as_mut().map(|p| &mut p.paragraph)
@@ -567,15 +575,29 @@ impl Assembler {
     }
 
     pub fn push_page(&mut self, page: &RawPage) {
-        let words = self.furniture.strip(page);
+        let mut words = self.furniture.strip(page);
+        let found = super::figures::find_figures(page, &words);
+        let captions = found.captions;
+        let mut figures = found.regions;
+        words.retain(|w| {
+            let (cx, cy) = ((w.x0 + w.x1) / 2.0, w.centre_y());
+            !figures
+                .iter()
+                .any(|f| cx >= f[0] && cx <= f[2] && cy >= f[1] && cy <= f[3])
+        });
         let first_item = self.items.len();
         let mut notes: Vec<NoteDraft> = Vec::new();
         let mut previous_leaf: Option<(f32, f32)> = None;
         let mut carried: Option<(usize, usize)> = self.last_note;
         for leaf in reading_order(&words) {
-            let (note_lines, body_lines): (Vec<Line>, Vec<Line>) = leaf
-                .into_iter()
-                .partition(|l| l.size <= 0.9 * self.body && l.y0 > 0.45 * page.height);
+            let (note_lines, body_lines): (Vec<Line>, Vec<Line>) =
+                leaf.into_iter().partition(|l| {
+                    l.size <= 0.9 * self.body
+                        && l.y0 > 0.45 * page.height
+                        && !captions
+                            .iter()
+                            .any(|c| l.y0 >= c[1] - 1.0 && l.y1 <= c[3] + 1.0)
+                });
             for line in &note_lines {
                 if let Some((label, skip)) = note_label(line) {
                     let words: Vec<String> = line
@@ -612,15 +634,32 @@ impl Assembler {
                 }
             }
             let leaf_x = (!body_lines.is_empty()).then(|| draft_x(&body_lines));
-            for (n, draft) in leaf_paragraphs(&body_lines, self.body)
+            for (n, draft) in leaf_paragraphs(&body_lines, self.body, &captions)
                 .into_iter()
                 .enumerate()
             {
+                let (top, x0, x1) = (draft.lines[0].y0, draft.x0, draft.x1);
+                while let Some(i) = figures
+                    .iter()
+                    .position(|f| f[1] <= top + 1.0 && overlap(f[0], f[2], x0, x1) >= 0.3)
+                {
+                    let bbox = figures.remove(i);
+                    self.waiting.push(Item::Figure {
+                        page: page.page,
+                        bbox,
+                    });
+                }
                 self.take_draft(draft, page.page, previous_leaf.filter(|_| n == 0));
             }
             if leaf_x.is_some() {
                 previous_leaf = leaf_x;
             }
+        }
+        for bbox in figures {
+            self.waiting.push(Item::Figure {
+                page: page.page,
+                bbox,
+            });
         }
         self.flush_page_notes(notes, first_item, page.page);
     }
@@ -729,7 +768,7 @@ impl Assembler {
     /// Items complete before `page` starts, leaving the later ones for notes and joins to reach.
     pub fn take_ready(&mut self, page: u16) -> Vec<Item> {
         let last_page = |item: &Item| match item {
-            Item::Heading { page, .. } => *page,
+            Item::Heading { page, .. } | Item::Figure { page, .. } => *page,
             Item::Paragraph(p) => p
                 .notes
                 .iter()

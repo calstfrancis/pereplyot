@@ -8,6 +8,16 @@ const CARD_MAX_WIDTH: f64 = 480.0;
 struct Pending {
     key: RenderKey,
     caption: String,
+    page: u16,
+    region: [f32; 4],
+    /// Where the card was when it was saved, if this is one coming back.
+    at: Option<(i32, i32)>,
+}
+
+struct Card {
+    widget: gtk4::Widget,
+    page: u16,
+    region: [f32; 4],
 }
 
 /// Pinning a region of a page as a small floating card that stays put while you scroll on: for the
@@ -19,8 +29,57 @@ pub(super) struct PinState {
     hint: Option<gtk4::Label>,
     picture: Option<gtk4::Picture>,
     saved_hint: String,
-    cards: Vec<gtk4::Widget>,
+    cards: Vec<Card>,
     pending: Vec<Pending>,
+    save: Option<Rc<dyn Fn(Vec<SavedPin>)>>,
+}
+
+/// A pinned figure as it is kept between sessions: page (1-based), region in page points as
+/// displayed, and where its card sat in the view.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SavedPin {
+    pub page: u32,
+    pub region: [f32; 4],
+    pub x: i32,
+    pub y: i32,
+}
+
+/// Keep the pinned figures through `save` whenever they change.
+pub(super) fn keep_with(reader: &Rc<RefCell<ReaderState>>, save: Rc<dyn Fn(Vec<SavedPin>)>) {
+    reader.borrow_mut().pin.save = Some(save);
+}
+
+fn persist(reader: &Rc<RefCell<ReaderState>>) {
+    let (save, pins) = {
+        let r = reader.borrow();
+        let Some(save) = r.pin.save.clone() else {
+            return;
+        };
+        let pins = r
+            .pin
+            .cards
+            .iter()
+            .map(|c| SavedPin {
+                page: c.page as u32 + 1,
+                region: c.region,
+                x: c.widget.margin_start(),
+                y: c.widget.margin_top(),
+            })
+            .collect();
+        (save, pins)
+    };
+    save(pins);
+}
+
+/// Bring back figures saved earlier.
+pub(super) fn restore(reader: &Rc<RefCell<ReaderState>>, pins: Vec<SavedPin>) {
+    for pin in pins.into_iter().take(MAX_CARDS) {
+        let page = pin.page.saturating_sub(1).min(u16::MAX as u32) as u16;
+        if page >= reader.borrow().count {
+            continue;
+        }
+        request(reader, page, pin.region, Some((pin.x, pin.y)));
+    }
 }
 
 pub(super) fn install(
@@ -97,7 +156,7 @@ pub(super) fn finish(
     h: f64,
 ) {
     cancel(reader);
-    let (key, caption) = {
+    let region = {
         let r = reader.borrow();
         if r.rotation != 0 || w < 1.0 || h < 1.0 {
             return;
@@ -107,10 +166,28 @@ pub(super) fn finish(
         };
         let (dw, dh) = geom.display_size();
         let (sx, sy) = (dw as f64 / w, dh as f64 / h);
-        let x0 = (drag.0.min(drag.2) * sx).clamp(0.0, dw as f64) as f32;
-        let x1 = (drag.0.max(drag.2) * sx).clamp(0.0, dw as f64) as f32;
-        let y0 = (drag.1.min(drag.3) * sy).clamp(0.0, dh as f64) as f32;
-        let y1 = (drag.1.max(drag.3) * sy).clamp(0.0, dh as f64) as f32;
+        [
+            (drag.0.min(drag.2) * sx).clamp(0.0, dw as f64) as f32,
+            (drag.1.min(drag.3) * sy).clamp(0.0, dh as f64) as f32,
+            (drag.0.max(drag.2) * sx).clamp(0.0, dw as f64) as f32,
+            (drag.1.max(drag.3) * sy).clamp(0.0, dh as f64) as f32,
+        ]
+    };
+    request(reader, page, region, None);
+}
+
+/// Ask the render thread for `region` of `page` to make a card of.
+fn request(reader: &Rc<RefCell<ReaderState>>, page: u16, region: [f32; 4], at: Option<(i32, i32)>) {
+    let [x0, y0, x1, y1] = region;
+    let (key, caption) = {
+        let r = reader.borrow();
+        if r.rotation != 0 {
+            return;
+        }
+        let Some(geom) = r.geom(page) else {
+            return;
+        };
+        let (dw, _) = geom.display_size();
         if x1 - x0 < MIN_REGION_PTS || y1 - y0 < MIN_REGION_PTS {
             return;
         }
@@ -152,13 +229,19 @@ pub(super) fn finish(
             key: key.clone(),
             priority: 0,
         });
-        r.pin.pending.push(Pending { key, caption });
+        r.pin.pending.push(Pending {
+            key,
+            caption,
+            page,
+            region,
+            at,
+        });
     }
 }
 
 /// A finished crop: if it is one asked for here, turn it into a card.
 pub(super) fn deliver(reader: &Rc<RefCell<ReaderState>>, done: &Rendered) -> bool {
-    let (caption, overlay) = {
+    let (caption, overlay, page, region, at) = {
         let mut r = reader.borrow_mut();
         let Some(i) = r.pin.pending.iter().position(|p| p.key == done.key) else {
             return false;
@@ -167,7 +250,13 @@ pub(super) fn deliver(reader: &Rc<RefCell<ReaderState>>, done: &Rendered) -> boo
         let Some(overlay) = r.pin.overlay.clone() else {
             return true;
         };
-        (pending.caption, overlay)
+        (
+            pending.caption,
+            overlay,
+            pending.page,
+            pending.region,
+            pending.at,
+        )
     };
     let scale = overlay.scale_factor().max(1);
     let stride = done.width as usize * 4;
@@ -208,10 +297,22 @@ pub(super) fn deliver(reader: &Rc<RefCell<ReaderState>>, done: &Rendered) -> boo
 
     let n = reader.borrow().pin.cards.len() as i32;
     let (ow, oh) = (overlay.width().max(card_w + 60), overlay.height());
-    card.set_margin_start((ow - card_w - 24 - 26 * n).max(8));
-    card.set_margin_top((16 + 26 * n).min((oh - 80).max(8)));
+    match at {
+        Some((x, y)) => {
+            card.set_margin_start(x.clamp(0, (ow - card_w).max(0)));
+            card.set_margin_top(y.clamp(0, (oh - 80).max(8)));
+        }
+        None => {
+            card.set_margin_start((ow - card_w - 24 - 26 * n).max(8));
+            card.set_margin_top((16 + 26 * n).min((oh - 80).max(8)));
+        }
+    }
 
     let drag = gtk4::GestureDrag::new();
+    {
+        let reader = reader.clone();
+        drag.connect_drag_end(move |_, _, _| persist(&reader));
+    }
     let origin = Rc::new(Cell::new((0, 0)));
     {
         let card = card.clone();
@@ -243,19 +344,25 @@ pub(super) fn deliver(reader: &Rc<RefCell<ReaderState>>, done: &Rendered) -> boo
                 .borrow_mut()
                 .pin
                 .cards
-                .retain(|c| c != card.upcast_ref::<gtk4::Widget>());
+                .retain(|c| c.widget != *card.upcast_ref::<gtk4::Widget>());
+            persist(&reader);
         });
     }
     overlay.add_overlay(&card);
     let evicted = {
         let mut r = reader.borrow_mut();
-        r.pin.cards.push(card.upcast());
+        r.pin.cards.push(Card {
+            widget: card.upcast(),
+            page,
+            region,
+        });
         (r.pin.cards.len() > MAX_CARDS).then(|| r.pin.cards.remove(0))
     };
     if let Some(old) = evicted {
-        if let Ok(old) = old.downcast::<gtk4::Box>() {
+        if let Ok(old) = old.widget.downcast::<gtk4::Box>() {
             overlay.remove_overlay(&old);
         }
     }
+    persist(reader);
     true
 }

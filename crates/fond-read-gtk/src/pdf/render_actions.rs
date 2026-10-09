@@ -100,6 +100,10 @@ pub(super) fn build_render_actions(
         let reader = reader.clone();
         let render = render.clone();
         worker.set_sink(Rc::new(move |done: Rendered| {
+            if done.key.thumb && done.key.crop.is_some() {
+                figures::deliver(&reader, done);
+                return;
+            }
             if done.key.crop.is_some() {
                 if !pin::deliver(&reader, &done) {
                     hover_preview::deliver(&reader, done);

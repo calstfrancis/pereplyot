@@ -4,8 +4,43 @@ pub(super) struct SidebarParts {
     pub(super) sidebar_box: gtk4::Box,
     pub(super) notes_rows: gtk4::Box,
     pub(super) notes_scroll: gtk4::ScrolledWindow,
-    pub(super) outline_rows: Vec<gtk4::Button>,
+    pub(super) outline_rows: Rc<RefCell<Vec<gtk4::Button>>>,
     pub(super) outline_scroll: gtk4::ScrolledWindow,
+    /// Replace the Contents list with these entries and switch the Outline tab on.
+    pub(super) set_outline: Rc<dyn Fn(Vec<fond_doc::PdfOutlineEntry>)>,
+}
+
+fn fill_outline(
+    rows: &gtk4::Box,
+    entries: &[fond_doc::PdfOutlineEntry],
+    reader: &Rc<RefCell<ReaderState>>,
+) -> Vec<gtk4::Button> {
+    while let Some(child) = rows.first_child() {
+        rows.remove(&child);
+    }
+    let mut buttons = Vec::new();
+    for entry in entries {
+        let label = format!("{}{}", "    ".repeat(entry.depth as usize), entry.title);
+        let row = popover_button(&label, false);
+        if let Some(lbl) = row.child().and_then(|w| w.downcast::<gtk4::Label>().ok()) {
+            lbl.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+        }
+        if let Some(page) = entry.page {
+            let reader = reader.clone();
+            row.connect_clicked(move |_| {
+                let target = {
+                    let r = reader.borrow();
+                    (page.saturating_sub(1)).min(r.count.saturating_sub(1))
+                };
+                jump(&reader, target, JumpKind::Outline);
+            });
+        } else {
+            row.set_sensitive(false);
+        }
+        rows.append(&row);
+        buttons.push(row);
+    }
+    buttons
 }
 
 pub(super) fn build_sidebar(
@@ -18,37 +53,20 @@ pub(super) fn build_sidebar(
     // Stack, since only one is useful to see at a time; the two toggles are mutually
     // exclusive (activating one deactivates the other) but each can still be clicked again
     // to close the sidebar entirely, unlike a strict radio-group.
-    let mut outline_rows: Vec<gtk4::Button> = Vec::new();
+    let outline_box = gtk4::Box::new(Orientation::Vertical, 2);
+    outline_box.set_margin_top(6);
+    outline_box.set_margin_bottom(6);
+    outline_box.set_margin_start(6);
+    outline_box.set_margin_end(6);
+    let outline_rows = Rc::new(RefCell::new(fill_outline(
+        &outline_box,
+        outline_entries,
+        &reader,
+    )));
     let contents_scroll = {
-        let rows = gtk4::Box::new(Orientation::Vertical, 2);
-        rows.set_margin_top(6);
-        rows.set_margin_bottom(6);
-        rows.set_margin_start(6);
-        rows.set_margin_end(6);
-        for entry in outline_entries {
-            let label = format!("{}{}", "    ".repeat(entry.depth as usize), entry.title);
-            let row = popover_button(&label, false);
-            if let Some(lbl) = row.child().and_then(|w| w.downcast::<gtk4::Label>().ok()) {
-                lbl.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-            }
-            if let Some(page) = entry.page {
-                let reader = reader.clone();
-                row.connect_clicked(move |_| {
-                    let target = {
-                        let r = reader.borrow();
-                        (page.saturating_sub(1)).min(r.count.saturating_sub(1))
-                    };
-                    jump(&reader, target, JumpKind::Outline);
-                });
-            } else {
-                row.set_sensitive(false);
-            }
-            rows.append(&row);
-            outline_rows.push(row);
-        }
         let scroll = gtk4::ScrolledWindow::new();
         scroll.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
-        scroll.set_child(Some(&rows));
+        scroll.set_child(Some(&outline_box));
         scroll
     };
 
@@ -106,6 +124,21 @@ pub(super) fn build_sidebar(
         });
     }
 
+    let set_outline: Rc<dyn Fn(Vec<fond_doc::PdfOutlineEntry>)> = {
+        let outline_box = outline_box.clone();
+        let outline_rows = outline_rows.clone();
+        let outline_tab_toggle = outline_tab_toggle.clone();
+        let reader = reader.clone();
+        Rc::new(move |entries| {
+            let rows = fill_outline(&outline_box, &entries, &reader);
+            *outline_rows.borrow_mut() = rows;
+            if !outline_tab_toggle.is_sensitive() {
+                outline_tab_toggle.set_sensitive(true);
+                outline_tab_toggle.set_tooltip_text(Some("Headings found in the text"));
+            }
+        })
+    };
+
     let sidebar_box = gtk4::Box::new(Orientation::Vertical, 0);
     // Thumbnails are drawn when the sidebar is actually on screen, not when it is built: a PDF
     // without an outline opens on the Thumbnails tab, and drawing every page of a scanned book
@@ -142,5 +175,6 @@ pub(super) fn build_sidebar(
         notes_scroll,
         outline_rows,
         outline_scroll: contents_scroll,
+        set_outline,
     }
 }

@@ -1,6 +1,8 @@
 //! Reading a page's words, with their positions and type, out of PDFium.
 
-use pdfium_render::prelude::PdfDocument;
+use pdfium_render::prelude::{
+    PdfDocument, PdfPageObjectCommon, PdfPageObjectType, PdfPageObjectsCommon,
+};
 
 use super::model::{RawPage, Word};
 use crate::page_geom::PageGeom;
@@ -126,10 +128,40 @@ pub fn extract_page(doc: &PdfDocument<'_>, index: u16) -> Option<RawPage> {
         }
     }
     words.extend(current.take().and_then(Building::finish));
+    let mut rects: Vec<[f32; 4]> = Vec::new();
+    for object in page.objects().iter() {
+        if !matches!(
+            object.object_type(),
+            PdfPageObjectType::Path
+                | PdfPageObjectType::Image
+                | PdfPageObjectType::Shading
+                | PdfPageObjectType::XObjectForm
+        ) {
+            continue;
+        }
+        let Ok(bounds) = object.bounds() else {
+            continue;
+        };
+        let r = bounds.to_rect();
+        let (a, b) = geom.pdf_to_px(r.left().value as f64, r.bottom().value as f64, dw, dh);
+        let (c, d) = geom.pdf_to_px(r.right().value as f64, r.top().value as f64, dw, dh);
+        let rect = [
+            a.min(c) as f32,
+            b.min(d) as f32,
+            a.max(c) as f32,
+            b.max(d) as f32,
+        ];
+        let area = (rect[2] - rect[0]) * (rect[3] - rect[1]);
+        // A page-sized backdrop or scan is not a figure on the page.
+        if area < 0.8 * dw as f32 * dh as f32 {
+            rects.push(rect);
+        }
+    }
     Some(RawPage {
         page: index,
         width: dw as f32,
         height: dh as f32,
         words,
+        graphics: super::figures::join_touching(&rects, dw as f32, dh as f32),
     })
 }

@@ -33,9 +33,22 @@ pub fn tessdata_dir() -> PathBuf {
 }
 
 /// Turn Tesseract's TSV output for a page rendered at `dpi` into words in page points.
+///
+/// A word's box is only as tall as its own letters, so "a" is shorter than "liturgy"; sizes and
+/// vertical extents are taken from the whole line instead, or one line would read as several
+/// type sizes.
 pub fn parse_tsv(tsv: &str, dpi: f32) -> Vec<Word> {
     let points = 72.0 / dpi;
-    tsv.lines()
+    struct Row<'a> {
+        line: (&'a str, &'a str, &'a str),
+        text: &'a str,
+        left: f32,
+        top: f32,
+        width: f32,
+        height: f32,
+    }
+    let rows: Vec<Row> = tsv
+        .lines()
         .skip(1)
         .filter_map(|line| {
             let f: Vec<&str> = line.split('\t').collect();
@@ -48,17 +61,44 @@ pub fn parse_tsv(tsv: &str, dpi: f32) -> Vec<Word> {
                 return None;
             }
             let num = |i: usize| f[i].parse::<f32>().ok();
-            let (left, top, width, height) = (num(6)?, num(7)?, num(8)?, num(9)?);
-            Some(Word {
-                text: text.to_string(),
-                x0: left * points,
+            Some(Row {
+                line: (f[2], f[3], f[4]),
+                text,
+                left: num(6)?,
+                top: num(7)?,
+                width: num(8)?,
+                height: num(9)?,
+            })
+        })
+        .collect();
+    type LineKey<'a> = (&'a str, &'a str, &'a str);
+    let mut lines: std::collections::HashMap<LineKey, (Vec<f32>, f32, f32)> =
+        std::collections::HashMap::new();
+    for r in &rows {
+        let entry = lines
+            .entry(r.line)
+            .or_insert((Vec::new(), f32::MAX, f32::MIN));
+        entry.0.push(r.height);
+        entry.1 = entry.1.min(r.top);
+        entry.2 = entry.2.max(r.top + r.height);
+    }
+    for (heights, _, _) in lines.values_mut() {
+        heights.sort_by(|a, b| a.total_cmp(b));
+    }
+    rows.iter()
+        .map(|r| {
+            let (heights, top, bottom) = &lines[&r.line];
+            let median = heights[heights.len() / 2];
+            Word {
+                text: r.text.to_string(),
+                x0: r.left * points,
                 y0: top * points,
-                x1: (left + width) * points,
-                y1: (top + height) * points,
-                size: height * points * 0.9,
+                x1: (r.left + r.width) * points,
+                y1: bottom * points,
+                size: median * points * 0.9,
                 bold: false,
                 italic: false,
-            })
+            }
         })
         .collect()
 }
@@ -77,6 +117,31 @@ pub fn cache_key(path: &Path) -> String {
         meta.modified().ok().hash(&mut h);
     }
     format!("{:016x}", h.finish())
+}
+
+/// The folder a document's recognised pages are kept in.
+pub fn cache_dir(path: &Path) -> PathBuf {
+    glib::user_cache_dir()
+        .join("pereplyot")
+        .join("ocr")
+        .join(cache_key(path))
+}
+
+/// Page `index` as recognised earlier, if it was; never runs Tesseract.
+pub fn cached_page(doc: &PdfDocument<'_>, index: u16, lang: &str, cache: &Path) -> Option<RawPage> {
+    let tsv = std::fs::read_to_string(cache_file(cache, index, lang)).ok()?;
+    let words = parse_tsv(&tsv, DPI);
+    if words.is_empty() {
+        return None;
+    }
+    let page = doc.pages().get(index).ok()?;
+    Some(RawPage {
+        page: index,
+        width: page.width().value,
+        height: page.height().value,
+        words,
+        graphics: Vec::new(),
+    })
 }
 
 /// The words on page `index`, recognised from a 300 dpi render of it. `None` if Tesseract could
@@ -116,6 +181,7 @@ pub fn ocr_page(
         width,
         height,
         words,
+        graphics: Vec::new(),
     })
 }
 
@@ -141,15 +207,63 @@ fn run(program: &Path, image: &[u8], lang: &str) -> Option<String> {
         .then(|| String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-/// The folder Tesseract looks for language data in: ours if it has any, otherwise whatever the
-/// environment already says (so a system install keeps working).
+/// Where installed language data may be found besides our own downloads, best first.
+fn system_tessdata_dirs() -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    if let Some(env) = std::env::var_os("TESSDATA_PREFIX") {
+        dirs.push(PathBuf::from(env));
+    }
+    dirs.push(PathBuf::from("/app/share/tessdata"));
+    dirs.push(PathBuf::from("/usr/share/tessdata"));
+    if let Ok(entries) = std::fs::read_dir("/usr/share/tesseract-ocr") {
+        let mut versions: Vec<PathBuf> = entries
+            .flatten()
+            .map(|e| e.path().join("tessdata"))
+            .collect();
+        versions.sort();
+        versions.reverse();
+        dirs.extend(versions);
+    }
+    dirs.retain(|d| d.is_dir());
+    dirs
+}
+
+/// The folder Tesseract looks for language data in. Tesseract reads one folder, so when languages
+/// have been downloaded they are linked together with the installed ones (downloads winning) in a
+/// folder of their own; with none downloaded, the installed ones are used as they are.
 fn tessdata_prefix() -> std::ffi::OsString {
     let ours = tessdata_dir();
-    if ours.is_dir() {
-        ours.into_os_string()
-    } else {
-        std::env::var_os("TESSDATA_PREFIX").unwrap_or_default()
+    let system = system_tessdata_dirs();
+    let has_ours = std::fs::read_dir(&ours)
+        .map(|d| {
+            d.flatten()
+                .any(|e| e.path().extension().is_some_and(|x| x == "traineddata"))
+        })
+        .unwrap_or(false);
+    if !has_ours {
+        return system
+            .into_iter()
+            .next()
+            .unwrap_or_default()
+            .into_os_string();
     }
+    let union = glib::user_cache_dir().join("pereplyot").join("tessdata");
+    let _ = std::fs::remove_dir_all(&union);
+    if std::fs::create_dir_all(&union).is_err() {
+        return ours.into_os_string();
+    }
+    for dir in std::iter::once(ours).chain(system) {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|x| x == "traineddata") {
+                let _ = std::os::unix::fs::symlink(&path, union.join(entry.file_name()));
+            }
+        }
+    }
+    union.into_os_string()
 }
 
 #[cfg(test)]
@@ -172,6 +286,21 @@ mod tests {
         assert!((words[0].y0 - 144.0).abs() < 0.01);
         assert!((words[0].x1 - 144.0).abs() < 0.01);
         assert!(words[0].size > 10.0 && words[0].size < 16.0);
+    }
+
+    #[test]
+    fn every_word_of_a_line_has_the_lines_size_and_extent() {
+        let tsv = "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n\
+5\t1\t1\t1\t1\t1\t300\t600\t300\t60\t95\tliturgy\n\
+5\t1\t1\t1\t1\t2\t650\t612\t60\t30\t95\ta\n\
+5\t1\t1\t1\t1\t3\t750\t600\t300\t66\t95\ttestimony\n";
+        let words = parse_tsv(tsv, 300.0);
+        assert_eq!(words.len(), 3);
+        assert!(words.iter().all(|w| w.size == words[0].size));
+        assert!(words
+            .iter()
+            .all(|w| w.y0 == words[0].y0 && w.y1 == words[0].y1));
+        assert!((words[1].y1 - 666.0 * 72.0 / 300.0).abs() < 0.01);
     }
 
     #[test]

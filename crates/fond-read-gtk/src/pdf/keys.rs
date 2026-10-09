@@ -45,7 +45,11 @@ pub(super) fn install_keys(ui: &PdfUi) {
         let reflow_popover_for_keys = reflow_popover.clone();
         let text_toggle_key = text_toggle.clone();
         let search_for_keys = search_entry.clone();
-        crate::reader_host::set_tab_key_handler(&reader_tab, move |keyval, modifiers| {
+        let is_pane = reader.borrow().is_pane;
+        let handler = move |keyval: gdk::Key, modifiers: gdk::ModifierType| {
+            if !is_pane && focus_in_pane(&view_for_focus) {
+                return glib::Propagation::Proceed;
+            }
             if (keyval == gdk::Key::z || keyval == gdk::Key::Z)
                 && modifiers.contains(gdk::ModifierType::CONTROL_MASK)
             {
@@ -223,6 +227,26 @@ pub(super) fn install_keys(ui: &PdfUi) {
                 _ => {}
             }
             glib::Propagation::Proceed
-        });
+        };
+        if is_pane {
+            let controller = gtk4::EventControllerKey::new();
+            controller.set_propagation_phase(gtk4::PropagationPhase::Capture);
+            controller.connect_key_pressed(move |_, key, _, modifiers| handler(key, modifiers));
+            ui.view.add_controller(controller);
+        } else {
+            crate::reader_host::set_tab_key_handler(&reader_tab, handler);
+        }
     }
+}
+
+/// Whether keyboard focus is inside a split pane, whose own handler should take the key.
+fn focus_in_pane(view: &adw::ToolbarView) -> bool {
+    let mut widget = view.root().and_then(|root| root.focus());
+    while let Some(w) = widget {
+        if w.widget_name() == split::PANE_NAME {
+            return true;
+        }
+        widget = w.parent();
+    }
+    false
 }

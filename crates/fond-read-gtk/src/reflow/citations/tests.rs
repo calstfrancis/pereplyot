@@ -28,6 +28,7 @@ fn page(n: u16, lines: &[(&str, f32, f32, f32)]) -> RawPage {
         width: 612.0,
         height: 792.0,
         words,
+        graphics: Vec::new(),
     }
 }
 

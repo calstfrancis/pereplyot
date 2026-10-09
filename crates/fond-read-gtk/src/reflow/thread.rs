@@ -84,14 +84,12 @@ fn run(id: u64, path: PathBuf, recognise: bool, cancel: Arc<AtomicBool>) {
     };
     let total = doc.pages().len();
     let recogniser = recognise.then(ocr::tesseract).flatten();
-    let cache_dir = glib::user_cache_dir()
-        .join("pereplyot")
-        .join("ocr")
-        .join(ocr::cache_key(&path));
+    let cache_dir = ocr::cache_dir(&path);
     let read_page = |index: u16| -> Option<RawPage> {
         let page = extract_page(&doc, index).filter(|p| p.words.len() >= MIN_WORDS);
         match (&page, &recogniser) {
             (None, Some(program)) => ocr::ocr_page(&doc, index, program, "eng", &cache_dir),
+            (None, None) => ocr::cached_page(&doc, index, "eng", &cache_dir),
             _ => page,
         }
     };

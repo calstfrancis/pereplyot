@@ -24,6 +24,7 @@ mod dialogs;
 mod drag_gesture;
 mod drag_preview;
 mod export;
+mod figures;
 mod hover_preview;
 mod keys;
 mod mark_edit;
@@ -97,6 +98,9 @@ use selection::*;
 use thumbnails::*;
 
 /// Live state of an open PDF reader window.
+/// A Reading-mode figure asked for and what to do with it when it is drawn.
+type FigureWaiter = (RenderKey, Rc<dyn Fn(gdk::Texture)>);
+
 struct ReaderState {
     pdfium: &'static fond_doc::Pdfium,
     /// The file's bytes, read only if something asks: a few `fond_doc` helpers take raw bytes
@@ -153,6 +157,14 @@ struct ReaderState {
     /// zoom steps are applied (to the text size instead of the page render).
     text_goto: Option<Rc<dyn Fn(u16)>>,
     text_zoom: Option<Rc<dyn Fn(f64)>>,
+    /// While the Text view is showing: repaints search hits in it, scrolling to the current one
+    /// when asked.
+    text_search: Option<Rc<dyn Fn(bool)>>,
+    /// For a PDF with no outline of its own: fills the Contents with the headings Reading mode
+    /// finds.
+    /// Reading-mode figures asked for from the render thread and not yet delivered.
+    figure_waiters: Vec<FigureWaiter>,
+    derived_outline: Option<Rc<dyn Fn(Vec<fond_doc::PdfOutlineEntry>)>>,
     /// Inclusive range of pages that currently have widgets in continuous mode.
     continuous_window: (u16, u16),
     /// Finished page pictures, reused across scrolling, zooming back and forth, and redraws.
@@ -382,6 +394,7 @@ fn build_pane(first: &PdfUi, zoom: f64) -> Option<(adw::ToolbarView, Rc<dyn Fn()
         r.nav = None;
         r.continuous = None;
     });
+    built.view.set_widget_name(split::PANE_NAME);
     Some((built.view, close))
 }
 
@@ -552,8 +565,11 @@ fn build_reader(
         notes_scroll,
         outline_rows,
         outline_scroll,
+        set_outline,
     } = sidebar::build_sidebar(&outline_entries, &reader);
-    outline_track::install_outline_tracking(
+    let has_outline = !outline_entries.is_empty();
+    let outline_entries = Rc::new(RefCell::new(outline_entries));
+    let refresh_outline = outline_track::install_outline_tracking(
         &reader,
         outline_entries.clone(),
         outline_rows,
@@ -561,6 +577,16 @@ fn build_reader(
         &breadcrumb,
         &page_entry,
     );
+    if !has_outline {
+        reader.borrow_mut().derived_outline = Some(Rc::new(move |entries| {
+            if entries.len() == outline_entries.borrow().len() {
+                return;
+            }
+            *outline_entries.borrow_mut() = entries.clone();
+            set_outline(entries);
+            refresh_outline();
+        }));
+    }
     let (rebuild_notes, quiet_notes) =
         notes::install_notes_sidebar(host, &reader, &bookmark_button, &notes_rows);
     {
@@ -696,9 +722,7 @@ fn build_reader(
         drag_live_rect: drag_live_rect.clone(),
         window: window.clone(),
     };
-    if !is_pane {
-        keys::install_keys(&ui);
-    }
+    keys::install_keys(&ui);
     text_view::install_text_view(&ui);
     link_nav::install_link_nav(&ui);
     sidebar_toggle::install_sidebar_toggle(&ui);
@@ -725,6 +749,20 @@ fn build_reader(
     if !is_pane {
         session::install_session(&ui, start_page);
         position::restore(&ui, start_page);
+        let host_for_pins = host.clone();
+        pin::keep_with(
+            &reader,
+            Rc::new(move |pins| {
+                let tuples: Vec<_> = pins.iter().map(|p| (p.page, p.region, p.x, p.y)).collect();
+                host_for_pins.save_pins(&tuples);
+            }),
+        );
+        let saved = host
+            .pins()
+            .into_iter()
+            .map(|(page, region, x, y)| pin::SavedPin { page, region, x, y })
+            .collect();
+        pin::restore(&reader, saved);
     }
     // @wiring
 

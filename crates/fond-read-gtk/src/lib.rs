@@ -114,6 +114,14 @@ pub trait ReaderHost {
 
     fn save_position(&self, _page: u32, _fraction: f32) {}
 
+    /// Figures pinned over the page, as (1-based page, region `[x0, y0, x1, y1]` in page points as
+    /// displayed, card x, card y), kept so they are back on reopening.
+    fn pins(&self) -> Vec<(u32, [f32; 4], i32, i32)> {
+        Vec::new()
+    }
+
+    fn save_pins(&self, _pins: &[(u32, [f32; 4], i32, i32)]) {}
+
     /// Like [`Self::notify`], with one button. Hosts that can't show buttons just notify.
     fn notify_action(&self, message: &str, _label: &str, _action: Rc<dyn Fn()>) {
         self.notify(message);
