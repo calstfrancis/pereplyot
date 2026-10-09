@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Headless smoke test: drives the real binary under Xvfb and checks the sidecar it writes.
 # Usage: [SMOKE_CASES="plain epub"] [SMOKE_KEEP=1] tests/smoke/run.sh [path/to/pereplyot]   (needs Xvfb, xdotool, ImageMagick, python3)
-# PDFIUM_LIB_PATH must point at a directory containing libpdfium.so.
+# PDFIUM_LIB_PATH (default build-flatpak/files/lib) must point at a directory containing libpdfium.so.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
@@ -18,7 +18,9 @@ cleanup() {
 trap cleanup EXIT
 
 [ -x "$BIN" ] || { echo "no binary at $BIN (cargo build -p pereplyot-ui-gtk first)"; exit 2; }
-: "${PDFIUM_LIB_PATH:?set PDFIUM_LIB_PATH to a directory containing libpdfium.so}"
+: "${PDFIUM_LIB_PATH:=$ROOT/build-flatpak/files/lib}"
+[ -e "$PDFIUM_LIB_PATH/libpdfium.so" ] || { echo "set PDFIUM_LIB_PATH to a directory containing libpdfium.so"; exit 2; }
+export PDFIUM_LIB_PATH
 for tool in Xvfb xdotool import python3 dbus-run-session; do
     command -v "$tool" >/dev/null || { echo "missing tool: $tool"; exit 2; }
 done
@@ -346,6 +348,35 @@ run_hover_case() {
     stop_app
 }
 
+run_pin_case() {
+    start_app "$FX/linked.pdf"
+    local w
+    w="$(reader_window)" || { check "pin: reader window opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
+    sleep 2
+    xdotool windowfocus "$w" 2>/dev/null
+    xdotool mousemove 500 400 click 3
+    sleep 1
+    xdotool mousemove 435 491 click 1
+    sleep 0.5
+    xdotool mousemove 180 190 mousedown 1 mousemove 400 230 mousemove 680 262 mouseup 1
+    sleep 2
+    xdotool mousemove 500 450
+    for _ in $(seq 20); do xdotool click 5; done
+    sleep 1.5
+    screenshot "$WORK/pin.png"
+    local ink
+    ink="$(python3 "$HERE/text_bands.py" "$WORK/pin.png" --ink-in 495 125 965 195)"
+    check "pin: a pinned region stays on screen while you scroll to other pages" "$([ "${ink:-0}" -gt 200 ] && echo 1 || echo 0)" "(ink in the card: $ink)"
+    local grip_before grip_after
+    grip_before="$(python3 "$HERE/text_bands.py" "$WORK/pin.png" --ink-in 495 93 965 121)"
+    xdotool mousemove 953 107 click 1
+    sleep 1
+    screenshot "$WORK/pin-closed.png"
+    grip_after="$(python3 "$HERE/text_bands.py" "$WORK/pin-closed.png" --ink-in 495 93 965 121)"
+    check "pin: the close button unpins it" "$([ "${grip_before:-0}" -gt 20 ] && [ "${grip_after:-999}" -lt 8 ] && echo 1 || echo 0)" "(title bar ink before $grip_before, after $grip_after)"
+    stop_app
+}
+
 run_epub_case() {
     start_app "$FX/book.epub"
     local w
@@ -411,6 +442,7 @@ want plain && run_pdf_case plain plain.pdf y 2 "Pack my box with five dozen liqu
 want cropbox && run_pdf_case cropbox cropbox.pdf y 2 "Pack my box with five dozen liquor jugs."
 want rotated && run_pdf_case rotated rotated.pdf y 2 "Pack my box with five dozen liquor jugs."
 want history && run_history_case
+want pin && run_pin_case
 want hover && run_hover_case
 want thumbs && run_thumbs_case
 want reading && run_reading_case

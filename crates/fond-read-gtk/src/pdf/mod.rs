@@ -78,6 +78,7 @@ use worker::{Job, RenderKey, RenderWorker, Rendered, Tone};
 mod notes;
 mod ocr;
 mod outline_track;
+mod pin;
 mod render;
 mod selection;
 mod thumbnails;
@@ -186,6 +187,8 @@ struct ReaderState {
     mark_edit: mark_edit::MarkEdit,
     /// Every page's mark layer, so a change of hover or selection can repaint them all.
     mark_layers: Vec<glib::WeakRef<gtk4::DrawingArea>>,
+    /// Pinned figures: floating cards of regions of the pages.
+    pin: pin::PinState,
     /// The hover preview: what it has been asked for, what is showing, what it has read.
     previews: hover_preview::PreviewState,
     /// While the zoom is changing, pages keep their last picture (stretched) instead of asking
@@ -416,8 +419,10 @@ pub fn show_pdf_reader(
         continuous_box,
         continuous_scroll,
         view_stack,
+        view_overlay,
         content,
     } = canvas::build_canvas(&reader);
+    pin::install(&reader, &view_overlay, &hint, &picture);
     // `content` is reparented into the sidebar Paned below instead of set directly here —
     // the Notes sidebar (and, when present, Contents) always builds that Paned now, and
     // `Paned::set_end_child` asserts its child has no existing parent.

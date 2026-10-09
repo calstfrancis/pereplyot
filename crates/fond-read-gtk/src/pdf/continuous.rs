@@ -84,6 +84,16 @@ fn make_page(
                     let Some((start_x, start_y)) = gesture.start_point() else {
                         return;
                     };
+                    if pin::is_active(&reader) {
+                        pin::finish(
+                            &reader,
+                            page,
+                            (start_x, start_y, start_x + offset_x, start_y + offset_y),
+                            this_picture.width() as f64,
+                            this_picture.height() as f64,
+                        );
+                        return;
+                    }
                     let end_x = start_x + offset_x;
                     let end_y = start_y + offset_y;
                     let render_w = this_picture.width().max(0) as u32;

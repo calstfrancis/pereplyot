@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- **Pin a figure.** Right-click a page, choose **Pin a region…** and drag a box round a figure or
+  table: it stays on screen as a small floating card while you read on through the pages that
+  keep referring to it. Drag a card by its title bar to move it, ✕ to unpin; up to four at
+  once. (Pins last for the reading session.)
 - **Hover previews.** Rest the pointer on a link to somewhere in the document — a footnote
   marker, "Figure 3", a table of contents entry — and a small popover shows what is there, a
   crop of the destination page, so you can check it without leaving your place; click still

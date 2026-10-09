@@ -11,6 +11,7 @@ pub(super) struct CanvasParts {
     pub(super) continuous_box: gtk4::Box,
     pub(super) continuous_scroll: gtk4::ScrolledWindow,
     pub(super) view_stack: gtk4::Stack,
+    pub(super) view_overlay: gtk4::Overlay,
     pub(super) content: gtk4::Box,
 }
 
@@ -99,7 +100,10 @@ pub(super) fn build_canvas(reader: &Rc<RefCell<ReaderState>>) -> CanvasParts {
     hint_row.append(&breadcrumb);
     let content = gtk4::Box::new(Orientation::Vertical, 0);
     content.append(&hint_row);
-    content.append(&view_stack);
+    let view_overlay = gtk4::Overlay::new();
+    view_overlay.set_child(Some(&view_stack));
+    view_overlay.set_vexpand(true);
+    content.append(&view_overlay);
     CanvasParts {
         hint,
         breadcrumb,
@@ -111,6 +115,7 @@ pub(super) fn build_canvas(reader: &Rc<RefCell<ReaderState>>) -> CanvasParts {
         continuous_box,
         continuous_scroll,
         view_stack,
+        view_overlay,
         content,
     }
 }

@@ -55,6 +55,16 @@ pub(super) fn install_drag_gesture(ui: &PdfUi) {
                 if offset_x.abs() < MIN_DRAG_PX && offset_y.abs() < MIN_DRAG_PX {
                     return;
                 }
+                if pin::is_active(&reader) {
+                    if let Some((sx, sy)) = gesture.start_point() {
+                        let (page, w, h) = {
+                            let r = reader.borrow();
+                            (r.page, r.render_px.0 as f64, r.render_px.1 as f64)
+                        };
+                        pin::finish(&reader, page, (sx, sy, sx + offset_x, sy + offset_y), w, h);
+                    }
+                    return;
+                }
                 if reader.borrow().rotation != 0 {
                     // See `ReaderState::rotation`'s doc comment — the coordinate math below
                     // assumes an unrotated page, and the rotate control is meant to be

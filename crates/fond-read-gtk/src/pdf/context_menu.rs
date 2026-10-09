@@ -193,6 +193,18 @@ pub(super) fn show_pdf_context_menu(
         }
     }
 
+    let pin_row = popover_button("Pin a region…", false);
+    {
+        let reader = reader.clone();
+        let popover = popover.clone();
+        pin_row.connect_clicked(move |_| {
+            popover.popdown();
+            pin::begin(&reader);
+        });
+    }
+    rows.append(&popover_separator());
+    rows.append(&pin_row);
+
     popover.set_child(Some(&rows));
     let parent = parent.clone();
     popover.connect_closed(move |p| {
