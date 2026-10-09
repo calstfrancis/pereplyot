@@ -1,27 +1,5 @@
 use super::*;
 
-/// One annotation as sent to the reader's highlight-apply JS: just enough to find it in the
-/// rendered DOM (`snippet`, plus `prefix`/`suffix` context to disambiguate a snippet that
-/// appears more than once in the chapter) and mark it (`id`, for the CSS class and as the
-/// optional scroll target).
-#[derive(serde::Serialize)]
-pub(super) struct EpubHighlightPayload<'a> {
-    pub(super) id: &'a str,
-    pub(super) snippet: &'a str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) prefix: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) suffix: Option<&'a str>,
-    /// Serializes lowercase (`"highlight"`/`"underline"`/`"strikeout"`) via
-    /// `AnnotationKind`'s own `Serialize` impl — `EPUB_APPLY_HIGHLIGHTS_FN` switches on
-    /// this to decide which CSS treatment to apply.
-    pub(super) kind: fond_annot::AnnotationKind,
-    /// Highlight colour (hex, e.g. `#f6c344`) — meaningless for underline/strikeout,
-    /// which always use the current text colour so they read correctly in dark mode too.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) color: Option<&'a str>,
-}
-
 /// What the reader's selection-capture JS reports back: either nothing was meaningfully
 /// selected, or the selected text plus up to 40 characters of surrounding context on each
 /// side — the same prefix/suffix disambiguation scheme the PDF sidecar already uses.
@@ -37,49 +15,46 @@ pub(super) struct EpubSelectionCapture {
     /// The printed page the selection starts on, if the book has page numbers.
     #[serde(default)]
     pub(super) page: Option<String>,
+    /// Where the selection starts in the chapter's text (UTF-16 units).
+    #[serde(default)]
+    pub(super) start: Option<usize>,
 }
 
-/// A JS function *expression* (no trailing call — callers append `(args)`) that finds each
-/// given annotation's snippet text in the current document and wraps it in a
-/// `<mark class="kartoteka-hl">`, clearing any marks left by a previous call first
-/// (idempotent re-apply, so adding a highlight can just re-run this instead of reloading the
-/// page). Scrolls the mark matching `scrollToId` into view, if given. Mirrors
-/// `select_text_in_rect`'s multi-node-aware approach in `fond-doc/src/pdf.rs` — walk every
-/// text node, find the target substring, map it back onto node+offset pairs — just over DOM
-/// text nodes instead of PDF characters, since there's no PDFium text layer here.
+/// What `EPUB_APPLY_HIGHLIGHTS_FN` is given for each mark: where it is in the chapter's text
+/// (UTF-16 offsets into `document.body.textContent`), found by `crate::anchor`, and how to draw it.
+#[derive(serde::Serialize)]
+pub(super) struct EpubHighlightPayload<'a> {
+    pub(super) id: &'a str,
+    pub(super) start: usize,
+    pub(super) end: usize,
+    /// `"highlight"`, `"underline"` or `"strikeout"` (the kind's own serialisation).
+    pub(super) kind: fond_annot::AnnotationKind,
+    /// Highlight colour (hex) — meaningless for underline/strikeout, which use the text colour.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) color: Option<&'a str>,
+}
+
+/// The chapter's text as the script that wraps marks sees it.
+const EPUB_BODY_TEXT_JS: &str = "document.body ? document.body.textContent : ''";
+
+/// A JS function *expression* (callers append `(args)`) that wraps each given range of the
+/// chapter's text in a `<mark class="kartoteka-hl">`, clearing marks left by a previous call
+/// first (so adding a highlight just re-runs this instead of reloading the page), and scrolls
+/// the mark matching `scrollToId` into view.
 pub(super) const EPUB_APPLY_HIGHLIGHTS_FN: &str = r#"(function(annotations, scrollToId) {
-  function findTextRange(root, snippet, prefix, suffix) {
-    if (!snippet) return null;
-    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
-    var nodes = [];
-    var fullText = '';
-    var node;
+  function rangeAt(start, end) {
+    var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null);
+    var node, pos = 0, startNode = null, startOffset = 0, endNode = null, endOffset = 0;
     while (node = walker.nextNode()) {
-      nodes.push({ node: node, start: fullText.length });
-      fullText += node.textContent;
-    }
-    var combined = (prefix || '') + snippet + (suffix || '');
-    var idx, endIdx;
-    var combinedIdx = combined.length > snippet.length ? fullText.indexOf(combined) : -1;
-    if (combinedIdx !== -1) {
-      idx = combinedIdx + (prefix || '').length;
-      endIdx = idx + snippet.length;
-    } else {
-      var plainIdx = fullText.indexOf(snippet);
-      if (plainIdx === -1) return null;
-      idx = plainIdx;
-      endIdx = idx + snippet.length;
-    }
-    var startNode = null, startOffset = 0, endNode = null, endOffset = 0;
-    for (var i = 0; i < nodes.length; i++) {
-      var n = nodes[i];
-      var nEnd = n.start + n.node.textContent.length;
-      if (startNode === null && idx >= n.start && idx < nEnd) {
-        startNode = n.node; startOffset = idx - n.start;
+      var len = node.textContent.length;
+      if (startNode === null && start >= pos && start < pos + len) {
+        startNode = node; startOffset = start - pos;
       }
-      if (endIdx > n.start && endIdx <= nEnd) {
-        endNode = n.node; endOffset = endIdx - n.start;
+      if (end > pos && end <= pos + len) {
+        endNode = node; endOffset = end - pos;
+        break;
       }
+      pos += len;
     }
     if (!startNode || !endNode) return null;
     var range = document.createRange();
@@ -97,15 +72,12 @@ pub(super) const EPUB_APPLY_HIGHLIGHTS_FN: &str = r#"(function(annotations, scro
   });
 
   annotations.forEach(function(a) {
-    var range = findTextRange(document.body, a.snippet, a.prefix, a.suffix);
+    var range = rangeAt(a.start, a.end);
     if (!range) return;
     var mark = document.createElement('mark');
     mark.className = 'kartoteka-hl';
     mark.dataset.annotationId = a.id;
     mark.dataset.kind = a.kind;
-    // No background/foreground colour is hardcoded beyond the highlight tint itself
-    // (which is the whole point of a highlight) — underline/strikeout use `currentColor`
-    // so they read correctly against the page's own text colour in light or dark mode.
     if (a.kind === 'underline') {
       mark.style.background = 'transparent';
       mark.style.textDecoration = 'underline';
@@ -165,57 +137,116 @@ pub(super) const EPUB_CAPTURE_SELECTION_JS: &str = r#"(function() {
   var prefix = fullText.slice(Math.max(0, startIdx - 40), startIdx);
   var suffix = fullText.slice(startIdx + text.length, startIdx + text.length + 40);
   sel.removeAllRanges();
-  return JSON.stringify({ empty: false, text: text, prefix: prefix, suffix: suffix, page: page });
+  return JSON.stringify({ empty: false, text: text, prefix: prefix, suffix: suffix, page: page, start: startIdx });
 })()"#;
 
-/// Serialize the annotations anchored to `chapter` into the JSON array
-/// `EPUB_APPLY_HIGHLIGHTS_FN` expects. An annotation with no `snippet` (shouldn't happen for
-/// an EPUB one — `drawn_epub` always sets it — but the field is `Option` since the type is
-/// shared with PDF annotations) is skipped rather than sent as an unfindable empty search.
-pub(super) fn epub_highlight_payload_json(
+/// An annotation's id, where it now starts and ends in the chapter's text, and whether the
+/// words matched exactly.
+pub(super) type Placed = (String, usize, usize, bool);
+
+/// Where each annotation of `chapter` is in `text` (the chapter's text content), and which ones
+/// could not be found. Offsets are UTF-16 units, as the page's script counts.
+pub(super) fn locate_annotations(
     sidecar: &fond_annot::AnnotationSidecar,
     chapter: &str,
-) -> String {
-    let items: Vec<EpubHighlightPayload> = sidecar
+    text: &str,
+) -> (Vec<Placed>, Vec<String>) {
+    let mut found = Vec::new();
+    let mut lost = Vec::new();
+    for a in sidecar
         .annotations
         .iter()
         .filter(|a| a.chapter.as_deref() == Some(chapter))
-        .filter_map(|a| {
-            a.snippet.as_deref().map(|s| EpubHighlightPayload {
-                id: &a.id,
-                snippet: s,
-                prefix: a.snippet_prefix.as_deref(),
-                suffix: a.snippet_suffix.as_deref(),
-                kind: a.kind,
-                color: a.color.as_deref(),
-            })
-        })
-        .collect();
-    serde_json::to_string(&items).unwrap_or_else(|_| "[]".to_string())
+    {
+        let Some(snippet) = a.snippet.as_deref() else {
+            continue;
+        };
+        let hint = crate::text_position_of(a);
+        match crate::anchor::locate(
+            text,
+            snippet,
+            a.snippet_prefix.as_deref(),
+            a.snippet_suffix.as_deref(),
+            hint,
+        ) {
+            Some(l) => {
+                let units = crate::anchor::to_utf16(text, &[l.start, l.end]);
+                found.push((a.id.clone(), units[0], units[1], l.exact));
+            }
+            None => lost.push(a.id.clone()),
+        }
+    }
+    (found, lost)
 }
 
-/// Run `EPUB_APPLY_HIGHLIGHTS_FN` against the currently-loaded chapter, scrolling
-/// `scroll_to_id`'s mark into view if given. Called after every chapter load (so navigating
-/// away and back keeps showing highlights) and right after adding a new highlight (so it
-/// appears immediately, no reload needed).
+/// Mark every saved annotation of the chapter on show: read the chapter's text, find each
+/// passage in it (approximately if the book has changed since it was marked), then wrap them.
+/// Passages that cannot be found are remembered, so the Notes list can say so. Called after
+/// every chapter load and right after a mark is added or removed. Scrolls `scroll_to_id`'s mark
+/// into view if given.
 pub(super) fn epub_apply_highlights(
     view: &webkit6::WebView,
     state: &Rc<RefCell<EpubReaderState>>,
     scroll_to_id: Option<&str>,
 ) {
-    let payload_json = {
-        let r = state.borrow();
-        match r.spine.get(r.index) {
-            Some(chapter) => epub_highlight_payload_json(&r.store.sidecar(), chapter),
-            None => return,
-        }
-    };
     let scroll_json = match scroll_to_id {
         Some(id) => serde_json::to_string(id).unwrap_or_else(|_| "null".to_string()),
         None => "null".to_string(),
     };
-    let script = format!("{EPUB_APPLY_HIGHLIGHTS_FN}({payload_json}, {scroll_json})");
-    view.evaluate_javascript(&script, None, None, gio::Cancellable::NONE, |_| {});
+    let state = state.clone();
+    let view_for_apply = view.clone();
+    view.evaluate_javascript(
+        EPUB_BODY_TEXT_JS,
+        None,
+        None,
+        gio::Cancellable::NONE,
+        move |result| {
+            let Ok(text) = result.map(|v| v.to_str().to_string()) else {
+                return;
+            };
+            let (payload, lost_changed) = {
+                let mut r = state.borrow_mut();
+                let Some(chapter) = r.spine.get(r.index).cloned() else {
+                    return;
+                };
+                let store = r.store.clone();
+                let sidecar = store.sidecar();
+                let (found, lost) = locate_annotations(&sidecar, &chapter, &text);
+                let ids_here: Vec<String> = sidecar
+                    .annotations
+                    .iter()
+                    .filter(|a| a.chapter.as_deref() == Some(chapter.as_str()))
+                    .map(|a| a.id.clone())
+                    .collect();
+                let before = r.lost.clone();
+                r.lost.retain(|id| !ids_here.contains(id));
+                r.lost.extend(lost);
+                let changed = r.lost != before;
+                let items: Vec<EpubHighlightPayload> = found
+                    .iter()
+                    .filter_map(|(id, start, end, _)| {
+                        let a = sidecar.annotations.iter().find(|a| a.id == *id)?;
+                        Some(EpubHighlightPayload {
+                            id: &a.id,
+                            start: *start,
+                            end: *end,
+                            kind: a.kind,
+                            color: a.color.as_deref(),
+                        })
+                    })
+                    .collect();
+                (
+                    serde_json::to_string(&items).unwrap_or_else(|_| "[]".to_string()),
+                    changed.then(|| r.on_lost_changed.clone()).flatten(),
+                )
+            };
+            let script = format!("{EPUB_APPLY_HIGHLIGHTS_FN}({payload}, {scroll_json})");
+            view_for_apply.evaluate_javascript(&script, None, None, gio::Cancellable::NONE, |_| {});
+            if let Some(f) = lost_changed {
+                f();
+            }
+        },
+    );
 }
 
 /// `(kind, colour hex, note)` -> mark the current browser selection.
@@ -401,6 +432,7 @@ pub(super) fn build_apply_mark(
                     return;
                 };
                 let capture_page = capture.page.clone();
+                let capture_start = capture.start;
                 let snippet = capture.text.filter(|t| !t.trim().is_empty());
                 let Some(snippet) = (!capture.empty).then_some(snippet).flatten() else {
                     host.notify("Select some text first");
@@ -423,6 +455,13 @@ pub(super) fn build_apply_mark(
                     note,
                 );
                 annotation.color = color;
+                if let Some(start) = capture_start {
+                    let len = annotation
+                        .snippet
+                        .as_deref()
+                        .map_or(0, |t| t.encode_utf16().count());
+                    crate::set_text_position(&mut annotation, Some((start, start + len)));
+                }
                 {
                     let r = reader.borrow();
                     let label = page_label::label_for(&r, &chapter_for_label, capture_page);

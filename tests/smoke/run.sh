@@ -838,6 +838,32 @@ except Exception:
     second="$(labels | awk '{print $2}')"
     check "scholar: further on, a highlight is on a later printed page" "$([[ "$second" =~ ^4[2-5]$ ]] && echo 1 || echo 0)" "(page labels: '$(labels)')"
     stop_app
+    local side
+    side="$(find "$WORK/h/data" -path '*annotations*' -name '*.json' | head -1)"
+    python3 - "$side" <<'PY'
+import json, sys
+path = sys.argv[1]
+d = json.load(open(path))
+a = d["annotations"][0]
+words = a["snippet"].split(" ")
+words[3] = words[3][:-1] + "x"
+a["snippet"] = " ".join(words)
+a.pop("snippet_prefix", None)
+a.pop("snippet_suffix", None)
+a.get("extra", {}).pop("pos", None)
+a.pop("pos", None)
+json.dump(d, open(path, "w"))
+PY
+    start_app "$FX/scholar.epub" keep
+    reader_window >/dev/null
+    sleep 4
+    for _ in $(seq 60); do xdotool mousemove 600 400 click 4; done
+    sleep 1.5
+    screenshot "$WORK/sc-drift.png"
+    local tint
+    tint="$(python3 "$HERE/text_bands.py" "$WORK/sc-drift.png" --tint-in 285 190 968 215)"
+    check "scholar: a mark whose words no longer match exactly is still found and drawn" "$([ "${tint:-0}" -gt 300 ] && echo 1 || echo 0)" "(tinted pixels on its line: $tint)"
+    stop_app
 }
 
 # Line order in the fixtures: "Page N", fox, Pack, Sphinx.

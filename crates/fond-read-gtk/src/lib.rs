@@ -20,6 +20,7 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use gtk4::Orientation;
 
+mod anchor;
 pub mod annotation_store;
 pub mod annotations;
 pub mod clip;
@@ -60,6 +61,24 @@ pub fn set_page_label(a: &mut fond_annot::Annotation, label: Option<&str>) {
     match label.filter(|l| !l.is_empty()) {
         Some(l) => a.extra.insert(PAGE_LABEL_KEY.into(), l.into()),
         None => a.extra.remove(PAGE_LABEL_KEY),
+    };
+}
+
+const POSITION_KEY: &str = "pos";
+
+/// Where in its chapter's text an EPUB annotation was made (UTF-16 offsets): a hint for finding
+/// it again, kept in `extra` so other apps carry it along untouched.
+pub fn text_position_of(a: &fond_annot::Annotation) -> Option<(usize, usize)> {
+    let v = a.extra.get(POSITION_KEY)?.as_array()?;
+    Some((v.first()?.as_u64()? as usize, v.get(1)?.as_u64()? as usize))
+}
+
+pub fn set_text_position(a: &mut fond_annot::Annotation, position: Option<(usize, usize)>) {
+    match position {
+        Some((s, e)) => a
+            .extra
+            .insert(POSITION_KEY.into(), serde_json::json!([s, e])),
+        None => a.extra.remove(POSITION_KEY),
     };
 }
 

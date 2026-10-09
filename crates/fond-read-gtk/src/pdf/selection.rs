@@ -250,7 +250,7 @@ pub(super) fn apply_selection_mark(
             .map(|m| m.quads)
             .unwrap_or_default();
     }
-    let annotation = fond_annot::Annotation::drawn(
+    let mut annotation = fond_annot::Annotation::drawn(
         kind,
         page as u32 + 1,
         quads,
@@ -258,6 +258,7 @@ pub(super) fn apply_selection_mark(
         None,
         Some(color.to_string()),
     );
+    add_context(&ctx.reader.borrow(), page, &mut annotation);
     let store = ctx.reader.borrow().store.clone();
     match store.add(annotation) {
         Ok(()) => {
@@ -520,7 +521,7 @@ pub(super) fn save_drag_annotation(
         )
     });
 
-    let annotation = fond_annot::Annotation::drawn(
+    let mut annotation = fond_annot::Annotation::drawn(
         draw_kind,
         page as u32 + 1,
         quads,
@@ -528,6 +529,7 @@ pub(super) fn save_drag_annotation(
         None,
         Some(draw_color),
     );
+    add_context(&reader.borrow(), page, &mut annotation);
 
     let store = reader.borrow().store.clone();
     match store.add(annotation) {
@@ -548,6 +550,27 @@ pub(super) fn save_drag_annotation(
             false
         }
     }
+}
+
+/// Keep a little of the page's text on each side of a mark's words, so the mark can be found
+/// again if the file is replaced by an edition that has moved.
+fn add_context(r: &ReaderState, page: u16, annotation: &mut fond_annot::Annotation) {
+    let Some(snippet) = annotation.snippet.clone() else {
+        return;
+    };
+    let Some(doc) = r.doc.as_ref() else {
+        return;
+    };
+    let Ok(pdf_page) = doc.pages().get(page) else {
+        return;
+    };
+    let (before, after) = crate::anchor::context_around(
+        &crate::page_text(&pdf_page),
+        &snippet,
+        crate::anchor::CONTEXT_CHARS,
+    );
+    annotation.snippet_prefix = before;
+    annotation.snippet_suffix = after;
 }
 
 /// Which annotation (if any) on `page` contains the PDF-space point `(x_pt, y_pt)` — the

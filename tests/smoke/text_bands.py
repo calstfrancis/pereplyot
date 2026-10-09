@@ -6,6 +6,7 @@ text_bands.py IMG --has-search-match -> number of blue search-match pixels in th
 text_bands.py IMG --has-figure-blue -> number of the fixture chart's bar-blue pixels anywhere in the window
 text_bands.py IMG --has-highlight -> number of amber highlight pixels in the PDF page area
 text_bands.py IMG --highlight-box -> "x0 y0 x1 y1" of the amber highlight pixels in the PDF page area
+text_bands.py IMG --tint-in X0 Y0 X1 Y1 -> number of warm highlight-tinted pixels in that rectangle
 text_bands.py IMG --ink-in X0 Y0 X1 Y1 -> number of darker-than-page pixels in that rectangle of the window
 text_bands.py IMG --sidebar-ink -> number of text pixels on the first thumbnail card
 text_bands.py IMG --last-line -> "x0 y0 x1 y1" of the lowest text line in the EPUB content area
@@ -50,6 +51,16 @@ if "--amber-in" in sys.argv:
         capture_output=True,
     ).stdout
     print(sum(1 for k in range(0, len(raw) - 2, 3) if raw[k] > 200 and 150 < raw[k + 1] < 235 and raw[k + 2] < 170))
+    sys.exit(0)
+
+if "--tint-in" in sys.argv:
+    i = sys.argv.index("--tint-in")
+    x0, y0, x1, y1 = (int(v) for v in sys.argv[i + 1 : i + 5])
+    raw = subprocess.run(
+        ["convert", sys.argv[1], "-crop", f"{x1 - x0}x{y1 - y0}+{x0}+{y0}", "-depth", "8", "rgb:-"],
+        capture_output=True,
+    ).stdout
+    print(sum(1 for k in range(0, len(raw) - 2, 3) if raw[k] > 225 and 25 < raw[k] - raw[k + 2] < 80))
     sys.exit(0)
 
 if "--ink-in" in sys.argv:

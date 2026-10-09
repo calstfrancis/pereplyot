@@ -71,6 +71,10 @@ struct EpubReaderState {
     bookmarks: Vec<usize>,
     /// The book's printed pages, if it has any.
     pages: Vec<pages::PageBreak>,
+    /// Annotations whose passage could not be found in this edition of the book.
+    lost: Vec<String>,
+    /// Rebuilds the Notes list when `lost` changes.
+    on_lost_changed: Option<Rc<dyn Fn()>>,
 }
 
 /// A built-in EPUB reader: renders each chapter with WebKitGTK (`webkit6`), which — unlike
@@ -150,6 +154,8 @@ pub fn show_epub_reader(
     let reader = Rc::new(RefCell::new(EpubReaderState {
         cache_dir,
         pages: printed_pages,
+        lost: Vec::new(),
+        on_lost_changed: None,
         spine: book.spine,
         index: start_index,
         store,
@@ -279,6 +285,7 @@ pub fn show_epub_reader(
         &pending_scroll,
         &notes_rows,
     );
+    reader.borrow_mut().on_lost_changed = Some(rebuild_notes.clone());
     {
         let store = reader.borrow().store.clone();
         let reader_weak = Rc::downgrade(&reader);

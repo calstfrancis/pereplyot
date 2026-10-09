@@ -198,6 +198,16 @@ pub(super) fn install_notes_sidebar(
                     });
                 }
 
+                if reader.borrow().lost.contains(&annotation.id) {
+                    let warn = gtk4::Label::new(Some(
+                        "⚠ This passage can't be found in this version of the book",
+                    ));
+                    warn.set_xalign(0.0);
+                    warn.set_wrap(true);
+                    warn.add_css_class("caption");
+                    warn.add_css_class("error");
+                    outer.append(&warn);
+                }
                 if let Some(snippet) = &annotation.snippet {
                     let snippet_label = gtk4::Label::new(Some(snippet));
                     snippet_label.set_xalign(0.0);
