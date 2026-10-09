@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- **Dark mode that keeps pictures looking right, plus Sepia.** The night button used to invert
+  every colour, which turned photographs and coloured figures into negatives and left
+  highlights the wrong colour. It now cycles Normal, Dark and Sepia: Dark flips lightness
+  but keeps hue (and stops short of pure black and white to ease glare), Sepia warms the
+  page like old paper. Highlights keep their own colours in every mode.
+- **Scrollbar ticks in continuous view.** A thin strip along the scrollbar edge marks the pages
+  that hold your notes and highlights (in their colours) and every search match, with the
+  current match standing out, so the shape of a whole book is visible at a glance.
 - **Highlights are drawn over the page instead of into it.** Adding, undoing or recolouring a
   highlight, moving to the next search match, and extending a selection used to re-render
   the whole page with the marks baked into its pixels. The marks are now a separate layer of

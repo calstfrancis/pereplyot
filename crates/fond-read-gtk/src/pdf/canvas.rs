@@ -77,7 +77,10 @@ pub(super) fn build_canvas(reader: &Rc<RefCell<ReaderState>>) -> CanvasParts {
 
     let view_stack = gtk4::Stack::new();
     view_stack.add_named(&scroll, Some("paged"));
-    view_stack.add_named(&continuous_scroll, Some("continuous"));
+    let continuous_overlay = gtk4::Overlay::new();
+    continuous_overlay.set_child(Some(&continuous_scroll));
+    continuous_overlay.add_overlay(&scrollbar_ticks::build_tick_layer(&reader));
+    view_stack.add_named(&continuous_overlay, Some("continuous"));
     view_stack.set_visible_child_name("paged");
 
     let content = gtk4::Box::new(Orientation::Vertical, 0);

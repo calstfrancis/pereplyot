@@ -49,13 +49,14 @@ impl TextureCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pdf::Tone;
 
     fn key(page: u16) -> RenderKey {
         RenderKey {
             page,
             width: 100,
             rotation: 0,
-            invert: false,
+            tone: Tone::Normal,
         }
     }
 
@@ -67,7 +68,7 @@ mod tests {
         b.width = 200;
         assert_ne!(a, b);
         let mut c = key(1);
-        c.invert = true;
+        c.tone = Tone::Dark;
         assert_ne!(a, c);
     }
 }

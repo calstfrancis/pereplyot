@@ -34,8 +34,14 @@ pub(super) fn install_view_modes(ui: &PdfUi) {
     {
         let reader = reader.clone();
         let render = render.clone();
-        invert_button.connect_toggled(move |btn| {
-            reader.borrow_mut().invert_colors = btn.is_active();
+        invert_button.connect_clicked(move |btn| {
+            let tone = {
+                let mut r = reader.borrow_mut();
+                r.tone = r.tone.next();
+                r.tone
+            };
+            btn.set_active(tone != Tone::Normal);
+            btn.set_tooltip_text(Some(tone.tooltip()));
             render();
             // `render()` alone only updates the paged view's (possibly hidden) Picture —
             // Continuous mode has its own per-page Pictures with their own last-rendered

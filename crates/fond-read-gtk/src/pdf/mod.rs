@@ -27,6 +27,7 @@ mod export;
 mod keys;
 mod mark_layer;
 mod open_pdf;
+mod scrollbar_ticks;
 use open_pdf::OpenedPdf;
 mod render_actions;
 use render_actions::*;
@@ -70,7 +71,7 @@ mod worker;
 mod zoom;
 use texture_cache::TextureCache;
 use ui::PdfUi;
-use worker::{Job, RenderKey, RenderWorker, Rendered};
+use worker::{Job, RenderKey, RenderWorker, Rendered, Tone};
 mod notes;
 mod ocr;
 mod render;
@@ -176,10 +177,13 @@ struct ReaderState {
     /// neither one's layout math (continuous page offsets computed from the *unrotated*
     /// page size; two-page's facing-page box) accounts for a rotated page either.
     rotation: u16,
-    /// Colours inverted for display (a night-reading mode for scanned/white-background
-    /// PDFs, whose pixels don't respond to the app's own dark theme) — applied to the same
-    /// final pixel buffer `rotation` is, in both paged and continuous mode alike.
-    invert_colors: bool,
+    /// Dark or sepia page colours (scanned and white-background PDFs are just pixels, so the
+    /// app's own dark theme can't reach them) — applied to the same final pixel buffer
+    /// `rotation` is, in both paged and continuous mode alike.
+    tone: Tone,
+    /// Marks on the continuous view's scrollbar edge, repainted when annotations or search
+    /// matches change.
+    tick_layer: Option<gtk4::DrawingArea>,
     /// Bookmarked pages, 1-based (`Annotation.page` numbering) — loaded once at open,
     /// rewritten to the host on every add/remove, same lifecycle as `annotations`. Kept
     /// sorted so the Notes sidebar's "Bookmarks" section lists them in page order.

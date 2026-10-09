@@ -65,6 +65,7 @@ pub(super) fn install_search(ui: &PdfUi) {
             } else {
                 search_count.set_text("Searching…");
             }
+            scrollbar_ticks::queue_ticks(&reader);
             if let Some(page) = cleared_page {
                 render();
                 render_continuous_page(&reader, page);
@@ -107,6 +108,7 @@ pub(super) fn install_search(ui: &PdfUi) {
                             };
                             search_prev.set_sensitive(true);
                             search_next.set_sensitive(true);
+                            scrollbar_ticks::queue_ticks(&reader);
                             if let Some(page) = first_page {
                                 crate::perf::mark("search first match shown");
                                 goto_search_match(page, None);
@@ -150,6 +152,7 @@ pub(super) fn install_search(ui: &PdfUi) {
                 search_prev.set_sensitive(false);
                 search_next.set_sensitive(false);
                 search_count.set_text("");
+                scrollbar_ticks::queue_ticks(&reader);
                 render();
                 if let Some(page) = cleared_page {
                     render_continuous_page(&reader, page);
@@ -182,6 +185,7 @@ pub(super) fn install_search(ui: &PdfUi) {
                 ));
                 (previous_page, page)
             };
+            scrollbar_ticks::queue_ticks(&reader);
             goto_search_match(page, Some(previous_page));
         });
     }
@@ -206,6 +210,7 @@ pub(super) fn install_search(ui: &PdfUi) {
                 ));
                 (previous_page, page)
             };
+            scrollbar_ticks::queue_ticks(&reader);
             goto_search_match(page, Some(previous_page));
         });
     }

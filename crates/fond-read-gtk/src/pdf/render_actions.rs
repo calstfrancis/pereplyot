@@ -136,6 +136,7 @@ pub(super) fn build_render_actions(
         let render = render.clone();
         let continuous_toggle = continuous_toggle.clone();
         Rc::new(move |change: &crate::annotation_store::Change| {
+            scrollbar_ticks::queue_ticks(&reader);
             if !continuous_toggle.is_active() {
                 render();
             }

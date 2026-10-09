@@ -43,7 +43,7 @@ pub(super) fn build_tool_buttons(
     let invert_button = gtk4::ToggleButton::new();
     invert_button.set_icon_name("weather-clear-night-symbolic");
     invert_button.add_css_class("flat");
-    invert_button.set_tooltip_text(Some("Invert colours (for reading at night)"));
+    invert_button.set_tooltip_text(Some(Tone::Normal.tooltip()));
 
     let note_button = gtk4::Button::with_label("Note…");
     note_button.set_tooltip_text(Some("Add a marginal note on the current page"));

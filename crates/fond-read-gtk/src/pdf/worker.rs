@@ -5,6 +5,34 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 
+/// How a page's colours are changed for reading: left alone, darkened without turning pictures
+/// into negatives, or warmed like old paper.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
+pub(super) enum Tone {
+    #[default]
+    Normal,
+    Dark,
+    Sepia,
+}
+
+impl Tone {
+    pub fn next(self) -> Tone {
+        match self {
+            Tone::Normal => Tone::Dark,
+            Tone::Dark => Tone::Sepia,
+            Tone::Sepia => Tone::Normal,
+        }
+    }
+
+    pub fn tooltip(self) -> &'static str {
+        match self {
+            Tone::Normal => "Page colours: normal (click for dark)",
+            Tone::Dark => "Page colours: dark (click for sepia)",
+            Tone::Sepia => "Page colours: sepia (click for normal)",
+        }
+    }
+}
+
 /// What a rendered page depends on. Two jobs with the same key produce the same pixels.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub(super) struct RenderKey {
@@ -12,12 +40,12 @@ pub(super) struct RenderKey {
     /// Device pixels (logical width × the widget's scale factor) of the unrotated page.
     pub width: u32,
     pub rotation: u16,
-    pub invert: bool,
+    pub tone: Tone,
 }
 
 impl RenderKey {
     fn same_view(&self, other: &RenderKey) -> bool {
-        self.width == other.width && self.rotation == other.rotation && self.invert == other.invert
+        self.width == other.width && self.rotation == other.rotation && self.tone == other.tone
     }
 }
 
@@ -169,9 +197,7 @@ fn render(doc: &pdfium_render::prelude::PdfDocument<'_>, job: Job) -> Option<Ren
         height: bitmap.height() as u32,
         rgba: bitmap.as_rgba_bytes(),
     };
-    if key.invert {
-        super::render::invert_rgba(&mut rp.rgba);
-    }
+    super::render::apply_tone(&mut rp.rgba, key.tone);
     let (rgba, width, height) = if key.rotation != 0 {
         super::render::rotate_rgba(&rp.rgba, rp.width, rp.height, key.rotation)
     } else {

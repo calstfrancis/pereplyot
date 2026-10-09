@@ -50,14 +50,40 @@ pub(super) fn rotate_rgba(
     }
 }
 
-/// Invert an RGBA buffer's colours in place, leaving alpha untouched — a night-reading mode
-/// for scanned/white-background pages, which stay bright regardless of the app's own theme
-/// since they're just pixels, not something CSS/`adw::StyleManager` can recolour.
-pub(super) fn invert_rgba(rgba: &mut [u8]) {
-    for px in rgba.chunks_exact_mut(4) {
-        px[0] = 255 - px[0];
-        px[1] = 255 - px[1];
-        px[2] = 255 - px[2];
+/// Recolour a page for reading. Dark inverts lightness and keeps hue, so photographs and
+/// coloured figures stay recognisable, and stops short of pure black and white to ease glare;
+/// Sepia multiplies the page with a warm paper colour.
+pub(super) fn apply_tone(rgba: &mut [u8], tone: Tone) {
+    match tone {
+        Tone::Normal => {}
+        Tone::Dark => {
+            const FLOOR: f32 = 24.0;
+            const CEIL: f32 = 224.0;
+            for px in rgba.chunks_exact_mut(4) {
+                let (r, g, b) = (
+                    255.0 - px[0] as f32,
+                    255.0 - px[1] as f32,
+                    255.0 - px[2] as f32,
+                );
+                let out = [
+                    -0.574 * r + 1.430 * g + 0.144 * b,
+                    0.426 * r + 0.430 * g + 0.144 * b,
+                    0.426 * r + 1.430 * g - 0.856 * b,
+                ];
+                for (dst, v) in px.iter_mut().zip(out) {
+                    let v = v.clamp(0.0, 255.0);
+                    *dst = (FLOOR + v * (CEIL - FLOOR) / 255.0).round() as u8;
+                }
+            }
+        }
+        Tone::Sepia => {
+            const PAPER: [u32; 3] = [244, 232, 208];
+            for px in rgba.chunks_exact_mut(4) {
+                for (c, paper) in px.iter_mut().zip(PAPER) {
+                    *c = (*c as u32 * paper / 255) as u8;
+                }
+            }
+        }
     }
 }
 
@@ -166,7 +192,7 @@ pub(super) fn paint_page(
         page,
         width: unrotated_w * scale,
         rotation: r.rotation,
-        invert: r.invert_colors,
+        tone: r.tone,
     };
     mark_layer::redraw_beside(picture);
     if let Some(texture) = r.textures.get(&key) {
@@ -192,4 +218,32 @@ pub(super) fn accept_render(r: &mut ReaderState, done: Rendered) {
         stride,
     );
     r.textures.insert(done.key, texture.upcast(), bytes);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dark_swaps_paper_and_ink_without_pure_black_or_white() {
+        let mut px = [255, 255, 255, 255, 0, 0, 0, 255];
+        apply_tone(&mut px, Tone::Dark);
+        assert_eq!(&px[..4], &[24, 24, 24, 255]);
+        assert_eq!(&px[4..], &[224, 224, 224, 255]);
+    }
+
+    #[test]
+    fn dark_keeps_a_red_figure_red() {
+        let mut px = [200, 30, 30, 255];
+        apply_tone(&mut px, Tone::Dark);
+        assert!(px[0] > px[1] && px[0] > px[2]);
+    }
+
+    #[test]
+    fn sepia_turns_white_into_paper_and_leaves_black() {
+        let mut px = [255, 255, 255, 255, 0, 0, 0, 255];
+        apply_tone(&mut px, Tone::Sepia);
+        assert_eq!(&px[..4], &[244, 232, 208, 255]);
+        assert_eq!(&px[4..], &[0, 0, 0, 255]);
+    }
 }
