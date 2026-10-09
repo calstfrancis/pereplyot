@@ -49,9 +49,23 @@ pub(super) struct RenderKey {
     pub zoom_w: u32,
     /// Which tile of the page, for very large renders drawn in pieces (see `tiles.rs`).
     pub tile: Option<(u16, u16)>,
+    /// An arbitrary region of the page (x, y, width, height in device pixels at `zoom_w`), drawn
+    /// for a hover preview or a pinned figure.
+    pub crop: Option<[i32; 4]>,
 }
 
 impl RenderKey {
+    /// Pages and their tiles, thumbnails and crops queue apart, so one never discards another.
+    fn class(&self) -> u8 {
+        if self.thumb {
+            1
+        } else if self.crop.is_some() {
+            2
+        } else {
+            0
+        }
+    }
+
     fn same_view(&self, other: &RenderKey) -> bool {
         self.zoom_w == other.zoom_w && self.rotation == other.rotation && self.tone == other.tone
     }
@@ -131,9 +145,11 @@ impl RenderWorker {
         // A new view (zoom, rotation, scale, colours) makes everything queued for the old one
         // pointless, and a newer picture of the same page replaces an older one.
         q.jobs.retain(|j| {
-            j.key.thumb != job.key.thumb
+            j.key.class() != job.key.class()
                 || (j.key.same_view(&job.key)
-                    && (j.key.page != job.key.page || j.key.tile != job.key.tile))
+                    && (j.key.page != job.key.page
+                        || j.key.tile != job.key.tile
+                        || j.key.crop != job.key.crop))
         });
         q.jobs.push(job);
         self.shared.wake.notify_one();
@@ -197,37 +213,61 @@ fn run(id: u64, path: PathBuf, shared: Arc<Shared>) {
     }
 }
 
-fn render(doc: &pdfium_render::prelude::PdfDocument<'_>, job: Job) -> Option<Rendered> {
+/// The part of `page` drawn `zoom_w` device pixels wide that starts at (x, y) and is `w`×`h` pixels.
+fn region<'p>(
+    page: &'p pdfium_render::prelude::PdfPage<'_>,
+    zoom_w: u32,
+    (x, y, w, h): (u32, u32, u32, u32),
+) -> Option<pdfium_render::prelude::PdfBitmap<'p>> {
     use pdfium_render::prelude::{PdfPoints, PdfRenderConfig, Pixels};
+    let scale = zoom_w as f32 / page.width().value.max(1.0);
+    let config = PdfRenderConfig::new()
+        .set_fixed_width(w as Pixels)
+        .set_fixed_height(h as Pixels)
+        .scale_page_by_factor(scale)
+        .translate(
+            PdfPoints::new(-(x as f32) / scale),
+            PdfPoints::new(-(y as f32) / scale),
+        )
+        .ok()?;
+    page.render_with_config(&config).ok()
+}
+
+fn render(doc: &pdfium_render::prelude::PdfDocument<'_>, job: Job) -> Option<Rendered> {
+    use pdfium_render::prelude::{PdfRenderConfig, Pixels};
     let Job { key, .. } = job;
     let page = doc.pages().get(key.page).ok()?;
     let bitmap = match key.tile {
-        None => {
+        None if key.crop.is_none() => {
             let config = PdfRenderConfig::new().set_target_width(key.width.max(1) as Pixels);
             page.render_with_config(&config).ok()?
         }
+        None => {
+            let [x, y, w, h] = key.crop?;
+            region(
+                &page,
+                key.zoom_w,
+                (
+                    x.max(0) as u32,
+                    y.max(0) as u32,
+                    w.max(1) as u32,
+                    h.max(1) as u32,
+                ),
+            )?
+        }
         Some((col, row)) => {
-            let scale = key.zoom_w as f32 / page.width().value.max(1.0);
-            let full_h = (page.height().value * scale).round() as u32;
             let (x0, y0) = (
                 col as u32 * super::tiles::TILE_PX,
                 row as u32 * super::tiles::TILE_PX,
             );
+            let scale = key.zoom_w as f32 / page.width().value.max(1.0);
+            let full_h = (page.height().value * scale).round() as u32;
             if x0 >= key.zoom_w || y0 >= full_h {
                 return None;
             }
             let tw = super::tiles::TILE_PX.min(key.zoom_w - x0);
             let th = super::tiles::TILE_PX.min(full_h - y0);
-            let config = PdfRenderConfig::new()
-                .set_fixed_width(tw as Pixels)
-                .set_fixed_height(th as Pixels)
-                .scale_page_by_factor(scale)
-                .translate(
-                    PdfPoints::new(-(x0 as f32) / scale),
-                    PdfPoints::new(-(y0 as f32) / scale),
-                )
-                .ok()?;
-            page.render_with_config(&config).ok()?
+            region(&page, key.zoom_w, (x0, y0, tw, th))?
         }
     };
     let mut rgba = bitmap.as_rgba_bytes();
@@ -273,12 +313,14 @@ mod tests {
             thumb: false,
             zoom_w: width,
             tile: None,
+            crop: None,
         };
         let full = rgba_of(&doc, full_key.clone()).unwrap();
         let tile = rgba_of(
             &doc,
             RenderKey {
                 tile: Some((1, 0)),
+                crop: None,
                 ..full_key
             },
         )

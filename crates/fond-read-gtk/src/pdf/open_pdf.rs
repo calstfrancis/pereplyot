@@ -91,6 +91,7 @@ pub(super) fn open_pdf(
         tick_layer: None,
         defer_renders: false,
         mark_edit: Default::default(),
+        previews: Default::default(),
         mark_layers: Vec::new(),
         thumbnail_pictures: Vec::new(),
         scanned: false,

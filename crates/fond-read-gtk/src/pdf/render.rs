@@ -192,6 +192,7 @@ pub(super) fn paint_page(
         thumb: false,
         zoom_w: device_w,
         tile: None,
+        crop: None,
     };
     mark_layer::redraw_beside(picture);
     if let Some(texture) = r.textures.get(&key) {

@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- **Hover previews.** Rest the pointer on a link to somewhere in the document — a footnote
+  marker, "Figure 3", a table of contents entry — and a small popover shows what is there, a
+  crop of the destination page, so you can check it without leaving your place; click still
+  jumps, and Back returns. Most humanities PDFs have no links on their citations, so it also
+  **reads the citation under the pointer** — `[12]`, `(Smith 2019; Jones and Lee 2015a)`,
+  `Smith and Jones (2019)` or a superscript number — and shows the matching entry from the
+  bibliography at the end of the document. The popover goes away when the pointer moves on.
+  (Reading the bibliography takes a moment the first time, in the background.)
 - **Back and Forward through everywhere you have jumped.** Back used to exist only for links.
   Now every jump is remembered, whether it came from a link, the Contents, a thumbnail, a note
   or bookmark in the sidebar, typing a page number, Home/End, or a search result: **Alt+Left**

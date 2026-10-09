@@ -60,6 +60,7 @@ mod tests {
             thumb: false,
             zoom_w: 100,
             tile: None,
+            crop: None,
         }
     }
 

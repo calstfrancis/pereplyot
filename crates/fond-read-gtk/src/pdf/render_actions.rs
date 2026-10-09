@@ -98,6 +98,10 @@ pub(super) fn build_render_actions(
         let reader = reader.clone();
         let render = render.clone();
         worker.set_sink(Rc::new(move |done: Rendered| {
+            if done.key.crop.is_some() {
+                hover_preview::deliver(&reader, done);
+                return;
+            }
             if done.key.thumb {
                 show_thumbnail(&reader.borrow(), done);
                 return;

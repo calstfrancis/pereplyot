@@ -24,6 +24,7 @@ mod dialogs;
 mod drag_gesture;
 mod drag_preview;
 mod export;
+mod hover_preview;
 mod keys;
 mod mark_edit;
 mod mark_layer;
@@ -185,6 +186,8 @@ struct ReaderState {
     mark_edit: mark_edit::MarkEdit,
     /// Every page's mark layer, so a change of hover or selection can repaint them all.
     mark_layers: Vec<glib::WeakRef<gtk4::DrawingArea>>,
+    /// The hover preview: what it has been asked for, what is showing, what it has read.
+    previews: hover_preview::PreviewState,
     /// While the zoom is changing, pages keep their last picture (stretched) instead of asking
     /// the render thread for one at every size they pass through.
     defer_renders: bool,

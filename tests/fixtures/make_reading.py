@@ -23,6 +23,7 @@ def esc(s):
 class Page:
     def __init__(self):
         self.ops = []
+        self.links = []  # (rect, target page index, x, y)
 
     def text(self, x, y, s, size=10, bold=False, rise=0):
         font = "/F2" if bold else "/F1"
@@ -43,12 +44,24 @@ def write_pdf(path, pages, media="[0 0 612 792]"):
     pages_obj = add(None)
     f1 = add("<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>")
     f2 = add("<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold >>")
+    page_ids = [4 + 2 * i + 2 for i in range(len(pages))]
+    next_annot = 4 + 2 * len(pages) + 1
+    annots = []
     kids = []
-    for p in pages:
+    for i, p in enumerate(pages):
         s = p.stream()
         content = add(f"<< /Length {len(s)} >>\nstream\n{s}\nendstream")
-        kids.append(add(f"<< /Type /Page /Parent {pages_obj} 0 R /MediaBox {media} "
+        refs = []
+        for link in p.links:
+            refs.append(next_annot)
+            annots.append(link)
+            next_annot += 1
+        annot_key = f"/Annots [{' '.join(f'{r} 0 R' for r in refs)}]" if refs else ""
+        kids.append(add(f"<< /Type /Page /Parent {pages_obj} 0 R /MediaBox {media} {annot_key} "
                         f"/Resources << /Font << /F1 {f1} 0 R /F2 {f2} 0 R >> >> /Contents {content} 0 R >>"))
+    for (l, b, r, t), target, x, y in annots:
+        add(f"<< /Type /Annot /Subtype /Link /Rect [{l} {b} {r} {t}] /Border [0 0 0] "
+            f"/Dest [{page_ids[target]} 0 R /XYZ {x} {y} null] >>")
     objs[cat - 1] = f"<< /Type /Catalog /Pages {pages_obj} 0 R >>"
     objs[pages_obj - 1] = f"<< /Type /Pages /Kids [{' '.join(f'{k} 0 R' for k in kids)}] /Count {len(kids)} >>"
     out = bytearray(b"%PDF-1.4\n")
@@ -243,7 +256,34 @@ def citations():
     write_pdf(OUT / "cite-superscript.pdf", superscript)
 
 
+def linked():
+    first = body_page([BODY + ["see", "Figure", "3", "for", "the", "plot", "and", "go", "on"] + BODY[:5]])
+    # "Figure 3" starts 11+ words in; the link box is placed over the words by measuring them.
+    x = 72
+    tokens = BODY + ["see"]
+    n = sum(len(t) + 1 for t in tokens)
+    col = n % 62
+    # first line holds 62 chars incl. indent handling is by wrap(); find the line of the link text
+    lines = wrap(BODY + ["see", "Figure", "3", "for", "the", "plot", "and", "go", "on"] + BODY[:5], 62)
+    y = 700
+    for i, line in enumerate(lines):
+        cx = 72 + (14 if i == 0 else 0)
+        for t in line:
+            w = CW * 10 * (len(t) + 1)
+            if t == "Figure":
+                first.links.append(((cx - 1, y - 3, cx + CW * 10 * 9 + 2, y + 10), 2, 72, 560))
+            cx += w
+        y -= 12.5
+    second = body_page([BODY])
+    third = Page()
+    third.text(72, 700, "Some earlier matter on this page.", 10)
+    third.text(72, 560, "Figure 3. The plot of the evidence, drawn as a bar chart.", 10, bold=True)
+    third.text(72, 546, "Source: the example data set, 2019.", 10)
+    write_pdf(OUT / "linked.pdf", [first, second, third])
+
+
 monograph()
 twocol()
 blank()
 citations()
+linked()

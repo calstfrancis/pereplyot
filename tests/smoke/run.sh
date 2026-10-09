@@ -300,6 +300,52 @@ run_history_case() {
     stop_app
 }
 
+run_hover_case() {
+    start_app "$FX/cite-authoryear.pdf"
+    local w
+    w="$(reader_window)" || { check "hover: reader window opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
+    sleep 2
+    xdotool windowfocus "$w" 2>/dev/null
+    xdotool mousemove 300 500
+    sleep 0.5
+    screenshot "$WORK/hover-before.png"
+    # The first rest starts reading the bibliography in the background; the second is answered.
+    xdotool mousemove 600 236
+    sleep 1.5
+    xdotool mousemove 606 235
+    sleep 0.3
+    xdotool mousemove 608 236
+    sleep 2
+    screenshot "$WORK/hover-after.png"
+    local before after
+    before="$(python3 "$HERE/text_bands.py" "$WORK/hover-before.png" --ink-in 370 250 850 345)"
+    after="$(python3 "$HERE/text_bands.py" "$WORK/hover-after.png" --ink-in 370 250 850 345)"
+    check "hover: resting on an unlinked citation previews its bibliography entry" "$([ "${after:-0}" -gt $(( ${before:-0} + 150 )) ] && echo 1 || echo 0)" "(ink before $before, after $after)"
+    xdotool mousemove 700 600
+    sleep 1
+    screenshot "$WORK/hover-gone.png"
+    local gone
+    gone="$(python3 "$HERE/text_bands.py" "$WORK/hover-gone.png" --ink-in 370 250 850 345)"
+    check "hover: moving away dismisses the preview" "$([ "${gone:-999}" -lt $(( ${before:-0} + 40 )) ] && echo 1 || echo 0)" "(ink after moving away $gone)"
+    stop_app
+    start_app "$FX/linked.pdf"
+    w="$(reader_window)" || { check "hover: linked document opens" 0; stop_app; return; }
+    sleep 2
+    xdotool windowfocus "$w" 2>/dev/null
+    xdotool mousemove 300 500
+    sleep 0.5
+    screenshot "$WORK/link-before.png"
+    xdotool mousemove 580 236
+    sleep 0.3
+    xdotool mousemove 585 235
+    sleep 2
+    screenshot "$WORK/link-after.png"
+    before="$(python3 "$HERE/text_bands.py" "$WORK/link-before.png" --ink-in 345 250 830 530)"
+    after="$(python3 "$HERE/text_bands.py" "$WORK/link-after.png" --ink-in 345 250 830 530)"
+    check "hover: resting on a link previews where it leads" "$([ "${after:-0}" -gt $(( ${before:-0} + 120 )) ] && echo 1 || echo 0)" "(ink before $before, after $after)"
+    stop_app
+}
+
 run_epub_case() {
     start_app "$FX/book.epub"
     local w
@@ -365,6 +411,7 @@ want plain && run_pdf_case plain plain.pdf y 2 "Pack my box with five dozen liqu
 want cropbox && run_pdf_case cropbox cropbox.pdf y 2 "Pack my box with five dozen liquor jugs."
 want rotated && run_pdf_case rotated rotated.pdf y 2 "Pack my box with five dozen liquor jugs."
 want history && run_history_case
+want hover && run_hover_case
 want thumbs && run_thumbs_case
 want reading && run_reading_case
 want epub && run_epub_case

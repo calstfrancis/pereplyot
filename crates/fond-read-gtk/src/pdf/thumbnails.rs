@@ -109,6 +109,7 @@ fn request_thumbnails(r: &ReaderState, current_page: u16) {
                 thumb: true,
                 zoom_w: THUMBNAIL_GRID_WIDTH,
                 tile: None,
+                crop: None,
             },
             priority: THUMBNAIL_PRIORITY + distance,
         });

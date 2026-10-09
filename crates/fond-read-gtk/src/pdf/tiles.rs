@@ -87,6 +87,7 @@ pub(super) fn sync(r: &mut ReaderState, picture: &gtk4::Picture, page: u16) {
                 thumb: false,
                 zoom_w: full_w,
                 tile: Some((col as u16, row as u16)),
+                crop: None,
             };
             if let Some(texture) = r.textures.get(&key) {
                 let (x1, y1) = ((x0 + TILE_PX).min(full_w), (y0 + TILE_PX).min(full_h));
