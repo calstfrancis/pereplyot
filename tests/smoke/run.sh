@@ -1056,6 +1056,38 @@ except Exception:
     stop_app
 }
 
+run_palette_case() {
+    start_app "$FX/plain.pdf"
+    local w
+    w="$(reader_window)" || { check "palette: reader opens" 0; stop_app; return; }
+    sleep 2
+    xdotool windowfocus "$w" 2>/dev/null
+    screenshot "$WORK/pa-0.png"
+    xdotool key ctrl+k
+    sleep 1.2
+    xdotool type --delay 40 "notebook"
+    sleep 0.8
+    screenshot "$WORK/pa-1.png"
+    local ink
+    ink="$(python3 "$HERE/text_bands.py" "$WORK/pa-1.png" --ink-in 20 60 540 95)"
+    check "palette: Ctrl+K lists the commands that match what is typed" "$([ "${ink:-0}" -gt 150 ] && echo 1 || echo 0)" "(ink in the list: $ink)"
+    xdotool key Return
+    sleep 1.5
+    screenshot "$WORK/pa-2.png"
+    local card
+    card="$(python3 "$HERE/text_bands.py" "$WORK/pa-2.png" --ink-in 640 60 990 120)"
+    check "palette: Enter runs it (the Notebook opens beside the page)" "$([ "${card:-0}" -gt 100 ] && echo 1 || echo 0)" "(ink in the notebook header: $card)"
+    xdotool key ctrl+k
+    sleep 1
+    xdotool type --delay 40 "3"
+    sleep 0.8
+    xdotool key Return
+    sleep 1.5
+    screenshot "$WORK/pa-3.png"
+    check "palette: a number goes to that page" "$([ "$(same_region "$WORK/pa-2.png" "$WORK/pa-3.png" 50 770 160 40)" = 0 ] && echo 1 || echo 0)"
+    stop_app
+}
+
 # Line order in the fixtures: "Page N", fox, Pack, Sphinx.
 want() { [ -z "${SMOKE_CASES:-}" ] || [[ " $SMOKE_CASES " == *" $1 "* ]]; }
 want plain && run_pdf_case plain plain.pdf y 2 "Pack my box with five dozen liquor jugs."
@@ -1082,6 +1114,7 @@ want epubimage && run_epubimage_case
 want launcher && run_launcher_case
 want search && run_search_case
 want browser && run_browser_case
+want palette && run_palette_case
 
 echo
 if [ "$FAILS" -eq 0 ]; then echo "smoke: all passed"; else echo "smoke: $FAILS failed"; exit 1; fi

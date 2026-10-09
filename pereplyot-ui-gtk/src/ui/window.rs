@@ -340,8 +340,15 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
         {
             let page = page.clone();
             let stack = view_stack.clone();
+            let palette_widgets = widgets.clone();
             let key = gtk4::EventControllerKey::new();
             key.connect_key_pressed(move |_, keyval, _, modifiers| {
+                if keyval == gtk4::gdk::Key::k
+                    && modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK)
+                {
+                    show_palette(&palette_widgets, &stack);
+                    return glib::Propagation::Stop;
+                }
                 if keyval == gtk4::gdk::Key::f
                     && modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK)
                 {
@@ -366,6 +373,97 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
     rebuild_library(&widgets);
 
     widgets
+}
+
+/// The launcher's Ctrl+K palette: tabs, actions, and every recent document and notebook.
+fn show_palette(widgets: &Rc<Widgets>, stack: &adw::ViewStack) {
+    use fond_read_gtk::commands::{self, Command};
+    let mut list: Vec<Command> = Vec::new();
+    for (label, name) in [
+        ("Library", "library"),
+        ("History", "history"),
+        ("Notes", "notes"),
+        ("Notebooks", "notebooks"),
+        ("Search", "search"),
+    ] {
+        let stack = stack.clone();
+        list.push(Command::new(format!("Show {label}"), "Tab", move || {
+            stack.set_visible_child_name(name)
+        }));
+    }
+    let action = |title: &str, hint: &str, name: &'static str| {
+        let window = widgets.window.clone();
+        Command::new(title.to_string(), hint.to_string(), move || {
+            gio::prelude::ActionGroupExt::activate_action(&window, name, None)
+        })
+    };
+    list.push(action("Open a file…", "Ctrl+O", "open"));
+    list.push(action("Highlight labels…", "", "highlight-labels"));
+    list.push(action("Resurface highlights (on/off)", "", "resurface"));
+    list.push(action("About Pereplyot", "", "about"));
+    for (label, name) in [("System", "system"), ("Light", "light"), ("Dark", "dark")] {
+        let window = widgets.window.clone();
+        list.push(Command::new(
+            format!("Theme: {label}"),
+            "Appearance",
+            move || {
+                gio::prelude::ActionGroupExt::activate_action(
+                    &window,
+                    "theme",
+                    Some(&name.to_variant()),
+                )
+            },
+        ));
+    }
+    {
+        let widgets = widgets.clone();
+        list.push(Command::new("New notebook", "Notebooks", move || {
+            let shelves = widgets.library.borrow().shelves().to_vec();
+            fond_read_gtk::notebook_ui::prompt_new(Some(widgets.window.upcast_ref()), shelves, {
+                let widgets = widgets.clone();
+                move |title, shelf| {
+                    if let Some(stem) = fond_read_gtk::notebook_ui::create_notebook(&title, shelf) {
+                        fond_read_gtk::notebook_ui::open_window(
+                            Some(widgets.window.upcast_ref()),
+                            Some(&stem),
+                        );
+                    }
+                }
+            });
+        }));
+    }
+    for s in fond_read_gtk::notebook_ui::summaries() {
+        let widgets = widgets.clone();
+        list.push(Command::new(
+            format!("Notebook: {}", s.title),
+            s.shelf.clone().unwrap_or_else(|| "Stand-alone".into()),
+            move || {
+                fond_read_gtk::notebook_ui::open_window(
+                    Some(widgets.window.upcast_ref()),
+                    Some(&s.stem),
+                )
+            },
+        ));
+    }
+    let mut seen = std::collections::HashSet::new();
+    let mut docs: Vec<(String, PathBuf, &str)> = Vec::new();
+    for e in widgets.library.borrow().entries() {
+        if seen.insert(e.hash.clone()) {
+            docs.push((e.title.clone(), e.path.clone(), "Library"));
+        }
+    }
+    for e in history::load() {
+        if seen.insert(e.hash.clone()) {
+            docs.push((e.title, e.path, "History"));
+        }
+    }
+    for (title, path, hint) in docs {
+        let widgets = widgets.clone();
+        list.push(Command::new(format!("Open: {title}"), hint, move || {
+            open_path(&widgets, path.clone());
+        }));
+    }
+    commands::show(&widgets.window, list, None);
 }
 
 fn install_notebook_hooks(widgets: &Rc<Widgets>) {

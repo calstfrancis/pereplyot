@@ -22,6 +22,7 @@ mod chapter_load;
 mod chapter_nav;
 mod chrome;
 mod clip_image;
+mod command_palette;
 mod footnotes;
 mod highlights;
 mod keys;
@@ -471,6 +472,9 @@ pub fn show_epub_reader(
         epub_redo: epub_redo.clone(),
         page_turn: paged.turn.clone(),
         notebook_toggle: notebook_toggle.clone(),
+        paged_toggle: paged.toggle.clone(),
+        hash: hash.to_string(),
+        toc: book.toc.clone(),
     };
     search_wiring::install_search(&ui);
     clip_image::install(host, &reader, &web_view);

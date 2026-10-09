@@ -52,9 +52,16 @@ pub(super) fn install_keys(ui: &PdfUi) {
         let notebook_toggle_key = notebook_toggle.clone();
         let search_for_keys = search_entry.clone();
         let is_pane = reader.borrow().is_pane;
+        let ui_for_palette = ui.clone();
         let handler = move |keyval: gdk::Key, modifiers: gdk::ModifierType| {
             if !is_pane && focus_in_pane(&view_for_focus) {
                 return glib::Propagation::Proceed;
+            }
+            if matches!(keyval, gdk::Key::k | gdk::Key::K)
+                && modifiers.contains(gdk::ModifierType::CONTROL_MASK)
+            {
+                command_palette::open(&ui_for_palette);
+                return glib::Propagation::Stop;
             }
             if (keyval == gdk::Key::z || keyval == gdk::Key::Z)
                 && modifiers.contains(gdk::ModifierType::CONTROL_MASK)

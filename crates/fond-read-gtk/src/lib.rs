@@ -24,6 +24,7 @@ mod anchor;
 pub mod annotation_store;
 pub mod annotations;
 pub mod clip;
+pub mod commands;
 pub mod connections;
 pub mod deeplink;
 pub mod epub;

@@ -17,6 +17,7 @@ use crate::page_geom::PageGeom;
 use crate::{color_swatch, note_edit_widget, popover_button, popover_separator, ReaderHost};
 
 mod bookmark;
+mod command_palette;
 mod context_click;
 mod context_menu;
 mod continuous;
@@ -600,6 +601,7 @@ fn build_reader(
     } = sidebar::build_sidebar(&outline_entries, &reader);
     let has_outline = !outline_entries.is_empty();
     let outline_entries = Rc::new(RefCell::new(outline_entries));
+    let outline_for_ui = outline_entries.clone();
     let refresh_outline = outline_track::install_outline_tracking(
         &reader,
         outline_entries.clone(),
@@ -771,6 +773,7 @@ fn build_reader(
         pdf_hash: pdf_hash.to_string(),
         title: title.to_string(),
         sidebar_box: sidebar_box.clone(),
+        outline: outline_for_ui.clone(),
         drag_preview: drag_preview.clone(),
         drag_live_rect: drag_live_rect.clone(),
         window: window.clone(),

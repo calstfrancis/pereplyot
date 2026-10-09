@@ -17,6 +17,7 @@ pub(super) fn install_keys(ui: &EpubUi) {
         notebook_toggle,
         ..
     } = ui;
+    let ui_for_palette = ui.clone();
     {
         // Registered with the tab host, which catches keys at the window in the capture
         // phase (see `reader_host::set_tab_key_handler`) — ahead of the WebView (which owns
@@ -76,6 +77,12 @@ pub(super) fn install_keys(ui: &EpubUi) {
                     }
                     _ => {}
                 }
+            }
+            if matches!(keyval, gdk::Key::k | gdk::Key::K)
+                && modifiers.contains(gdk::ModifierType::CONTROL_MASK)
+            {
+                command_palette::open(&ui_for_palette);
+                return glib::Propagation::Stop;
             }
             if modifiers.is_empty() && matches!(keyval, gdk::Key::n | gdk::Key::N) {
                 notebook_toggle.set_active(!notebook_toggle.is_active());

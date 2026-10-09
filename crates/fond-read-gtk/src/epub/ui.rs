@@ -2,6 +2,7 @@ use super::*;
 
 /// The widgets and shared handles the reader's wiring functions work on. Every field is a
 /// cheap reference-counted handle, so a function destructures what it needs and clones from it.
+#[derive(Clone)]
 pub(super) struct EpubUi {
     pub(super) reader: Rc<RefCell<EpubReaderState>>,
     pub(super) web_view: webkit6::WebView,
@@ -33,4 +34,7 @@ pub(super) struct EpubUi {
     pub(super) epub_redo: Rc<dyn Fn()>,
     pub(super) page_turn: Rc<dyn Fn(i32)>,
     pub(super) notebook_toggle: gtk4::ToggleButton,
+    pub(super) paged_toggle: gtk4::ToggleButton,
+    pub(super) hash: String,
+    pub(super) toc: Vec<fond_doc::TocEntry>,
 }
