@@ -110,5 +110,9 @@ modules:
       - install -Dm755 pdfium/lib/libpdfium.so /app/lib/libpdfium.so
       # Desktop entry, icon, AppStream metainfo.
       - install -Dm644 packaging/io.github.calstfrancis.Pereplyot.desktop /app/share/applications/io.github.calstfrancis.Pereplyot.desktop
+      - install -Dm644 packaging/fonts/NewCM10-Regular.otf /app/share/fonts/NewCM10-Regular.otf
+      - install -Dm644 packaging/fonts/NewCM10-Italic.otf /app/share/fonts/NewCM10-Italic.otf
+      - install -Dm644 packaging/fonts/NewCM10-Bold.otf /app/share/fonts/NewCM10-Bold.otf
+      - install -Dm644 packaging/fonts/NewCM10-BoldItalic.otf /app/share/fonts/NewCM10-BoldItalic.otf
       - install -Dm644 packaging/pereplyot.svg /app/share/icons/hicolor/scalable/apps/io.github.calstfrancis.Pereplyot.svg
       - install -Dm644 io.github.calstfrancis.Pereplyot.metainfo.xml /app/share/metainfo/io.github.calstfrancis.Pereplyot.metainfo.xml

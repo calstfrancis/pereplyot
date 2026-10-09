@@ -390,7 +390,9 @@ impl ReadingView {
         let buffer = self.text_view.buffer();
         if let Some(tag) = buffer.tag_table().lookup("para") {
             let (indent, below) = match t.paragraph {
-                crate::typography::ParagraphStyle::Indent => ((px * 1.5) as i32, 2),
+                crate::typography::ParagraphStyle::Indent => {
+                    ((px * 1.8) as i32, (px * 0.45) as i32)
+                }
                 crate::typography::ParagraphStyle::Space => (0, (px * 0.9) as i32),
             };
             tag.set_property("indent", indent);

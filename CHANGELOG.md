@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+- **The default text look is Zerkalo's "LaTeX Look".** Reading mode and EPUBs are now set in New
+  Computer Modern, justified, with indented paragraphs and Zerkalo's tighter rhythm, together with
+  the printed page numbers in the left margin and footnotes beside their lines. The face is bundled
+  in the Flatpak; the *Aa* panel's first font choice is *LaTeX*, and the older choices are still
+  there (anyone who had picked one keeps it).
+- **EPUBs for scholars.** A book's own page list (EPUB 3 `page-list` or NCX `pageList`, or the
+  page breaks in its text) gives the **printed page** you are on, shown beside the chapter; every
+  mark remembers it, and exports, *Copy with citation* and notebook quotes cite `p. 214` instead of
+  a chapter. **Note references open in a popover** beside the text, whether marked as notes or just
+  a superscript number linking to an endnote. **Pages** (status bar) sets the book in columns —
+  a spread on a wide window — turned with Space, the arrow keys or the wheel and carrying on into
+  the next chapter; it is remembered per book. Marks are found again by their words, the text
+  around them and where they were, approximately if the book has changed, and the Notes list says
+  when one cannot be found; new PDF marks keep the text around them too. The EPUB reader now has
+  the Notebook (**N**), *Connect…*, tags and *Add to notebook* on its Notes cards, and **Clip this
+  image** (right-click a picture) keeps a figure that is outlined on the page, shown in Notes and
+  exported as a Typst/Markdown/LaTeX figure.
 - **The Notebook.** Press **N** (or the *Notebook* toggle in the status bar) for a page of your own
   writing beside the document. Drag a card from the Notes list into it — or press **+** on the
   card, or *Add to notebook* in a mark's right-click menu — and it becomes a quote block showing

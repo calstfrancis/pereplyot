@@ -11,7 +11,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Family {
+    /// New Computer Modern, justified with indented paragraphs: the look of Zerkalo's "LaTeX Look"
+    /// template.
     #[default]
+    Latex,
     Default,
     Serif,
     Sans,
@@ -60,12 +63,12 @@ pub struct Typography {
 impl Default for Typography {
     fn default() -> Self {
         Typography {
-            family: Family::Default,
+            family: Family::Latex,
             size: 1.0,
-            line_height: 1.5,
+            line_height: 1.3,
             width: 680,
             margin: 24,
-            justify: false,
+            justify: true,
             paragraph: ParagraphStyle::Indent,
             theme: ReadingTheme::Light,
         }
@@ -112,6 +115,10 @@ impl Typography {
 
     fn family_stack(&self) -> Option<&'static str> {
         match self.family {
+            Family::Latex => Some(
+                "'New Computer Modern', 'NewCM10', 'Latin Modern Roman', 'CMU Serif', \
+                 'Computer Modern', Georgia, serif",
+            ),
             Family::Default => None,
             Family::Serif => Some("Georgia, 'Times New Roman', serif"),
             Family::Sans => Some("-webkit-system-font, 'Helvetica Neue', Arial, sans-serif"),
@@ -141,7 +148,7 @@ impl Typography {
             ));
         }
         let indent = match self.paragraph {
-            ParagraphStyle::Indent => "text-indent: 1.5em; margin: 0;",
+            ParagraphStyle::Indent => "text-indent: 1.8em; margin: 0 0 0.45em;",
             ParagraphStyle::Space => "text-indent: 0; margin: 0 0 0.9em;",
         };
         let align = if self.justify { "justify" } else { "left" };
@@ -265,13 +272,19 @@ fn panel(settings: &Rc<Shared>) -> gtk4::Widget {
         row += 1;
     };
 
-    let family = gtk4::DropDown::from_strings(&["Default", "Serif", "Sans-serif", "Monospace"]);
+    let family =
+        gtk4::DropDown::from_strings(&["LaTeX", "System", "Serif", "Sans-serif", "Monospace"]);
     family.set_selected(current.family as u32);
     {
         let settings = settings.clone();
         family.connect_selected_notify(move |d| {
-            let f = [Family::Default, Family::Serif, Family::Sans, Family::Mono]
-                [d.selected().min(3) as usize];
+            let f = [
+                Family::Latex,
+                Family::Default,
+                Family::Serif,
+                Family::Sans,
+                Family::Mono,
+            ][d.selected().min(4) as usize];
             settings.update(|t| t.family = f);
         });
     }

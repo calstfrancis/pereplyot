@@ -40,7 +40,9 @@ hover previews of links and (unlinked) citations, pinned figures, split view of 
 Contents following you with a breadcrumb, and a "Continue here" marker on reopening; marks from
 other readers brought in and a copy saved with annotations; and a **Notebook** — a Typst page you
 write in beside the document, with annotations from any document dragged in as cited quote blocks,
-connections between annotations, and export to Typst, Markdown or LaTeX. The plan is in
+connections between annotations, and export to Typst, Markdown or LaTeX; EPUBs with printed page
+numbers, note popovers, a paginated mode and clipped images; all set by default in Zerkalo's
+"LaTeX Look". The plan is in
 `ACADEMIC-READER-PLAN.md`.
 
 ## Building

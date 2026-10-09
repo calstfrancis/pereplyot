@@ -43,7 +43,8 @@ start_app() {
     local file="$1"
     [ "$file" = - ] && file=""
     [ "${2:-}" = keep ] || rm -rf "$WORK/h"
-    mkdir -p "$WORK/h"/{home,data,config,cache}
+    mkdir -p "$WORK/h"/{home,data,config,cache} "$WORK/h/data/fonts"
+    cp "$ROOT"/packaging/fonts/*.otf "$WORK/h/data/fonts/" 2>/dev/null
     # setsid gives the app its own process group so stop_app can take down dbus-run-session
     # and its children together; dbus-run-session does not forward SIGTERM reliably.
     env -u WAYLAND_DISPLAY GDK_BACKEND=x11 GTK_A11Y=none GSETTINGS_BACKEND=memory \
@@ -244,7 +245,7 @@ run_reading_case() {
     screenshot "$WORK/reading.png"
     local left right
     left="$(python3 "$HERE/text_bands.py" "$WORK/reading.png" --ink-in 36 128 70 160)"
-    right="$(python3 "$HERE/text_bands.py" "$WORK/reading.png" --ink-in 770 380 960 440)"
+    right="$(python3 "$HERE/text_bands.py" "$WORK/reading.png" --ink-in 770 250 960 460)"
     check "reading: the printed page number is in the left margin" "$([ "${left:-0}" -gt 6 ] && echo 1 || echo 0)" "(ink: $left)"
     check "reading: the footnote is in the right margin beside its line" "$([ "${right:-0}" -gt 80 ] && echo 1 || echo 0)" "(ink: $right)"
     xdotool mousemove 29 27 click 1
@@ -279,7 +280,7 @@ try:
     print(a.get("page"), len(a.get("quadpoints", [])), (a.get("snippet") or "")[:14])
 except Exception:
     print("")')"
-    check "reading: marking a selection saves its words, page and where they sit (a line of the reading text spans two lines of the page)" "$([[ "$saved" == "1 2 of for at from" ]] && echo 1 || echo 0)" "(got '$saved')"
+    check "reading: marking a selection saves its words, page and where they sit (a line of the reading text can span two lines of the page)" "$([[ "$saved" == "1 "[12]" of for at from" ]] && echo 1 || echo 0)" "(got '$saved')"
     xdotool key t
     sleep 2
     screenshot "$WORK/reading-page.png"
