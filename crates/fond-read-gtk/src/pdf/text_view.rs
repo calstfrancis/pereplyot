@@ -248,8 +248,31 @@ pub(super) fn install_text_view(ui: &PdfUi) {
                 let view_for_store = view.clone();
                 store.subscribe(move |_, _| paint_text_marks(&reader_for_store, &view_for_store));
                 let host = host.clone();
+                let view_for_ocr = view.clone();
+                let path_for_ocr = reader.borrow().path.clone();
                 *view.on_no_text.borrow_mut() = Some(Rc::new(move || {
-                    host.notify("This document has no text layer, so there is nothing to reflow");
+                    if crate::reflow::ocr::tesseract().is_none() {
+                        host.notify(
+                            "This document has no text layer. Install Tesseract to recognise \
+                             its text and read it in Reading mode.",
+                        );
+                        return;
+                    }
+                    let view = view_for_ocr.clone();
+                    let path = path_for_ocr.clone();
+                    let host_progress = host.clone();
+                    host.notify_action(
+                        "This document is a scan with no text layer.",
+                        "Recognise text",
+                        Rc::new(move || {
+                            host_progress.notify(
+                                "Recognising text — pages appear as they are done, and the \
+                                 results are kept for next time",
+                            );
+                            view.reset_empty();
+                            view.load_with(path.clone(), true);
+                        }),
+                    );
                 }));
                 let host_click = host_for_labels.clone();
                 let reader_click = reader.clone();

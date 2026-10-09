@@ -11,6 +11,7 @@ use std::sync::Arc;
 use super::extract::extract_page;
 use super::layout::{body_size, detect_furniture, Assembler};
 use super::model::{Item, RawPage};
+use super::ocr;
 
 pub enum ReflowEvent {
     /// More of the flow, in order, with how many pages are laid out so far.
@@ -39,14 +40,16 @@ impl Drop for ReflowHandle {
     }
 }
 
-pub fn spawn(path: PathBuf, sink: Sink) -> ReflowHandle {
+/// Start laying the document at `path` out. With `recognise`, pages that have no text layer are
+/// run through Tesseract (when it is installed) and laid out like any other.
+pub fn spawn(path: PathBuf, recognise: bool, sink: Sink) -> ReflowHandle {
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
     SINKS.with(|s| s.borrow_mut().insert(id, sink));
     let cancel = Arc::new(AtomicBool::new(false));
     let flag = cancel.clone();
     let spawned = std::thread::Builder::new()
         .name("pdf-reflow".into())
-        .spawn(move || run(id, path, flag));
+        .spawn(move || run(id, path, recognise, flag));
     if let Err(e) = spawned {
         eprintln!("could not start the reflow thread: {e}");
         deliver(id, ReflowEvent::Done);
@@ -68,7 +71,10 @@ fn deliver(id: u64, event: ReflowEvent) {
 const SAMPLE_HEAD: u16 = 30;
 const SAMPLE_SPREAD: u16 = 30;
 
-fn run(id: u64, path: PathBuf, cancel: Arc<AtomicBool>) {
+/// A page with fewer words than this has no usable text layer.
+const MIN_WORDS: usize = 3;
+
+fn run(id: u64, path: PathBuf, recognise: bool, cancel: Arc<AtomicBool>) {
     let _span = crate::perf::span(|| "reflow (background)".to_string());
     let Ok(pdfium) = crate::pdfium::get() else {
         return deliver(id, ReflowEvent::Done);
@@ -77,6 +83,18 @@ fn run(id: u64, path: PathBuf, cancel: Arc<AtomicBool>) {
         return deliver(id, ReflowEvent::Done);
     };
     let total = doc.pages().len();
+    let recogniser = recognise.then(ocr::tesseract).flatten();
+    let cache_dir = glib::user_cache_dir()
+        .join("pereplyot")
+        .join("ocr")
+        .join(ocr::cache_key(&path));
+    let read_page = |index: u16| -> Option<RawPage> {
+        let page = extract_page(&doc, index).filter(|p| p.words.len() >= MIN_WORDS);
+        match (&page, &recogniser) {
+            (None, Some(program)) => ocr::ocr_page(&doc, index, program, "eng", &cache_dir),
+            _ => page,
+        }
+    };
     let mut cache: HashMap<u16, RawPage> = HashMap::new();
     let mut sample_ids: Vec<u16> = (0..total.min(SAMPLE_HEAD)).collect();
     if total > SAMPLE_HEAD {
@@ -89,7 +107,7 @@ fn run(id: u64, path: PathBuf, cancel: Arc<AtomicBool>) {
         if cancel.load(Ordering::Relaxed) {
             return;
         }
-        if let Some(page) = extract_page(&doc, index) {
+        if let Some(page) = read_page(index) {
             sample.push(page.clone());
             cache.insert(index, page);
         }

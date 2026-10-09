@@ -396,12 +396,19 @@ impl ReadingView {
 
     /// Start laying the document at `path` out and showing it as it is ready. A no-op once started.
     pub fn load(self: &Rc<Self>, path: std::path::PathBuf) {
+        self.load_with(path, false);
+    }
+
+    /// As `load`, recognising text on pages that have none when `recognise` is set. A no-op while a
+    /// layout is already under way.
+    pub fn load_with(self: &Rc<Self>, path: std::path::PathBuf, recognise: bool) {
         if self.handle.borrow().is_some() {
             return;
         }
         let weak = Rc::downgrade(self);
         let handle = super::thread::spawn(
             path,
+            recognise,
             Rc::new(move |event| {
                 let Some(view) = weak.upgrade() else {
                     return;
@@ -615,6 +622,13 @@ impl ReadingView {
             }
         }
         self.paras.borrow_mut().push(rec);
+    }
+
+    /// Forget a finished layout that found nothing, so `load_with` can run again.
+    pub fn reset_empty(&self) {
+        if self.paras.borrow().is_empty() {
+            *self.handle.borrow_mut() = None;
+        }
     }
 
     pub fn loaded_pages(&self) -> u16 {

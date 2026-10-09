@@ -159,5 +159,12 @@ def twocol():
     write_pdf(OUT / "twocol.pdf", pages)
 
 
+def blank():
+    p = Page()
+    p.ops.append("0.9 g 72 600 300 100 re f")
+    write_pdf(OUT / "blank.pdf", [p])
+
+
 monograph()
 twocol()
+blank()

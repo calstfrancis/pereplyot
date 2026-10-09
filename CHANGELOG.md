@@ -16,6 +16,13 @@
   there too, and marks made on the page show in the text. The mode is remembered per
   document. The text is laid out on a background thread while you start reading: 600 pages
   in under a second.
+- **Scanned PDFs can be read in Reading mode.** For a document with no text layer, Reading mode
+  offers **Recognise text**: Tesseract is run on each page in the background (at 300 dpi, one
+  page at a time, never on the window thread), the pages go through the same layout as any
+  other PDF and appear as they finish, and each page's result is cached under
+  `~/.cache/pereplyot/ocr/` so it is only ever done once. This needs the `tesseract` program to
+  be installed; the Flatpak does not bundle it yet. (The text is used by Reading mode only; page
+  view search and selection do not use it.)
 - **One typography panel for both formats.** The **Aa** button (EPUB header, and the status
   bar in Reading mode) sets font, size, line spacing, column width, margins, justification,
   paragraph style (indented or spaced) and the Light / Sepia / Dark reading theme, once, for

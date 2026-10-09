@@ -4,6 +4,7 @@ pub mod extract;
 pub mod layout;
 pub mod margin;
 pub mod model;
+pub mod ocr;
 pub mod thread;
 pub mod view;
 
@@ -121,5 +122,40 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_page_with_no_text_goes_through_ocr_and_the_result_is_cached() {
+        use std::os::unix::fs::PermissionsExt;
+        let Ok(pdfium) = crate::pdfium::get() else {
+            eprintln!("no PDFium library; skipping");
+            return;
+        };
+        let dir = std::env::temp_dir().join(format!("pereplyot-ocr-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // A stand-in for Tesseract: reads the image, answers with a fixed result.
+        let program = dir.join("tesseract");
+        std::fs::write(
+            &program,
+            "#!/bin/sh\ncat >/dev/null\nprintf 'level\\tpage_num\\tblock_num\\tpar_num\\tline_num\\tword_num\\tleft\\ttop\\twidth\\theight\\tconf\\ttext\\n'\n\
+printf '5\\t1\\t1\\t1\\t1\\t1\\t300\\t600\\t300\\t60\\t95\\tHello\\n'\n\
+printf '5\\t1\\t1\\t1\\t1\\t2\\t650\\t600\\t310\\t60\\t95\\tworld\\n'\n\
+printf '5\\t1\\t1\\t1\\t1\\t3\\t1000\\t600\\t300\\t60\\t95\\tagain.\\n'\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/blank.pdf");
+        let doc = pdfium.load_pdf_from_file(&path, None).unwrap();
+        let cache = dir.join("cache");
+        let page = super::ocr::ocr_page(&doc, 0, &program, "eng", &cache).expect("recognised");
+        assert_eq!(page.words.len(), 3);
+        let items = flow_of(&[page]);
+        assert_eq!(paragraphs(&items)[0].text, "Hello world again.");
+        assert!(cache.join("eng-0.tsv").is_file());
+        let again =
+            super::ocr::ocr_page(&doc, 0, std::path::Path::new("/nonexistent"), "eng", &cache);
+        assert_eq!(again.expect("from the cache").words.len(), 3);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
