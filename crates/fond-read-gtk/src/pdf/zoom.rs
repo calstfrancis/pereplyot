@@ -2,9 +2,7 @@ use super::*;
 
 pub(super) fn install_zoom(ui: &PdfUi) {
     let PdfUi {
-        host,
         reader,
-        reader_window,
         render,
         zoom_out,
         zoom_in,
@@ -16,35 +14,80 @@ pub(super) fn install_zoom(ui: &PdfUi) {
         continuous_scroll,
         ..
     } = ui.clone();
-    // Every zoom-changing control (in/out, fit-width, fit-page) funnels through one
-    // debounced `request_zoom`, factored out of what used to be two near-identical
-    // zoom_in/zoom_out handlers. Two things this buys beyond de-duplication:
-    //
-    // - Debounce: rapid clicking coalesces into one render+continuous-rebuild ~150ms after
-    //   the last click, instead of one full cycle per click.
-    // - Deferred continuous rebuild: `rebuild_continuous_view_for_zoom` re-renders every
-    //   page in the document (spread across idle ticks — see `build_continuous_view`'s own
-    //   doc comment). Paying that cost on every zoom change even while continuous mode
-    //   isn't the visible view was pure wasted background work; now it only rebuilds
-    //   immediately when continuous mode is actually on-screen, and otherwise just clears
-    //   the stale state so the *next* toggle-to-continuous rebuilds fresh at the new zoom.
+    // Every zoom-changing control (in/out, fit-width, fit-page, wheel, pinch) funnels through
+    // one `request_zoom`. The view follows at once, at most once a frame: pages are resized in
+    // place and keep showing their last picture, stretched, while the render thread draws them
+    // at the new size. Page renders are held back until the zoom has been still for 150 ms, so a
+    // pinch does not queue a render for every size it passes through.
     let pending_zoom: Rc<Cell<Option<f64>>> = Rc::new(Cell::new(None));
-    let zoom_debounce: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
+    let last_applied: Rc<Cell<Option<std::time::Instant>>> = Rc::new(Cell::new(None));
+    let apply_scheduled = Rc::new(Cell::new(false));
+    let settle: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
     let zoom_baseline = {
         let reader = reader.clone();
         let pending_zoom = pending_zoom.clone();
         move || pending_zoom.get().unwrap_or_else(|| reader.borrow().zoom)
     };
+    let apply: Rc<dyn Fn()> = {
+        let reader = reader.clone();
+        let render = render.clone();
+        let continuous_toggle = continuous_toggle.clone();
+        let continuous_scroll = continuous_scroll.clone();
+        let scroll = scroll.clone();
+        let pending_zoom = pending_zoom.clone();
+        let last_applied = last_applied.clone();
+        Rc::new(move || {
+            let Some(target) = pending_zoom.get() else {
+                return;
+            };
+            last_applied.set(Some(std::time::Instant::now()));
+            let old = reader.borrow().zoom;
+            if (target - old).abs() < 1e-9 {
+                return;
+            }
+            if continuous_toggle.is_active() && !reader.borrow().continuous_offsets.is_empty() {
+                zoom_continuous_in_place(&reader, &continuous_scroll, target);
+            } else {
+                let h = scroll.hadjustment();
+                let v = scroll.vadjustment();
+                let centre = |adj: &gtk4::Adjustment| {
+                    (adj.value() + adj.page_size() / 2.0) / adj.upper().max(1.0)
+                };
+                let (fx, fy) = (centre(&h), centre(&v));
+                {
+                    let mut r = reader.borrow_mut();
+                    r.zoom = target;
+                    r.defer_renders = true;
+                }
+                render();
+                let ratio = target / old.max(0.01);
+                for (adj, fraction) in [(&h, fx), (&v, fy)] {
+                    let upper = adj.upper() * ratio;
+                    let value = (fraction * upper - adj.page_size() / 2.0)
+                        .clamp(0.0, (upper - adj.page_size()).max(0.0));
+                    adj.configure(
+                        value,
+                        adj.lower(),
+                        upper,
+                        adj.step_increment(),
+                        adj.page_increment(),
+                        adj.page_size(),
+                    );
+                }
+            }
+        })
+    };
     let request_zoom: Rc<dyn Fn(f64)> = {
-        let host = host.clone();
         let reader = reader.clone();
         let render = render.clone();
         let continuous_box = continuous_box.clone();
         let continuous_toggle = continuous_toggle.clone();
         let continuous_scroll = continuous_scroll.clone();
-        let dialog = reader_window.clone();
         let pending_zoom = pending_zoom.clone();
-        let zoom_debounce = zoom_debounce.clone();
+        let last_applied = last_applied.clone();
+        let apply_scheduled = apply_scheduled.clone();
+        let settle = settle.clone();
+        let apply = apply.clone();
         Rc::new(move |target: f64| {
             let text_zoom = reader.borrow().text_zoom.clone();
             if let Some(text_zoom) = text_zoom {
@@ -53,41 +96,46 @@ pub(super) fn install_zoom(ui: &PdfUi) {
                 return;
             }
             pending_zoom.set(Some(target.clamp(0.35, 4.0)));
-            if let Some(id) = zoom_debounce.borrow_mut().take() {
+            let frame = std::time::Duration::from_millis(16);
+            match last_applied.get() {
+                Some(at) if at.elapsed() < frame => {
+                    if !apply_scheduled.replace(true) {
+                        let apply = apply.clone();
+                        let apply_scheduled = apply_scheduled.clone();
+                        glib::timeout_add_local_once(frame, move || {
+                            apply_scheduled.set(false);
+                            apply();
+                        });
+                    }
+                }
+                _ => apply(),
+            }
+            if let Some(id) = settle.borrow_mut().take() {
                 id.remove();
             }
-            let host = host.clone();
             let reader = reader.clone();
             let render = render.clone();
             let continuous_box = continuous_box.clone();
             let continuous_toggle = continuous_toggle.clone();
             let continuous_scroll = continuous_scroll.clone();
-            let dialog = dialog.clone();
             let pending_zoom = pending_zoom.clone();
-            let zoom_debounce_slot = zoom_debounce.clone();
-            let id = glib::timeout_add_local(std::time::Duration::from_millis(150), move || {
-                zoom_debounce_slot.borrow_mut().take();
-                let Some(new_zoom) = pending_zoom.take() else {
-                    return glib::ControlFlow::Break;
-                };
-                reader.borrow_mut().zoom = new_zoom;
-                render();
-                if continuous_toggle.is_active() {
-                    rebuild_continuous_view_for_zoom(
-                        &host,
-                        &reader,
-                        &continuous_box,
-                        &continuous_scroll,
-                        &dialog,
-                    );
-                    let page = reader.borrow().page;
-                    scroll_continuous_to_page(&reader, &continuous_scroll, page);
-                } else if !reader.borrow().continuous_offsets.is_empty() {
-                    clear_continuous_view(&reader, &continuous_box);
-                }
-                glib::ControlFlow::Break
-            });
-            *zoom_debounce.borrow_mut() = Some(id);
+            let slot = settle.clone();
+            let apply = apply.clone();
+            let id =
+                glib::timeout_add_local_once(std::time::Duration::from_millis(150), move || {
+                    slot.borrow_mut().take();
+                    apply();
+                    pending_zoom.set(None);
+                    reader.borrow_mut().defer_renders = false;
+                    render();
+                    if continuous_toggle.is_active() {
+                        rerender_loaded_continuous_pages(&reader);
+                    } else if !reader.borrow().continuous_offsets.is_empty() {
+                        clear_continuous_view(&reader, &continuous_box);
+                    }
+                    let _ = &continuous_scroll;
+                });
+            *settle.borrow_mut() = Some(id);
         })
     };
     for target in [scroll.clone(), continuous_scroll.clone()] {

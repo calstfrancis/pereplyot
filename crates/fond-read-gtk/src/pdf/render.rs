@@ -181,6 +181,9 @@ pub(super) fn paint_page(
         picture.set_paintable(Some(&texture));
         return size;
     }
+    if r.defer_renders {
+        return size;
+    }
     let priority = (page as i32 - r.page as i32).unsigned_abs();
     if let Some(worker) = &r.worker {
         worker.submit(Job { key, priority });

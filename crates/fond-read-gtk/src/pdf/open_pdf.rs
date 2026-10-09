@@ -89,6 +89,7 @@ pub(super) fn open_pdf(
         rotation: 0,
         tone: Tone::Normal,
         tick_layer: None,
+        defer_renders: false,
         thumbnail_pictures: Vec::new(),
         scanned: false,
         layout_page: start_page,

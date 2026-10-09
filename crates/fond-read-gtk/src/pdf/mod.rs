@@ -177,6 +177,9 @@ struct ReaderState {
     /// app's own dark theme can't reach them) — applied to the same final pixel buffer
     /// `rotation` is, in both paged and continuous mode alike.
     tone: Tone,
+    /// While the zoom is changing, pages keep their last picture (stretched) instead of asking
+    /// the render thread for one at every size they pass through.
+    defer_renders: bool,
     /// Marks on the continuous view's scrollbar edge, repainted when annotations or search
     /// matches change.
     tick_layer: Option<gtk4::DrawingArea>,

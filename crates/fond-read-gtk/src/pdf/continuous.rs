@@ -396,6 +396,66 @@ pub(super) fn refresh_continuous_window(
     }
 }
 
+/// Change the zoom of the continuous view without rebuilding it: positions are recomputed, the
+/// pages that have widgets are resized, and the scroll position is moved so the same point of the
+/// document stays in the middle of the viewport.
+pub(super) fn zoom_continuous_in_place(
+    reader: &Rc<RefCell<ReaderState>>,
+    scroll: &gtk4::ScrolledWindow,
+    zoom: f64,
+) {
+    let adj = scroll.vadjustment();
+    let hadj = scroll.hadjustment();
+    let h_fraction = (hadj.value() + hadj.page_size() / 2.0) / hadj.upper().max(1.0);
+    let anchor = {
+        let r = reader.borrow();
+        let y = adj.value() + adj.page_size() / 2.0 - CONTINUOUS_PAGE_GAP;
+        let page = continuous_page_at(&r.continuous_offsets, y);
+        let span = r.continuous_offsets[page as usize + 1]
+            - r.continuous_offsets[page as usize]
+            - CONTINUOUS_PAGE_GAP;
+        let fraction = (y - r.continuous_offsets[page as usize]) / span.max(1.0);
+        (page, fraction.clamp(0.0, 1.0))
+    };
+    {
+        let mut r = reader.borrow_mut();
+        r.zoom = zoom;
+        r.defer_renders = true;
+        r.continuous_offsets = continuous_offsets_for(&r);
+    }
+    rerender_loaded_continuous_pages(reader);
+    let (value, upper) = {
+        let r = reader.borrow();
+        let (page, fraction) = anchor;
+        let span = r.continuous_offsets[page as usize + 1]
+            - r.continuous_offsets[page as usize]
+            - CONTINUOUS_PAGE_GAP;
+        let y = CONTINUOUS_PAGE_GAP + r.continuous_offsets[page as usize] + fraction * span
+            - adj.page_size() / 2.0;
+        let upper = r.continuous_offsets.last().copied().unwrap_or(0.0) + CONTINUOUS_PAGE_GAP;
+        (y, upper)
+    };
+    adj.configure(
+        value.clamp(0.0, (upper - adj.page_size()).max(0.0)),
+        adj.lower(),
+        upper,
+        adj.step_increment(),
+        adj.page_increment(),
+        adj.page_size(),
+    );
+    let width = (READER_BASE_WIDTH * zoom).max(hadj.page_size());
+    hadj.configure(
+        (h_fraction * width - hadj.page_size() / 2.0)
+            .clamp(0.0, (width - hadj.page_size()).max(0.0)),
+        hadj.lower(),
+        width,
+        hadj.step_increment(),
+        hadj.page_increment(),
+        hadj.page_size(),
+    );
+    refresh_continuous_window(reader, scroll, None);
+}
+
 /// Throw away every continuous-view widget and position; the next `build_continuous_view`
 /// starts from scratch.
 pub(super) fn clear_continuous_view(reader: &Rc<RefCell<ReaderState>>, continuous_box: &gtk4::Box) {

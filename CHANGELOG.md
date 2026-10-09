@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- **Zooming is smooth and stays where you are.** Pinch, Ctrl+wheel and the zoom buttons used to
+  wait 150 ms, then throw the whole page layout away and rebuild it, which flashed blank and
+  put you back at the top of the page. Pages now resize as the zoom changes, at most once a
+  frame, keeping the point in the middle of the window fixed; each page keeps showing its last
+  picture, stretched, until the sharp one for the new size arrives a moment after you stop.
 - **Long documents scroll with only the pages you can see.** The continuous view used to build a
   widget for every page of the book up front (600 for a long one) and keep them all. It now
   builds widgets only for the pages near the viewport, with blank spacers standing in for the
