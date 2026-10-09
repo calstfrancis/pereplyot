@@ -34,6 +34,7 @@ pub mod pdfium;
 mod pdfium_lock;
 pub mod perf;
 pub mod reader_host;
+pub mod reflow;
 pub mod store;
 
 /// A slot holding a "rebuild this list" closure, filled in after the widgets it rebuilds

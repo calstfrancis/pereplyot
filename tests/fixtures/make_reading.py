@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+"""Fixtures for Reading mode: a footnoted monograph and a two-column paper (Courier, so line
+widths are exact). Deterministic; run from anywhere: make_reading.py [OUTDIR]."""
+import pathlib, sys
+
+OUT = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else pathlib.Path(__file__).parent
+WORDS = ("the of and to in that is was for it with as his on be at by this had not are but from or have "
+         "an they which one you were her all she there would their we him been has when who will more no "
+         "if out so said what up its about into than them can only other new some could time these two may "
+         "then do first any my now such like our over man me even most made after also did many before "
+         "must through back years where much your way well down should because each just those people "
+         "how too little state good very make world still own see men work long get here between both "
+         "life being under never day same another know while last might great old year off come since "
+         "against go came right used take three scripture covenant grace interpretation tradition "
+         "community liturgy narrative authority testimony meaning context history").split()
+CW = 0.6  # Courier advance in em
+
+
+def esc(s):
+    return s.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+class Page:
+    def __init__(self):
+        self.ops = []
+
+    def text(self, x, y, s, size=10, bold=False, rise=0):
+        font = "/F2" if bold else "/F1"
+        self.ops.append(f"BT {font} {size} Tf {rise} Ts 1 0 0 1 {x:.2f} {y:.2f} Tm ({esc(s)}) Tj ET")
+
+    def stream(self):
+        return "\n".join(self.ops)
+
+
+def write_pdf(path, pages, media="[0 0 612 792]"):
+    objs = []
+
+    def add(body):
+        objs.append(body)
+        return len(objs)
+
+    cat = add(None)
+    pages_obj = add(None)
+    f1 = add("<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>")
+    f2 = add("<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold >>")
+    kids = []
+    for p in pages:
+        s = p.stream()
+        content = add(f"<< /Length {len(s)} >>\nstream\n{s}\nendstream")
+        kids.append(add(f"<< /Type /Page /Parent {pages_obj} 0 R /MediaBox {media} "
+                        f"/Resources << /Font << /F1 {f1} 0 R /F2 {f2} 0 R >> >> /Contents {content} 0 R >>"))
+    objs[cat - 1] = f"<< /Type /Catalog /Pages {pages_obj} 0 R >>"
+    objs[pages_obj - 1] = f"<< /Type /Pages /Kids [{' '.join(f'{k} 0 R' for k in kids)}] /Count {len(kids)} >>"
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for i, body in enumerate(objs, 1):
+        offsets.append(len(out))
+        out += f"{i} 0 obj\n{body}\nendobj\n".encode("latin-1")
+    xref = len(out)
+    out += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n".encode()
+    for o in offsets:
+        out += f"{o:010d} 00000 n \n".encode()
+    out += f"trailer\n<< /Size {len(objs) + 1} /Root {cat} 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+    pathlib.Path(path).write_bytes(out)
+
+
+def words(n, start):
+    return [WORDS[(start + i * 7) % len(WORDS)] for i in range(n)]
+
+
+def wrap(tokens, width_chars):
+    """tokens: words, or ('^', label) markers. Returns lines of tokens."""
+    lines, cur, n = [], [], 0
+    for t in tokens:
+        w = 0 if isinstance(t, tuple) else len(t)
+        if cur and n + w + 1 > width_chars and not isinstance(t, tuple):
+            lines.append(cur)
+            cur, n = [], 0
+        cur.append(t)
+        n += (0 if isinstance(t, tuple) else w + 1)
+    if cur:
+        lines.append(cur)
+    return lines
+
+
+def put_line(page, x, y, tokens, size):
+    cx = x
+    for t in tokens:
+        if isinstance(t, tuple):
+            page.text(cx - CW * size * 0.3, y, t[1], size * 0.62, rise=size * 0.38)
+            cx += CW * size * 0.62 * len(t[1]) - CW * size * 0.3
+        else:
+            page.text(cx, y, t, size)
+            cx += CW * size * (len(t) + 1)
+
+
+def monograph():
+    pages = []
+    # paragraph tokens per page: (tokens, indent?)
+    plan = [
+        [("heading", "Chapter One"), (words(70, 1) + [("^", "1")] + words(12, 4), True),
+         (words(80, 9), True), (words(60, 20) + [("^", "2")] + words(4, 3), True)],
+        [(words(90, 31), False), (words(75, 12) + [("^", "3")] + words(10, 2), True), (words(60, 40), True)],
+        [(words(85, 50), True), (words(70, 8), True), (words(64, 17), True)],
+        [(words(80, 22), True), (words(72, 5), True), (words(30, 11), True)],
+    ]
+    notes = {
+        0: [("1", "See Smith (2019), p. 4, and the discussion there."),
+            ("2", "On this point compare Jones, a long note that does not fit and so runs on over the "
+                  "page break into the next one")],
+        1: [("", "to its very end, which is here."), ("3", "Cf. the argument above.")],
+    }
+    for n, blocks in enumerate(plan):
+        p = Page()
+        header = "THE ART OF EXAMPLES" if n % 2 == 0 else "CHAPTER ONE"
+        p.text(250 if n % 2 == 0 else 72, 750, header, 8)
+        p.text(300, 40, str(11 + n), 9)
+        y = 700
+        for toks, indent in blocks:
+            if toks == "heading":
+                p.text(72, y, indent, 16, bold=True)
+                y -= 34
+                continue
+            lines = wrap(toks, 60 if indent else 62)
+            for i, line in enumerate(lines):
+                put_line(p, 72 + (14 if indent and i == 0 else 0), y, line, 10)
+                y -= 12.5
+        ny = 130
+        for label, text in notes.get(n, []):
+            lines = wrap(text.split(), 75)
+            for i, line in enumerate(lines):
+                prefix = (label + " ") if i == 0 and label else ""
+                p.text(72, ny, prefix + " ".join(line), 7.5)
+                ny -= 9.5
+        pages.append(p)
+    write_pdf(OUT / "monograph.pdf", pages)
+
+
+def twocol():
+    pages = []
+    for n in range(3):
+        p = Page()
+        p.text(72, 750, "Journal of Layout Studies  Vol. 4", 8)
+        p.text(300, 40, str(101 + n), 9)
+        y_top = 700
+        if n == 0:
+            p.text(130, y_top, "A Study of Two Columns", 18, bold=True)
+            y_top -= 40
+        for col, x in enumerate((72, 322)):
+            y = y_top
+            toks = words(190, 3 + 17 * n + 31 * col)
+            toks[0] = f"start{n}{'lr'[col]}"
+            for i, line in enumerate(wrap(toks, 38)):
+                if y < 90:
+                    break
+                put_line(p, x, y, line, 10)
+                y -= 12.5
+        pages.append(p)
+    write_pdf(OUT / "twocol.pdf", pages)
+
+
+monograph()
+twocol()
