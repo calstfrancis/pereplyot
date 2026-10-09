@@ -5,6 +5,7 @@ pub mod notes_page;
 pub mod resurface;
 pub mod search_page;
 pub mod styles;
+pub mod welcome;
 pub mod window;
 
 use std::cell::RefCell;

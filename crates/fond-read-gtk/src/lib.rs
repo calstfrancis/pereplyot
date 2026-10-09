@@ -28,6 +28,7 @@ pub mod commands;
 pub mod connections;
 pub mod deeplink;
 pub mod epub;
+pub mod epub_cover;
 pub mod export;
 pub mod fsutil;
 pub mod history;

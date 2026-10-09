@@ -29,6 +29,8 @@ pub struct Config {
     pub resurface: bool,
     /// Texture each reading colour as well as colouring it.
     pub patterns: bool,
+    /// The last version whose Welcome / What's New window was shown.
+    pub last_seen_version: String,
 }
 
 pub const LIBRARY_SIZE_MIN: u32 = 80;
@@ -44,6 +46,7 @@ impl Default for Config {
             library_shelf: String::new(),
             resurface: false,
             patterns: false,
+            last_seen_version: String::new(),
         }
     }
 }

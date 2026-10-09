@@ -65,10 +65,13 @@ Kartoteka's own `docs/READER-EXTRACTION.md` for the `ReaderHost` boundary this a
 - Headless checking: Xvfb + `PDFIUM_LIB_PATH` (any libpdfium.so) + xdotool is enough to
   drive the real app; set `XDG_DATA_HOME`/`XDG_CONFIG_HOME`/`XDG_CACHE_HOME` to a scratch dir.
 
-## Not yet built (fast-follows, not oversights)
+## Release machinery
 
-Welcome/What's New window, command palette, `capture-screenshots.sh`, a real app icon (the
-current `packaging/pereplyot.svg` is a placeholder), CI publish secrets, real EPUB cover
-thumbnails in the Library (needs a new `fond-doc` function — see `src/thumbnail.rs` — which
-needs a Kartoteka release to reach Pereplyot's pinned tag; EPUBs show a placeholder icon
-until then).
+- `RELEASE_NAME` lives in `pereplyot-ui-gtk/src/ui/welcome.rs`, next to the What's New bullet list
+  (`NEW`): bump both at release time, with the CHANGELOG heading and the metainfo entry.
+  `./release-preflight.sh` cross-checks all of it (run after the commit and tag, before publishing).
+- `./capture-screenshots.sh` refreshes `screenshots/` from a fictional document in a throwaway
+  profile (needs `cargo build --release`); it copies the WebP/PNG into the website repo if present.
+- The smoke harness sets `PEREPLYOT_NO_WELCOME=1` so the Welcome window does not cover the UI.
+- Reader chrome must stay narrow: the PDF reader's status bar and header sit right at the 1000 px
+  default window width, and widening them shifts every coordinate in `tests/smoke/run.sh`.

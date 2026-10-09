@@ -240,6 +240,7 @@ fn main() -> glib::ExitCode {
                 ParsedArgs::Launcher => {
                     launcher_shown.set(true);
                     widgets.window.present();
+                    ui::welcome::maybe_show(&widgets);
                 }
                 ParsedArgs::Open { file, options } => {
                     if launcher_shown.get() {

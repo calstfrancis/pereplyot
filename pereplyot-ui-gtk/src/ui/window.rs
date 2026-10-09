@@ -402,6 +402,7 @@ fn show_palette(widgets: &Rc<Widgets>, stack: &adw::ViewStack) {
     list.push(action("Highlight labels…", "", "highlight-labels"));
     list.push(action("Resurface highlights (on/off)", "", "resurface"));
     list.push(action("Textures on highlights (on/off)", "", "patterns"));
+    list.push(action("What's new…", "", "whats-new"));
     list.push(action("About Pereplyot", "", "about"));
     for (label, name) in [("System", "system"), ("Light", "light"), ("Dark", "dark")] {
         let window = widgets.window.clone();
@@ -566,6 +567,14 @@ fn install_actions(app: &adw::Application, widgets: &Rc<Widgets>) {
         });
     }
     window.add_action(&labels_action);
+
+    let whats_new_action = gio::SimpleAction::new("whats-new", None);
+    {
+        let widgets = widgets.clone();
+        whats_new_action
+            .connect_activate(move |_, _| crate::ui::welcome::show(&widgets.window, false));
+    }
+    window.add_action(&whats_new_action);
 
     let about_action = gio::SimpleAction::new("about", None);
     {

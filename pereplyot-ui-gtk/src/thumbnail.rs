@@ -1,4 +1,4 @@
-//! Library-card thumbnails: a page-1 PDFium render, cached as a PNG under the user cache
+//! Library-card thumbnails: a page-1 PDFium render (or an EPUB's cover), cached as a PNG under the user cache
 //! directory keyed by content hash (so the cache never goes stale).
 
 use std::path::Path;
@@ -8,11 +8,6 @@ use gtk4::{gdk, glib};
 
 use fond_read_gtk::history::DocKind;
 
-/// A rendered thumbnail for `path`, or `None` if one couldn't be produced — an unreadable
-/// file, or (for now) an EPUB: `fond_doc::EpubBook` exposes no manifest/resource access, so
-/// real cover extraction needs a new `fond-doc` function, which needs a Kartoteka release
-/// to reach Pereplyot's pinned tag. Not this task's call to make unilaterally (root
-/// `CLAUDE.md`'s release policy) — EPUBs get a placeholder icon in the card instead.
 /// Render width for a card `card_px` wide: twice that for hi-dpi, snapped to a few buckets so
 /// dragging the size slider doesn't fill the cache with one file per pixel.
 pub fn bucket_width(card_px: u32) -> u32 {
@@ -22,6 +17,9 @@ pub fn bucket_width(card_px: u32) -> u32 {
         .unwrap_or(560)
 }
 
+/// A thumbnail for `path`: a render of a PDF's first page, or an EPUB's cover picture; `None`
+/// if one couldn't be produced (an unreadable file, or a book with no cover). Cached as a PNG
+/// keyed by content hash.
 pub fn render_thumbnail(
     kind: DocKind,
     path: &Path,
@@ -60,6 +58,9 @@ fn render_uncached(kind: DocKind, path: &Path, width: u32) -> Option<gdk::Textur
             );
             Some(texture.upcast())
         }
-        DocKind::Epub => None,
+        DocKind::Epub => {
+            let bytes = fond_read_gtk::epub_cover::cover_bytes(path)?;
+            gdk::Texture::from_bytes(&glib::Bytes::from_owned(bytes)).ok()
+        }
     }
 }

@@ -1,5 +1,7 @@
 # Pereplyot (Переплёт)
 
+![Pereplyot reading a document, with the notes list and the Notebook open](screenshots/pereplyot-main.png)
+
 A standalone GTK4/libadwaita PDF and EPUB reader with highlights, underlines, strikes, and
 freestanding notes — built around `fond-read-gtk`, the same reader widget embedded in
 [Kartoteka](https://github.com/calstfrancis/kartoteka) and
@@ -26,7 +28,7 @@ reading themes (Light/Sepia/Dark) and font choice for EPUB, a page-thumbnail gri
 click-to-turn page zones, right-click copying of selected or highlighted PDF text,
 keyboard/mouse page and chapter navigation (from anywhere in the reader window), a Contents outline and
 a Notes list, and tabs for reading more than one document at once. No Welcome window, no
-screenshot automation, and EPUB cover art (Library shows a placeholder icon for EPUBs) yet.
+screenshot automation, and EPUB cover art yet (all three have since been added — see below).
 
 **Since then (unreleased, see `CHANGELOG.md`):** a much faster reader (page rendering and search on
 background threads, sharp on HiDPI, tiles at high zoom, smooth zoom, a virtual scroll view);
@@ -44,6 +46,12 @@ connections between annotations, and export to Typst, Markdown or LaTeX; EPUBs w
 numbers, note popovers, a paginated mode and clipped images; all set by default in Zerkalo's
 "LaTeX Look". The plan is in
 `ACADEMIC-READER-PLAN.md`.
+
+**Also since 0.11.0:** a Welcome / What's New window, a real app icon, EPUB covers on Library cards,
+a Ctrl+K command palette, caret browsing (F7) and optional textures on highlights. The screenshots
+here come from `capture-screenshots.sh` (a fictional document in a throwaway profile; light and
+dark variants live in `screenshots/`), and `release-preflight.sh` checks that a release's version,
+changelog, metainfo, release name and CI-equivalent checks all agree before it is published.
 
 ## Building
 

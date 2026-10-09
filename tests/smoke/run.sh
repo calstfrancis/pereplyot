@@ -47,7 +47,7 @@ start_app() {
     cp "$ROOT"/packaging/fonts/*.otf "$WORK/h/data/fonts/" 2>/dev/null
     # setsid gives the app its own process group so stop_app can take down dbus-run-session
     # and its children together; dbus-run-session does not forward SIGTERM reliably.
-    env -u WAYLAND_DISPLAY GDK_BACKEND=x11 GTK_A11Y=none GSETTINGS_BACKEND=memory \
+    env -u WAYLAND_DISPLAY ${WELCOME_OK:-PEREPLYOT_NO_WELCOME=1} GDK_BACKEND=x11 GTK_A11Y=none GSETTINGS_BACKEND=memory \
         WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 \
         HOME="$WORK/h/home" XDG_DATA_HOME="$WORK/h/data" XDG_CONFIG_HOME="$WORK/h/config" \
         XDG_CACHE_HOME="$WORK/h/cache" \
@@ -1143,6 +1143,24 @@ run_caret_case() {
     stop_app
 }
 
+run_welcome_case() {
+    WELCOME_OK=PEREPLYOT_WELCOME=1 start_app -
+    local w
+    w="$(launcher_window)" || { check "welcome: launcher opens" 0; stop_app; return; }
+    sleep 2.5
+    screenshot "$WORK/wl-0.png"
+    local ink
+    ink="$(python3 "$HERE/text_bands.py" "$WORK/wl-0.png" --ink-in 130 120 600 200)"
+    check "welcome: the first run shows the Welcome window" "$([ "${ink:-0}" -gt 400 ] && echo 1 || echo 0)" "(ink in the window: $ink)"
+    stop_app
+    WELCOME_OK=PEREPLYOT_WELCOME=1 start_app - keep
+    launcher_window >/dev/null
+    sleep 2.5
+    screenshot "$WORK/wl-1.png"
+    check "welcome: it is not shown again for the same version" "$([ "$(same_region "$WORK/wl-0.png" "$WORK/wl-1.png" 0 0 720 680)" = 0 ] && echo 1 || echo 0)"
+    stop_app
+}
+
 # Line order in the fixtures: "Page N", fox, Pack, Sphinx.
 want() { [ -z "${SMOKE_CASES:-}" ] || [[ " $SMOKE_CASES " == *" $1 "* ]]; }
 want plain && run_pdf_case plain plain.pdf y 2 "Pack my box with five dozen liquor jugs."
@@ -1170,6 +1188,7 @@ want launcher && run_launcher_case
 want search && run_search_case
 want browser && run_browser_case
 want palette && run_palette_case
+want welcome && run_welcome_case
 want caret && run_caret_case
 want patterns && run_patterns_case
 

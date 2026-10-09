@@ -154,7 +154,7 @@ def scholar_epub():
             '<manifest><item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/>'
             '<item id="c2" href="c2.xhtml" media-type="application/xhtml+xml"/>'
             '<item id="notes" href="notes.xhtml" media-type="application/xhtml+xml"/>'
-            '<item id="fig" href="fig.png" media-type="image/png"/>'
+            '<item id="fig" href="fig.png" media-type="image/png" properties="cover-image"/>'
             '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/></manifest>'
             '<spine><itemref idref="c1"/><itemref idref="c2"/><itemref idref="notes"/></spine></package>',
         )

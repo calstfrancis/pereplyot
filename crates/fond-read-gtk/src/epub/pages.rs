@@ -15,7 +15,7 @@ pub(crate) struct PageBreak {
     pub label: String,
 }
 
-fn tags(text: &str) -> impl Iterator<Item = (&str, usize)> {
+pub(crate) fn tags(text: &str) -> impl Iterator<Item = (&str, usize)> {
     let mut at = 0;
     std::iter::from_fn(move || {
         let start = text[at..].find('<')? + at;
@@ -25,7 +25,7 @@ fn tags(text: &str) -> impl Iterator<Item = (&str, usize)> {
     })
 }
 
-fn attr(tag: &str, name: &str) -> Option<String> {
+pub(crate) fn attr(tag: &str, name: &str) -> Option<String> {
     let bytes = tag.as_bytes();
     let mut from = 0;
     while let Some(found) = tag[from..].find(name) {
@@ -75,7 +75,7 @@ fn percent_decode(s: &str) -> String {
 
 /// `href` (which may end in `#fragment`) resolved against the directory `base_dir` of the file
 /// that holds it, as a zip-style path plus the fragment.
-pub(super) fn resolve(base_dir: &Path, href: &str) -> (String, Option<String>) {
+pub(crate) fn resolve(base_dir: &Path, href: &str) -> (String, Option<String>) {
     let (file, fragment) = href
         .split_once('#')
         .map_or((href, None), |(f, g)| (f, Some(g.to_string())));
@@ -238,7 +238,7 @@ pub(crate) fn read(cache_dir: &Path, spine: &[String]) -> Vec<PageBreak> {
     let from_lists = (|| {
         let container = std::fs::read_to_string(cache_dir.join("META-INF/container.xml")).ok()?;
         let opf_path = tags(&container)
-            .find(|(t, _)| t.starts_with("<rootfile"))
+            .find(|(t, _)| t.starts_with("<rootfile ") || t.starts_with("<rootfile\n"))
             .and_then(|(t, _)| attr(t, "full-path"))?;
         let opf = std::fs::read_to_string(cache_dir.join(&opf_path)).ok()?;
         let opf_dir = Path::new(&opf_path)
@@ -317,8 +317,11 @@ mod tests {
     use super::*;
 
     fn extracted(name: &str) -> (PathBuf, Vec<String>) {
-        let dir =
-            std::env::temp_dir().join(format!("pereplyot-pages-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "pereplyot-pages-{name}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
         let _ = std::fs::remove_dir_all(&dir);
         let epub =
             Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../tests/fixtures/{name}.epub"));
@@ -342,6 +345,32 @@ mod tests {
             Some("43")
         );
         assert_eq!(label_entering(&pages, &spine, "OEBPS/c1.xhtml"), None);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn the_page_list_alone_is_enough_when_the_text_has_no_markers() {
+        let (dir, spine) = extracted("scholar");
+        for chapter in &spine {
+            let path = dir.join(chapter);
+            let text = std::fs::read_to_string(&path).unwrap();
+            let stripped = text
+                .split("<span")
+                .enumerate()
+                .map(|(i, part)| {
+                    if i == 0 {
+                        part.to_string()
+                    } else {
+                        part.split_once("</span>")
+                            .map_or(part.to_string(), |(_, rest)| rest.to_string())
+                    }
+                })
+                .collect::<String>();
+            std::fs::write(&path, stripped).unwrap();
+        }
+        assert!(page_breaks_in_text(&dir, &spine).is_empty());
+        let labels: Vec<_> = read(&dir, &spine).iter().map(|p| p.label.clone()).collect();
+        assert_eq!(labels, ["41", "42", "43", "44", "45"]);
         let _ = std::fs::remove_dir_all(dir);
     }
 

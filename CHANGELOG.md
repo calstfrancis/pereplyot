@@ -11,6 +11,12 @@
   Ctrl+arrows by word, Home/End by line, Up/Down by line keeping the column, carrying on across
   pages; Shift extends a selection, and 1–4 mark it — so a PDF can be read and marked from the
   keyboard alone, on the real page.
+- **Welcome / What's New window** the first time and after each update (also in the menu), with the
+  release's name; **EPUB covers** on Library cards; a **real app icon**; `capture-screenshots.sh`
+  for the README and website pictures; `release-preflight.sh`.
+- **Fixed:** a book's own page list (EPUB 3 `page-list`) was never read when the text had no page
+  markers of its own — the container file was matched wrongly — so printed page numbers only
+  appeared for books that mark them in the text. They now work from the navigation list too.
 - **Textures on highlights** (menu, off by default): each of the four reading colours gets its own
   hatching or dots — in the PDF page and in EPUBs — so they can be told apart without colour.
 

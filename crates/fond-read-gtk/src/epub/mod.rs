@@ -29,7 +29,7 @@ mod keys;
 mod open_book;
 mod page_label;
 mod paged;
-mod pages;
+pub(crate) mod pages;
 mod undo_redo;
 mod web_view_setup;
 use web_view_setup::*;

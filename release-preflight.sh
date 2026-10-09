@@ -1,0 +1,255 @@
+#!/usr/bin/env bash
+#
+# release-preflight.sh — hard-checks that every source of version/release
+# truth actually agrees before Cal runs publish-flatpak.sh, instead of
+# relying on the "Release preflight" checklist in ../CLAUDE.md being
+# followed by memory. Complements check-versions.sh (which runs on every
+# push/PR and only catches AppStream ordering + "forgot the metainfo
+# entry"): this script is release-specific and stricter — it refuses to
+# pass at all on a dev build, and cross-checks CHANGELOG.md, the
+# release-name constant (if the app has one), and the git tag/working tree.
+#
+# Portable across the Rust (Cargo.toml) and Python (pyproject.toml) flatpak
+# apps, same auto-detection approach as check-versions.sh — drops into any
+# of them unchanged. Safe to run locally at any time; intended to be run as
+# the last step of the release workflow, after commit+tag, before telling
+# Cal "Ready — run ./publish-flatpak.sh X.Y.Z".
+
+set -euo pipefail
+
+# --- read the app version (Rust, or Python literal / dynamic attr) ---
+read_py_version() {
+  local v
+  v=$(grep -m1 '^version[[:space:]]*=[[:space:]]*"' pyproject.toml \
+      | sed -E 's/.*"([^"]+)".*/\1/' || true)
+  if [ -n "$v" ]; then echo "$v"; return; fi
+  local attr; attr=$(grep -oE 'attr[[:space:]]*=[[:space:]]*"[^"]+"' pyproject.toml \
+      | head -1 | sed -E 's/.*"([^"]+)".*/\1/' || true)
+  if [ -n "$attr" ]; then
+    local var=${attr##*.} base=${attr%.*}; base=${base//.//}
+    local f
+    for f in "$base/__init__.py" "$base.py"; do
+      [ -f "$f" ] || continue
+      v=$(grep -m1 "^${var}[[:space:]]*=[[:space:]]*[\"']" "$f" \
+          | sed -E "s/.*[\"']([^\"']+)[\"'].*/\1/" || true)
+      [ -n "$v" ] && { echo "$v"; return; }
+    done
+  fi
+  echo ""
+}
+
+# Pereplyot is a workspace with no root package: the app's version is the app crate's.
+if [ -f pereplyot-ui-gtk/Cargo.toml ]; then
+  APP_VERSION=$(grep -m1 '^version[[:space:]]*=[[:space:]]*"' pereplyot-ui-gtk/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/' || true)
+elif [ -f Cargo.toml ]; then
+  APP_VERSION=$(grep -m1 '^version[[:space:]]*=[[:space:]]*"' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/' || true)
+elif [ -f pyproject.toml ]; then
+  APP_VERSION=$(read_py_version)
+else
+  echo "ERROR: no Cargo.toml or pyproject.toml to read the app version from"; exit 1
+fi
+[ -n "$APP_VERSION" ] || { echo "ERROR: could not determine app version"; exit 1; }
+
+METAINFO=$(find . -name '*.metainfo.xml' \
+  -not -path '*/.flatpak-builder/*' \
+  -not -path '*/build-flatpak/*' \
+  -not -path '*/build/*' 2>/dev/null | head -1)
+[ -n "$METAINFO" ] || { echo "ERROR: no *.metainfo.xml found"; exit 1; }
+
+echo "App version : $APP_VERSION"
+echo "Metainfo    : $METAINFO"
+echo
+
+fail=0
+note() { echo "  - $1"; }
+err() { echo "ERROR: $1"; fail=1; }
+
+# --- 1: must be a clean release version, not a dev/rc snapshot ---
+case "$APP_VERSION" in
+  *-*)
+    err "$APP_VERSION is not a clean release version (has a pre-release suffix) — this checks release readiness, not dev builds."
+    ;;
+  *)
+    note "clean release version"
+    ;;
+esac
+
+# --- 2: metainfo has a matching <release> entry with a real date ---
+release_line=$(grep -oE "<release[^>]*version=\"$APP_VERSION\"[^>]*>" "$METAINFO" || true)
+if [ -z "$release_line" ]; then
+  err "no <release version=\"$APP_VERSION\"> entry in $METAINFO"
+else
+  date_val=$(echo "$release_line" | grep -oE 'date="[0-9]{4}-[0-9]{2}-[0-9]{2}"' || true)
+  if [ -z "$date_val" ]; then
+    err "the <release version=\"$APP_VERSION\"> entry in $METAINFO has no valid date=\"YYYY-MM-DD\""
+  else
+    note "metainfo entry present with $date_val"
+  fi
+fi
+
+# --- 3: CHANGELOG.md has a finalised heading for this version ---
+if [ ! -f CHANGELOG.md ]; then
+  err "no CHANGELOG.md found"
+else
+  changelog_heading=$(grep -m1 -E "^## \[$APP_VERSION\]" CHANGELOG.md || true)
+  if [ -z "$changelog_heading" ]; then
+    err "CHANGELOG.md has no '## [$APP_VERSION]' heading"
+  elif echo "$changelog_heading" | grep -qE -- '-(dev|rc|alpha|beta|pre)[0-9]*\]'; then
+    err "CHANGELOG.md heading for $APP_VERSION still carries a dev/rc suffix: $changelog_heading"
+  else
+    note "CHANGELOG.md heading: $changelog_heading"
+  fi
+fi
+
+# --- 4: release-name constant (if this app has one) matches the CHANGELOG name ---
+# Convention from ../CLAUDE.md: Rust apps (Zerkalo/Iskra) use a `RELEASE_NAME`
+# const in src/ui/welcome_window.rs; Python apps (Kopilka/Gost) use
+# `__release_name__` in their package's __init__.py. Apps without either
+# (Rubric, Retseptura, Skrizhal, Chered, Kartoteka) simply have neither file
+# pattern match, and this check is silently skipped for them.
+release_name_val=""
+if [ -f pereplyot-ui-gtk/src/ui/welcome.rs ]; then
+  release_name_val=$(grep -m1 -oE 'RELEASE_NAME[[:space:]]*:[[:space:]]*&str[[:space:]]*=[[:space:]]*"[^"]*"' pereplyot-ui-gtk/src/ui/welcome.rs \
+    | sed -E 's/.*"([^"]*)".*/\1/' || true)
+  release_name_file="pereplyot-ui-gtk/src/ui/welcome.rs"
+else
+  for f in */__init__.py; do
+    [ -f "$f" ] || continue
+    v=$(grep -m1 -oE '__release_name__[[:space:]]*=[[:space:]]*"[^"]*"' "$f" | sed -E 's/.*"([^"]*)".*/\1/' || true)
+    if [ -n "$v" ]; then release_name_val="$v"; release_name_file="$f"; break; fi
+  done
+fi
+if [ -n "$release_name_val" ]; then
+  if [ -n "${changelog_heading:-}" ] && echo "$changelog_heading" | grep -qF "$release_name_val"; then
+    note "release name \"$release_name_val\" ($release_name_file) matches CHANGELOG heading"
+  else
+    err "release name \"$release_name_val\" in $release_name_file does not appear in the CHANGELOG.md heading for $APP_VERSION — likely bumped in one place but not the other"
+  fi
+fi
+
+# --- 5: the checks CI actually runs, run here BEFORE the tag exists ---
+# Every one of the last 4 tag pushes (v0.26.5, v0.27.0-dev1, v0.27.0, v0.28.0)
+# failed ci.yml's Format step on the exact tagged commit — this preflight
+# checked version/CHANGELOG/metainfo agreement and said "OK" every time while
+# the tagged commit was already guaranteed to fail CI. Once a commit is
+# tagged and pushed, "fixing forward" on main does NOT fix that tag: the
+# release-flatpak gate checks the check-runs for the tagged SHA specifically,
+# which stays "failure" forever — the only fix is moving the tag, which is
+# exactly what had to happen to recover v0.28.0. Running the real CI checks
+# here, before Cal is told "Ready", closes the loop instead of relying on
+# memory to run `cargo fmt` before every commit.
+if [ -f Cargo.toml ] || [ -f pereplyot-ui-gtk/Cargo.toml ]; then
+  if ! command -v cargo >/dev/null 2>&1; then
+    err "cargo not found — cannot run the CI-equivalent checks"
+  else
+    if cargo fmt --check >/tmp/preflight-fmt.log 2>&1; then
+      note "cargo fmt --check clean"
+    else
+      err "cargo fmt --check failed — this is exactly what has broken the last 4 tag pushes; run 'cargo fmt' and re-run this script:"
+      cat /tmp/preflight-fmt.log
+    fi
+    if cargo build --release --workspace >/tmp/preflight-build.log 2>&1; then
+      note "cargo build --release clean"
+    else
+      err "cargo build --release failed:"
+      tail -40 /tmp/preflight-build.log
+    fi
+    if cargo test --release --workspace >/tmp/preflight-test.log 2>&1; then
+      note "cargo test --release clean"
+    else
+      err "cargo test --release failed:"
+      tail -40 /tmp/preflight-test.log
+    fi
+    if cargo clippy --workspace --all-targets -- -D warnings >/tmp/preflight-clippy.log 2>&1; then
+      note "cargo clippy clean"
+    else
+      err "cargo clippy failed:"
+      tail -40 /tmp/preflight-clippy.log
+    fi
+  fi
+
+  # --- 5b: offline flatpak vendoring must actually cover Cargo.lock ---
+  # The exact second way the last release stalled: Cargo.lock gained
+  # `spellbook` for v0.28.0's in-process spell check, but
+  # packaging/cargo-sources.json was never regenerated (last touched at
+  # v0.26.5), so the offline flatpak build failed with "no matching package
+  # named spellbook found" even after CI itself was green. Only checked for
+  # apps that actually have both files (Zerkalo/Kartoteka's offline-vendored
+  # flatpak builds); silently skipped otherwise.
+  if [ -f packaging/cargo-sources.json ] && command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    # Matching crates one-by-one against Cargo.lock isn't reliable: the
+    # generator only vendors crates actually reachable for the Linux flatpak
+    # build, so cfg(windows)-only deps (windows-sys, zbus, ...) are correctly
+    # absent and would show up as false-positive "missing" entries on every
+    # run. Comparing against git history avoids that entirely: if Cargo.lock
+    # has changed since cargo-sources.json was last regenerated, that alone
+    # is the exact condition that broke v0.28.0's offline build, regardless
+    # of which crates ended up different.
+    #
+    # A plain `git diff` on the whole file is too eager, though: it also
+    # fires on a bare version bump of zerkalo's own package block (which has
+    # no `source = "registry+...` line and was never part of the vendored
+    # set to begin with) — and that line changes on *every* release, so a
+    # byte-diff check would fail every single release preflight regardless
+    # of whether any actual dependency moved. Only the registry-sourced
+    # (name, version) pairs matter, so compare those sets instead.
+    last_vendor_commit=$(git log -1 --format=%H -- packaging/cargo-sources.json)
+    if [ -z "$last_vendor_commit" ]; then
+      err "packaging/cargo-sources.json exists but has no git history — can't check it's current"
+    else
+      extract_registry_deps() {
+        awk '
+          /^\[\[package\]\]$/ { name=""; version=""; is_registry=0 }
+          /^name = / { name=$0; sub(/^name = "/, "", name); sub(/"$/, "", name) }
+          /^version = / { version=$0; sub(/^version = "/, "", version); sub(/"$/, "", version) }
+          /^source = "registry\+/ { is_registry=1 }
+          /^$/ { if (is_registry && name != "") print name, version }
+          END { if (is_registry && name != "") print name, version }
+        ' "$1" | sort
+      }
+      old_deps=$(git show "$last_vendor_commit:Cargo.lock" 2>/dev/null | extract_registry_deps -)
+      new_deps=$(extract_registry_deps Cargo.lock)
+      if [ "$old_deps" = "$new_deps" ]; then
+        note "packaging/cargo-sources.json covers the same registry crates as Cargo.lock (unchanged since $last_vendor_commit)"
+      else
+        err "Cargo.lock's registry dependencies changed since packaging/cargo-sources.json was last regenerated ($last_vendor_commit) — the offline flatpak build will fail exactly like v0.28.0 did:"
+        diff <(echo "$old_deps") <(echo "$new_deps") | sed 's/^/    /'
+        note "regenerate: /tmp/fcg-venv/bin/python ~/Projects/kartoteka/flatpak-cargo-generator.py Cargo.lock -o packaging/cargo-sources.json"
+      fi
+    fi
+  fi
+fi
+
+# --- 6: git tag and working tree, if this is a git checkout ---
+if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  if [ -n "$(git status --porcelain)" ]; then
+    err "working tree is not clean — commit or stash before releasing"
+  else
+    note "working tree clean"
+  fi
+  tag="v$APP_VERSION"
+  if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+    # "$tag^{}" peels an annotated tag down to the commit it points at —
+    # this repo's git config forces annotated (signed) tags, and a bare
+    # `git rev-parse "$tag"` on one returns the *tag object's* own hash,
+    # not the commit's, so the plain comparison here failed on every
+    # annotated tag regardless of whether it actually pointed at HEAD.
+    if [ "$(git rev-parse "$tag^{}")" = "$(git rev-parse HEAD)" ]; then
+      note "tag $tag points at HEAD"
+    else
+      err "tag $tag exists but does not point at HEAD — HEAD has moved past the release commit"
+    fi
+  else
+    note "tag $tag not created yet"
+  fi
+else
+  note "not a git checkout — skipping tag/working-tree check"
+fi
+
+echo
+if [ "$fail" -eq 0 ]; then
+  echo "Release preflight OK — $APP_VERSION is ready to publish."
+else
+  echo "Release preflight FAILED — see errors above. Do not tell Cal to run publish-flatpak.sh yet."
+  exit 1
+fi

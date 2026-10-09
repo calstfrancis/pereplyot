@@ -131,6 +131,7 @@ pub fn build(widgets: &Rc<Widgets>) -> gtk4::Popover {
     patterns.set_tooltip_text(Some(
         "Give each of the four colours its own hatching or dots, so they can be told apart without colour",
     ));
+    activate_row(widgets, &rows, &popover, "What's new…", "win.whats-new");
     activate_row(widgets, &rows, &popover, "About Pereplyot", "win.about");
 
     popover
