@@ -1,5 +1,6 @@
 //! Reading mode's text: a PDF's words laid out as a flow of headings, paragraphs and notes.
 
+pub mod citations;
 pub mod extract;
 pub mod layout;
 pub mod margin;
@@ -157,5 +158,66 @@ printf '5\\t1\\t1\\t1\\t1\\t3\\t1000\\t600\\t300\\t60\\t95\\tagain.\\n'\n",
             super::ocr::ocr_page(&doc, 0, std::path::Path::new("/nonexistent"), "eng", &cache);
         assert_eq!(again.expect("from the cache").words.len(), 3);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn raw_pages(name: &str) -> Option<Vec<super::model::RawPage>> {
+        let Ok(pdfium) = crate::pdfium::get() else {
+            eprintln!("no PDFium library; skipping");
+            return None;
+        };
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures")
+            .join(name);
+        let doc = pdfium.load_pdf_from_file(&path, None).ok()?;
+        Some(
+            (0..doc.pages().len())
+                .filter_map(|i| extract_page(&doc, i))
+                .collect(),
+        )
+    }
+
+    /// What pointing at `word` on page 1 of `name` leads to in the bibliography.
+    fn looked_up(name: &str, word: &str) -> Option<String> {
+        use super::citations::{citation_at, find_entry};
+        let pages = raw_pages(name)?;
+        let w = pages[0]
+            .words
+            .iter()
+            .find(|w| w.text == word)
+            .unwrap_or_else(|| panic!("{word} not on page 1 of {name}"));
+        let c = citation_at(&pages[0], (w.x0 + w.x1) / 2.0, (w.y0 + w.y1) / 2.0)
+            .unwrap_or_else(|| panic!("{word} in {name} was not seen as a citation"));
+        Some(
+            find_entry(&pages, &c)
+                .unwrap_or_else(|| panic!("{c:?} from {name} found no entry"))
+                .text,
+        )
+    }
+
+    #[test]
+    fn citations_without_links_lead_to_their_bibliography_entries() {
+        let cases = [
+            ("cite-authoryear.pdf", "2019;", "Book of Examples"),
+            ("cite-authoryear.pdf", "Lee", "On narrative form"),
+            (
+                "cite-numeric.pdf",
+                "[2]",
+                "second work whose title is long enough to wrap onto another line",
+            ),
+            ("cite-numeric.pdf", "[4,", "fourth and most relevant"),
+            ("cite-narrative.pdf", "Smith", "Book of Examples"),
+            ("cite-narrative.pdf", "(2015a)", "On narrative form"),
+            (
+                "cite-superscript.pdf",
+                "3",
+                "third work that supports the claim",
+            ),
+        ];
+        for (file, word, expect) in cases {
+            let Some(entry) = looked_up(file, word) else {
+                return;
+            };
+            assert!(entry.contains(expect), "{file} {word}: got {entry:?}");
+        }
     }
 }

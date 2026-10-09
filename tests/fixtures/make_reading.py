@@ -165,6 +165,85 @@ def blank():
     write_pdf(OUT / "blank.pdf", [p])
 
 
+BODY = ("the matter has been argued at length and the evidence is mixed so that readers should "
+        "weigh each claim with care before drawing any firm conclusion about it").split()
+
+
+def body_page(sentences):
+    """sentences: list of token lists (words, or ('^', label) markers); wrapped into paragraphs."""
+    p = Page()
+    y = 700
+    for toks in sentences:
+        for i, line in enumerate(wrap(toks, 62)):
+            put_line(p, 72 + (14 if i == 0 else 0), y, line, 10)
+            y -= 12.5
+        y -= 6
+    return p
+
+
+def refs_page(entries, heading="References", hanging=True, numbered=None):
+    p = Page()
+    p.text(72, 700, heading, 14, bold=True)
+    y = 670
+    for i, text in enumerate(entries):
+        lines = wrap(text.split(), 62)
+        for j, line in enumerate(lines):
+            x = 72 + (14 if hanging and j > 0 else 0)
+            put_line(p, x, y, line, 10)
+            y -= 12.5
+        y -= 0 if hanging else 8
+    return p
+
+
+def citations():
+    authoryear = [
+        body_page([BODY + ["(Smith", "2019;", "Jones", "and", "Lee", "2015a)", "and"] + BODY[:6]]),
+        body_page([BODY]),
+        refs_page([
+            "Jones, A. and Lee, B. (2015a). On narrative form. Journal of Tests, 3, 1-20.",
+            "Jones, A. and Lee, B. (2015b). Another piece on form. Journal of Tests, 4, 5-9.",
+            "Smith, J. (2019). The Book of Examples. Example Press, London.",
+            "Smith, J. (2012). An older work. Example Press, London.",
+        ]),
+    ]
+    write_pdf(OUT / "cite-authoryear.pdf", authoryear)
+    numeric = [
+        body_page([BODY + ["as", "shown", "before", "[2]", "and", "see", "also", "[4,", "5]."] + BODY[:5]]),
+        body_page([BODY]),
+        refs_page([
+            "[1] Adams, C. A first work on the subject. 2001.",
+            "[2] Brown, D. A second work whose title is long enough to wrap onto another line "
+            "of the page. 2005.",
+            "[3] Clark, E. A third work. 2008.",
+            "[4] Davis, F. The fourth and most relevant work here. 2011.",
+            "[5] Evans, G. A fifth work. 2013.",
+        ], hanging=False),
+    ]
+    write_pdf(OUT / "cite-numeric.pdf", numeric)
+    narrative = [
+        body_page([BODY + ["Later", "Smith", "(2019)", "argues", "that"] + BODY[:7]
+                   + ["while", "Jones", "and", "Lee", "(2015a)", "reply"] + BODY[:3]]),
+        body_page([BODY]),
+        refs_page([
+            "Jones, A. and Lee, B. (2015a). On narrative form. Journal of Tests, 3, 1-20.",
+            "Smith, J. (2019). The Book of Examples. Example Press, London.",
+            "Zhang, W. (2020). A work nobody cites. Example Press.",
+        ], hanging=False),
+    ]
+    write_pdf(OUT / "cite-narrative.pdf", narrative)
+    superscript = [
+        body_page([BODY + ["a", "claim", ("^", "3"), "follows", "here", "and", "another", ("^", "1"), "too."] + BODY[:6]]),
+        body_page([BODY]),
+        refs_page([
+            "1. Adams, C. A first work on the subject. 2001.",
+            "2. Brown, D. A second work. 2005.",
+            "3. Clark, E. The third work that supports the claim made earlier, at length. 2008.",
+        ], hanging=False),
+    ]
+    write_pdf(OUT / "cite-superscript.pdf", superscript)
+
+
 monograph()
 twocol()
 blank()
+citations()
