@@ -106,6 +106,14 @@ pub trait ReaderHost {
 
     fn set_reading_mode(&self, _on: bool) {}
 
+    /// Where in the document the reader was: a 1-based page and how far down it (0 to 1), kept
+    /// beside the progress so reopening can put you back on the line, not just the page.
+    fn position(&self) -> Option<(u32, f32)> {
+        None
+    }
+
+    fn save_position(&self, _page: u32, _fraction: f32) {}
+
     /// Like [`Self::notify`], with one button. Hosts that can't show buttons just notify.
     fn notify_action(&self, message: &str, _label: &str, _action: Rc<dyn Fn()>) {
         self.notify(message);

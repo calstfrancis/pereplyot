@@ -41,7 +41,7 @@ export DISPLAY=":$(tr -d '\n' <"$WORK/display")"
 
 start_app() {
     local file="$1"
-    rm -rf "$WORK/h"
+    [ "${2:-}" = keep ] || rm -rf "$WORK/h"
     mkdir -p "$WORK/h"/{home,data,config,cache}
     # setsid gives the app its own process group so stop_app can take down dbus-run-session
     # and its children together; dbus-run-session does not forward SIGTERM reliably.
@@ -377,6 +377,26 @@ run_pin_case() {
     stop_app
 }
 
+run_resume_case() {
+    start_app "$FX/plain.pdf"
+    local w
+    w="$(reader_window)" || { check "resume: reader window opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
+    sleep 2
+    xdotool windowfocus "$w" 2>/dev/null
+    xdotool mousemove 500 400
+    for _ in 1 2 3 4 5 6; do xdotool click 5; done
+    sleep 7
+    stop_app
+    start_app "$FX/plain.pdf" keep
+    w="$(reader_window)" || { check "resume: reader window reopens" 0; stop_app; return; }
+    sleep 2.8
+    screenshot "$WORK/resume.png"
+    local line
+    line="$(python3 "$HERE/text_bands.py" "$WORK/resume.png" --ink-in 200 86 900 92)"
+    check "resume: reopening puts a 'Continue here' marker where you stopped" "$([ "${line:-0}" -gt 500 ] && echo 1 || echo 0)" "(ink on the marker line: $line)"
+    stop_app
+}
+
 run_epub_case() {
     start_app "$FX/book.epub"
     local w
@@ -442,6 +462,7 @@ want plain && run_pdf_case plain plain.pdf y 2 "Pack my box with five dozen liqu
 want cropbox && run_pdf_case cropbox cropbox.pdf y 2 "Pack my box with five dozen liquor jugs."
 want rotated && run_pdf_case rotated rotated.pdf y 2 "Pack my box with five dozen liquor jugs."
 want history && run_history_case
+want resume && run_resume_case
 want pin && run_pin_case
 want hover && run_hover_case
 want thumbs && run_thumbs_case

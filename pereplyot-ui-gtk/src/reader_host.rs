@@ -37,6 +37,8 @@ struct LocalMeta {
     citation_key: Option<String>,
     #[serde(default, skip_serializing_if = "is_false")]
     reading_mode: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    position: Option<(u32, f32)>,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -168,6 +170,16 @@ impl ReaderHost for LocalReaderHost {
     fn set_reading_mode(&self, on: bool) {
         let mut meta = LocalMeta::load(&self.hash);
         meta.reading_mode = on;
+        meta.save(&self.hash);
+    }
+
+    fn position(&self) -> Option<(u32, f32)> {
+        LocalMeta::load(&self.hash).position
+    }
+
+    fn save_position(&self, page: u32, fraction: f32) {
+        let mut meta = LocalMeta::load(&self.hash);
+        meta.position = Some((page, fraction));
         meta.save(&self.hash);
     }
 
@@ -426,6 +438,16 @@ impl ReaderHost for VaultReaderHost {
         meta.save(&self.hash);
     }
 
+    fn position(&self) -> Option<(u32, f32)> {
+        LocalMeta::load(&self.hash).position
+    }
+
+    fn save_position(&self, page: u32, fraction: f32) {
+        let mut meta = LocalMeta::load(&self.hash);
+        meta.position = Some((page, fraction));
+        meta.save(&self.hash);
+    }
+
     fn citation_key(&self) -> Option<String> {
         Some(self.key.clone())
     }
@@ -531,6 +553,16 @@ impl ReaderHost for ExternalPathReaderHost {
     fn set_reading_mode(&self, on: bool) {
         let mut meta = LocalMeta::load(&self.hash);
         meta.reading_mode = on;
+        meta.save(&self.hash);
+    }
+
+    fn position(&self) -> Option<(u32, f32)> {
+        LocalMeta::load(&self.hash).position
+    }
+
+    fn save_position(&self, page: u32, fraction: f32) {
+        let mut meta = LocalMeta::load(&self.hash);
+        meta.position = Some((page, fraction));
         meta.save(&self.hash);
     }
 

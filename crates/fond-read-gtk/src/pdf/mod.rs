@@ -79,6 +79,7 @@ mod notes;
 mod ocr;
 mod outline_track;
 mod pin;
+mod position;
 mod render;
 mod selection;
 mod thumbnails;
@@ -613,6 +614,7 @@ pub fn show_pdf_reader(
     search::install_search(&ui);
     scan::install_scan(&ui);
     session::install_session(&ui, start_page);
+    position::restore(&ui, start_page);
     // @wiring
 
     warn_if_no_text_layer(host, &reader, blob);

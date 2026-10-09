@@ -15,7 +15,7 @@ struct Pending {
 #[derive(Default)]
 pub(super) struct PinState {
     active: bool,
-    overlay: Option<gtk4::Overlay>,
+    pub(super) overlay: Option<gtk4::Overlay>,
     hint: Option<gtk4::Label>,
     picture: Option<gtk4::Picture>,
     saved_hint: String,

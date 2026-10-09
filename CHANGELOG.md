@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- **Reopening puts you back on the line, and shows you where.** The reader used to remember only
+  the page; it now also remembers how far down it you were (kept with your progress, in this
+  app's own settings), scrolls back to that spot, and draws a hairline with **Continue here**
+  across the top of the view that fades after a few seconds or as soon as you scroll.
+- **The Contents follows you.** The section you are in is highlighted in the Contents list
+  (which scrolls to keep it in view), and its path through the book, "Part I › Ch. 3 › The
+  Two-Source Hypothesis", sits above the page.
 - **Pin a figure.** Right-click a page, choose **Pin a region…** and drag a box round a figure or
   table: it stays on screen as a small floating card while you read on through the pages that
   keep referring to it. Drag a card by its title bar to move it, ✕ to unpin; up to four at

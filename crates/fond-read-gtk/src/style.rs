@@ -21,7 +21,9 @@ pub(crate) fn ensure() {
          .pinned-figure { background-color: @card_bg_color; border-radius: 8px; \
                           box-shadow: 0 2px 10px alpha(black, 0.35); } \
          .figure-grip { background-color: alpha(@window_fg_color, 0.06); border-radius: 8px 8px 0 0; } \
-         .reading-position { background-color: @accent_bg_color; }",
+         .reading-position { background-color: @accent_bg_color; } \
+         .reading-position-label { background-color: @accent_bg_color; color: @accent_fg_color; \
+                                   border-radius: 10px; padding: 1px 10px; }",
     );
     gtk4::style_context_add_provider_for_display(
         &display,
