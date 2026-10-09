@@ -75,7 +75,7 @@ fn percent_decode(s: &str) -> String {
 
 /// `href` (which may end in `#fragment`) resolved against the directory `base_dir` of the file
 /// that holds it, as a zip-style path plus the fragment.
-fn resolve(base_dir: &Path, href: &str) -> (String, Option<String>) {
+pub(super) fn resolve(base_dir: &Path, href: &str) -> (String, Option<String>) {
     let (file, fragment) = href
         .split_once('#')
         .map_or((href, None), |(f, g)| (f, Some(g.to_string())));

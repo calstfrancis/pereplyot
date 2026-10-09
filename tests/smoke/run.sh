@@ -790,6 +790,14 @@ run_scholar_case() {
     sleep 4
     xdotool windowfocus "$w" 2>/dev/null
     screenshot "$WORK/sc-0.png"
+    xdotool mousemove 504 538 click 1
+    sleep 1.5
+    screenshot "$WORK/sc-note.png"
+    local pop
+    pop="$(python3 "$HERE/text_bands.py" "$WORK/sc-note.png" --ink-in 335 575 675 600)"
+    check "scholar: a note reference opens its note in a popover beside it" "$([ "${pop:-0}" -gt 250 ] && echo 1 || echo 0)" "(ink in the popover: $pop)"
+    xdotool key Escape
+    sleep 0.5
     local nav
     nav="$(python3 "$HERE/text_bands.py" "$WORK/sc-0.png" --ink-in 205 15 250 40)"
     check "scholar: the printed page from the book's page list is shown (p. 41)" "$([ "${nav:-0}" -gt 60 ] && echo 1 || echo 0)" "(ink in the page label: $nav)"
@@ -804,6 +812,17 @@ try:
 except Exception:
     print("")'; }
     check "scholar: a highlight remembers the printed page it is on" "$([ "$(labels)" = "41" ] && echo 1 || echo 0)" "(page labels: '$(labels)')"
+    for _ in $(seq 8); do xdotool mousemove 600 400 click 5; done
+    sleep 1
+    xdotool mousemove 575 489 click 1
+    sleep 1.5
+    screenshot "$WORK/sc-note2.png"
+    pop="$(python3 "$HERE/text_bands.py" "$WORK/sc-note2.png" --ink-in 400 510 900 560)"
+    check "scholar: an unmarked superscript link to a note opens it too" "$([ "${pop:-0}" -gt 250 ] && echo 1 || echo 0)" "(ink in the popover: $pop)"
+    xdotool key Escape
+    sleep 0.5
+    for _ in $(seq 8); do xdotool mousemove 600 400 click 4; done
+    sleep 0.5
     for _ in $(seq 22); do xdotool mousemove 600 400 click 5; done
     sleep 2
     screenshot "$WORK/sc-1.png"

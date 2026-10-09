@@ -21,6 +21,7 @@ use crate::{color_swatch, note_edit_widget, popover_button, popover_separator, R
 mod chapter_load;
 mod chapter_nav;
 mod chrome;
+mod footnotes;
 mod highlights;
 mod keys;
 mod open_book;
@@ -395,6 +396,29 @@ pub fn show_epub_reader(
         epub_redo: epub_redo.clone(),
     };
     search_wiring::install_search(&ui);
+    {
+        let reader = reader.clone();
+        let view = web_view.clone();
+        let prev = prev.clone();
+        let next = next.clone();
+        let chapter_label = chapter_label.clone();
+        let bookmark_button = bookmark_button.clone();
+        footnotes::install(
+            &web_view,
+            &reader.clone(),
+            Rc::new(move |target| {
+                epub_go_to(
+                    &reader,
+                    &view,
+                    &prev,
+                    &next,
+                    &chapter_label,
+                    &bookmark_button,
+                    target,
+                )
+            }),
+        );
+    }
     page_label::install_page_label(&reader, &web_view, &page_label);
     keys::install_keys(&ui);
     toggles::install_sidebar_toggles(&ui);

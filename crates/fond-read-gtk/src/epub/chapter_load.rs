@@ -29,6 +29,7 @@ pub(super) fn install_chapter_load(
                 if let Some(script) = script {
                     view.evaluate_javascript(&script, None, None, gio::Cancellable::NONE, |_| {});
                 }
+                footnotes::install_script(view);
                 let scroll_to = pending_scroll.borrow_mut().take();
                 epub_apply_highlights(view, &reader, scroll_to.as_deref());
                 if let Some(percent) = pending_scroll_percent.borrow_mut().take() {
