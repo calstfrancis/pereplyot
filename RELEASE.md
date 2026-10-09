@@ -1,4 +1,4 @@
-# Pereplyot v0.10.0 "Fair Copy"
+# Pereplyot v0.11.0 "Gilt Spine"
 
 Install via Flatpak:
 
@@ -18,26 +18,29 @@ flatpak update io.github.calstfrancis.Pereplyot
 
 ### What's new
 
-**Export your notes as Typst, LaTeX or Markdown, grouped by what your colours mean** — key
-ideas, evidence, connections and problems under their own headings — with citations against a
-bibliography key (`@key[p. 42]` in Typst). "Copy with citation" does the same for a single quote.
+**A Notebook beside your reading.** Press **N** for a page of your own writing, saved as a plain
+Typst file. Drag highlights into it from the Notes list (or press +, or right-click a mark) and
+each becomes a quote block that remembers its document and page — click it to open the passage.
+Link two annotations in any documents with **Connect…**, and export the whole notebook to Typst,
+Markdown or LaTeX with every quote cited, or open it straight in Zerkalo.
 
-**Select first, then mark.** Releasing a text selection offers the four colours, underline,
-strike-out, a note, copy and copy-with-citation, in both PDF and EPUB. The keys 1–4 mark the
-current selection.
+**Search everything you've read.** A new Search tab looks through the text of every document in
+your History and Library and all your notes at once, ranked, with filters for shelf, colour,
+tag and date. The Notes tab becomes a browser: group, select several, recolour, tag, export or
+delete together.
 
-**Organise your Library:** named shelves, adjustable card size, sorting, reading progress on
-each card — and a new Notes tab that searches every highlight and note across all your
-documents, optionally one colour at a time.
+**EPUBs for scholars.** Printed page numbers from the book's page list are shown and cited in
+exports, notes appear in a popover beside the text, a Pages mode turns pages in columns, and
+marks find their place again if the book has changed. Clip a picture to keep it as a figure.
 
-**A Text view for PDFs** that screen readers can read and that you can select and mark from
-the keyboard alone, with resizable text. PDF links now work, with a Back button.
+**Reading mode, in Zerkalo's LaTeX Look.** A PDF re-set as clean text, in New Computer Modern with
+printed page numbers in the left margin and footnotes in the right, figures and tables kept as
+pictures, and Tesseract OCR for scans.
 
-**Safer, lighter.** Your annotations, progress and settings are saved atomically with a
-backup, and damaged files are set aside instead of overwritten. A 300-page PDF now stays
-around 360 MB while you scroll it, down from over 1.7 GB. Scanned PDFs get a warning and a
-one-click OCR (with ocrmypdf installed), and if a file is re-saved or OCR'd Pereplyot offers
-to carry its notes over.
+**More.** Area capture of figures, sticky notes and tags; marks from other readers brought in and
+a copy saved with annotations anywhere; `pereplyot://` links that open a passage; a much faster
+renderer that is sharp on high-DPI screens; Back/Forward through every jump, link previews,
+pinned figures and a split view.
 
 ---
 

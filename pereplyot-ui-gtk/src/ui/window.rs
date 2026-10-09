@@ -17,7 +17,7 @@ use crate::config::{Config, LIBRARY_SIZE_MAX, LIBRARY_SIZE_MIN};
 use crate::library::{Library, LibraryEntry, Sort};
 use crate::reader_host;
 use crate::thumbnail;
-use crate::ui::{menu, notebooks_page, notes_page, toast, Widgets};
+use crate::ui::{menu, notebooks_page, notes_page, search_page, toast, Widgets};
 
 pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
     let window = adw::ApplicationWindow::builder()
@@ -149,6 +149,12 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
     library_tools.append(&library_controls);
 
     let library_page = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    let resurface_strip = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
+    resurface_strip.set_margin_top(12);
+    resurface_strip.set_margin_start(12);
+    resurface_strip.set_margin_end(12);
+    resurface_strip.set_visible(false);
+    library_page.append(&resurface_strip);
     library_page.append(&library_tools);
     library_page.append(&library_empty_hint);
     library_page.append(&library_flow);
@@ -224,6 +230,7 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
         library_empty_hint,
         config: Rc::new(RefCell::new(config)),
         library: RefCell::new(Library::load()),
+        resurface_strip,
     });
 
     {
@@ -312,6 +319,46 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
         });
     }
 
+    {
+        let page = search_page::build(&widgets);
+        view_stack.add_titled_with_icon(
+            &page.root,
+            Some("search"),
+            "Search",
+            "system-search-symbolic",
+        );
+        let page = Rc::new(page);
+        {
+            let page = page.clone();
+            view_stack.connect_visible_child_name_notify(move |stack| {
+                if stack.visible_child_name().as_deref() == Some("search") {
+                    page.shown();
+                    page.entry.grab_focus();
+                }
+            });
+        }
+        {
+            let page = page.clone();
+            let stack = view_stack.clone();
+            let key = gtk4::EventControllerKey::new();
+            key.connect_key_pressed(move |_, keyval, _, modifiers| {
+                if keyval == gtk4::gdk::Key::f
+                    && modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK)
+                {
+                    stack.set_visible_child_name("search");
+                    page.entry.grab_focus();
+                    return glib::Propagation::Stop;
+                }
+                glib::Propagation::Proceed
+            });
+            widgets.window.add_controller(key);
+        }
+        // Index in the background soon after start, so the first search has something to read.
+        let page = page.clone();
+        glib::timeout_add_local_once(std::time::Duration::from_secs(3), move || page.shown());
+    }
+
+    crate::ui::resurface::refresh(&widgets, &widgets.resurface_strip);
     install_notebook_hooks(&widgets);
     install_actions(app, &widgets);
     install_drop_target(&widgets);
@@ -426,6 +473,29 @@ fn install_actions(app: &adw::Application, widgets: &Rc<Widgets>) {
         about_action.connect_activate(move |_, _| show_about(&widgets.window));
     }
     window.add_action(&about_action);
+
+    let resurface_action = gio::SimpleAction::new("resurface", None);
+    {
+        let widgets = widgets.clone();
+        resurface_action.connect_activate(move |_, _| {
+            {
+                let mut c = widgets.config.borrow_mut();
+                c.resurface = !c.resurface;
+                c.save();
+            }
+            let on = widgets.config.borrow().resurface;
+            toast(
+                &widgets,
+                if on {
+                    "Highlights from past reading will show on the Library page"
+                } else {
+                    "Resurfacing is off"
+                },
+            );
+            crate::ui::resurface::refresh(&widgets, &widgets.resurface_strip);
+        });
+    }
+    window.add_action(&resurface_action);
 
     app.set_accels_for_action("win.open", &["<Control>o"]);
 }
@@ -668,7 +738,13 @@ pub fn open_path_with_host(
                 &path,
                 &title,
                 start_annotation.as_deref(),
-                saved_progress,
+                start_page
+                    .map(|chapter| fond_annot::Progress {
+                        page: chapter,
+                        of: 0,
+                        chapter_percent: None,
+                    })
+                    .or(saved_progress),
             );
         }
     }

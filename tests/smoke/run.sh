@@ -767,7 +767,7 @@ run_launcher_case() {
     w="$(launcher_window)" || { check "launcher: window opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
     sleep 1.5
     xdotool windowfocus "$w" 2>/dev/null
-    xdotool mousemove 424 28 click 1
+    xdotool mousemove 348 28 click 1
     sleep 1
     screenshot "$WORK/ln-1.png"
     xdotool mousemove 640 75 click 1
@@ -973,6 +973,89 @@ except Exception as e:
     stop_app
 }
 
+run_search_case() {
+    start_app "$FX/plain.pdf"
+    reader_window >/dev/null || { check "search: reader opens" 0; stop_app; return; }
+    sleep 1
+    stop_app
+    start_app "$FX/scholar.epub" keep
+    reader_window >/dev/null
+    sleep 1
+    stop_app
+    start_app - keep
+    local w
+    w="$(launcher_window)" || { check "search: launcher opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
+    sleep 1.5
+    xdotool windowfocus "$w" 2>/dev/null
+    xdotool key ctrl+f
+    sleep 6
+    xdotool type --delay 40 "sphinx quartz"
+    sleep 2.5
+    screenshot "$WORK/se-0.png"
+    local ink
+    ink="$(python3 "$HERE/text_bands.py" "$WORK/se-0.png" --ink-in 20 175 700 340)"
+    check "search: the text of documents read is searchable, ranked, with the words marked" "$([ "${ink:-0}" -gt 1500 ] && echo 1 || echo 0)" "(ink in the results: $ink)"
+    xdotool key ctrl+a
+    xdotool type --delay 40 "\"covenant liturgy\""
+    sleep 2.5
+    screenshot "$WORK/se-1.png"
+    ink="$(python3 "$HERE/text_bands.py" "$WORK/se-1.png" --ink-in 20 140 700 340)"
+    check "search: an EPUB's chapters and a quoted phrase work too" "$([ "${ink:-0}" -gt 800 ] && echo 1 || echo 0)" "(ink in the results: $ink)"
+    stop_app
+}
+
+run_browser_case() {
+    start_app "$FX/plain.pdf"
+    local w
+    w="$(reader_window)" || { check "browser: reader opens" 0; stop_app; return; }
+    sleep 2
+    xdotool windowfocus "$w" 2>/dev/null
+    screenshot "$WORK/br-0.png"
+    local geom x0 y0 x1 y1
+    geom="$(text_bands "$WORK/br-0.png")"
+    read -r x0 y0 x1 y1 <<<"$geom"
+    local h=$(( (y1 - y0) / 4 )) sy band
+    for band in 1 3; do
+        sy=$(( y0 + band * h + h / 2 ))
+        xdotool mousemove $((x0 - 6)) "$sy" mousedown 1 mousemove $(( (x0 + x1) / 2 )) "$sy" mousemove $((x1 + 6)) "$sy" mouseup 1
+        sleep 1
+        xdotool key 1
+        sleep 1
+    done
+    sleep 1
+    stop_app
+    start_app - keep
+    w="$(launcher_window)" || { check "browser: launcher opens" 0; stop_app; return; }
+    sleep 1.5
+    xdotool windowfocus "$w" 2>/dev/null
+    xdotool mousemove 264 28 click 1
+    sleep 2
+    screenshot "$WORK/br-1.png"
+    xdotool mousemove 41 172 click 1
+    sleep 1
+    screenshot "$WORK/br-2.png"
+    xdotool mousemove 267 115 click 1
+    sleep 1
+    xdotool type --delay 40 "method"
+    xdotool key Return
+    sleep 1.5
+    local tags
+    tags="$(annotations_json | python3 -c 'import sys,json
+try:
+    a=json.load(sys.stdin)["annotations"]
+    print(" ".join(sorted(",".join(x.get("tags", [])) or "-" for x in a)))
+except Exception:
+    print("")')"
+    check "browser: Add tag… tags the selected note and only that one" "$([ "$tags" = "- method" ] && echo 1 || echo 0)" "(tags: '$tags')"
+    screenshot "$WORK/br-3.png"
+    xdotool mousemove 230 75 click 1
+    xdotool type --delay 40 "#method"
+    sleep 1.5
+    screenshot "$WORK/br-4.png"
+    check "browser: #tag in the search narrows the list" "$([ "$(same_region "$WORK/br-3.png" "$WORK/br-4.png" 17 135 200 20)" = 0 ] && echo 1 || echo 0)"
+    stop_app
+}
+
 # Line order in the fixtures: "Page N", fox, Pack, Sphinx.
 want() { [ -z "${SMOKE_CASES:-}" ] || [[ " $SMOKE_CASES " == *" $1 "* ]]; }
 want plain && run_pdf_case plain plain.pdf y 2 "Pack my box with five dozen liquor jugs."
@@ -997,6 +1080,8 @@ want pages && run_pages_case
 want epubnotes && run_epubnotes_case
 want epubimage && run_epubimage_case
 want launcher && run_launcher_case
+want search && run_search_case
+want browser && run_browser_case
 
 echo
 if [ "$FAILS" -eq 0 ]; then echo "smoke: all passed"; else echo "smoke: $FAILS failed"; exit 1; fi

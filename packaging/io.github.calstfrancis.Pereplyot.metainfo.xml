@@ -29,6 +29,10 @@
       <li>A page-thumbnail grid, click-to-turn page zones, and keyboard/mouse page and
       chapter navigation.</li>
       <li>Reading position and annotations remembered per document automatically.</li>
+      <li>A Notebook (a plain Typst file) beside the reading, with quotes you drag in from your
+      notes, connections between annotations, and export with citations.</li>
+      <li>Search across the text of everything you have read and every note, with filters.</li>
+      <li>EPUB printed page numbers, note popovers, a paginated mode, and clipped images.</li>
       <li>A Library with named shelves for documents you keep, separate from History's
       record of everything you've opened, and a Notes tab that searches every annotation.</li>
     </ul>
@@ -55,6 +59,16 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.11.0" date="2026-10-09">
+      <description>
+        <p>0.11.0 "Gilt Spine" — a Notebook beside your reading, with quotes that open their
+        passage and export to Typst, Markdown or LaTeX with citations. Search the text of
+        everything you have read and all your notes at once. EPUBs get printed page numbers,
+        note popovers, a paginated mode and clipped images. Reading mode re-sets a PDF as clean
+        text in Zerkalo's LaTeX Look, with Tesseract OCR for scans. Area capture, links that
+        open a passage, marks imported from other readers, and a much faster renderer.</p>
+      </description>
+    </release>
     <release version="0.10.0" date="2026-10-06">
       <description>
         <p>0.10.0 "Fair Copy" — export notes as Typst, LaTeX or Markdown grouped by colour

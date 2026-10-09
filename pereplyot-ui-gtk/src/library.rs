@@ -102,6 +102,14 @@ impl Library {
         &self.shelves
     }
 
+    /// The shelf a document is on, if it is in the Library and on one.
+    pub fn shelf_of(&self, hash: &str) -> Option<String> {
+        self.entries
+            .iter()
+            .find(|e| e.hash == hash)
+            .and_then(|e| e.shelf.clone())
+    }
+
     pub fn count_on(&self, shelf: &str) -> usize {
         self.entries
             .iter()

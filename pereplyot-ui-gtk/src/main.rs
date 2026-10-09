@@ -7,9 +7,12 @@ mod about;
 mod changelog;
 mod config;
 mod library;
+mod notes_edit;
+mod notes_export;
 mod notes_index;
 mod paths;
 mod reader_host;
+mod search_index;
 mod thumbnail;
 mod ui;
 

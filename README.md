@@ -14,7 +14,7 @@ matches.
 
 ## Status
 
-**v0.10.0 "Fair Copy", released 2026-10-06.** Opening a PDF or EPUB (via Open,
+**v0.11.0 "Gilt Spine", released 2026-10-09** (the paragraph below was v0.10.0 "Fair Copy"; the one after it is what 0.11.0 added). Opening a PDF or EPUB (via Open,
 drag-and-drop, a file manager's "Open With", or **launched by Kartoteka/Sputnik** — see
 below); a Library (cover-grid, opt-in, with named shelves, adjustable card size and sorting), a Notes tab that searches every annotation across documents, and History (every document opened, automatic,
 **shared across Kartoteka and Sputnik too**) shelf; and the reader itself —

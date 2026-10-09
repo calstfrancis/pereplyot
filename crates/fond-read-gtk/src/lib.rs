@@ -30,6 +30,7 @@ pub mod epub;
 pub mod export;
 pub mod fsutil;
 pub mod history;
+pub mod index;
 pub mod interop;
 pub mod notebook;
 pub mod notebook_ui;

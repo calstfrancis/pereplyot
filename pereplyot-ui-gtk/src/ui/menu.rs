@@ -111,6 +111,16 @@ pub fn build(widgets: &Rc<Widgets>) -> gtk4::Popover {
         "Highlight labels…",
         "win.highlight-labels",
     );
+    let resurface = activate_row(
+        widgets,
+        &rows,
+        &popover,
+        "Resurface highlights (on/off)",
+        "win.resurface",
+    );
+    resurface.set_tooltip_text(Some(
+        "Show a few highlights from past reading on the Library page, a different few each day",
+    ));
     activate_row(widgets, &rows, &popover, "About Pereplyot", "win.about");
 
     popover

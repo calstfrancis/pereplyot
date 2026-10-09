@@ -1,6 +1,19 @@
 # Changelog
 
-## [Unreleased]
+## [0.11.0] "Gilt Spine" — 2026-10-09
+
+- **Search everything you've read.** The new *Search* tab (Ctrl+F in the launcher) searches the
+  text of every document in History and the Library — each PDF page and EPUB chapter — together
+  with every note and highlight, ranked, with the matched words in bold. “Quotes” find a phrase,
+  `#tag` finds notes with a tag, and filters narrow by shelf, colour and date. Documents are
+  indexed in the background into a cache that is safe to delete (*Rebuild* reads everything
+  again); results open at the page.
+- **The Notes tab is an annotation browser.** Group by document or tag, tick notes to select
+  several, then recolour, add or remove a tag, export (Typst, Markdown or LaTeX, one cited
+  section per document) or delete them together. Documents open in a reader are left alone and
+  counted, so a bulk change never fights a live copy.
+- **Resurface** (menu, off by default): a few highlights from past reading on the Library page, a
+  different few each day, for revision.
 
 - **The default text look is Zerkalo's "LaTeX Look".** Reading mode and EPUBs are now set in New
   Computer Modern, justified, with indented paragraphs and Zerkalo's tighter rhythm, together with

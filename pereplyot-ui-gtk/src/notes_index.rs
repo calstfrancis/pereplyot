@@ -17,6 +17,7 @@ pub struct NoteHit {
     pub area: bool,
     /// The printed page of an EPUB annotation, when the book has page numbers.
     pub label: Option<String>,
+    pub tags: Vec<String>,
     pub path: Option<PathBuf>,
     pub doc_title: String,
     pub location: String,
@@ -57,7 +58,25 @@ fn matches(hit: &NoteHit, needle: &str) -> bool {
 
 /// Annotations matching `query` (case-insensitive over title, quote and note), optionally only
 /// those in colour `color_hex`, newest documents first.
-pub fn search(library: &Library, query: &str, color_hex: Option<&str>) -> Vec<NoteHit> {
+/// What a search of the annotations is narrowed to.
+#[derive(Debug, Clone, Default)]
+pub struct Filter {
+    /// Words that must be in the quote, the note or the document's title.
+    pub text: String,
+    pub colour: Option<String>,
+    /// Every one of these tags.
+    pub tags: Vec<String>,
+    /// Only the documents on this shelf (`Some(None)` is documents on no shelf).
+    pub shelf: Option<Option<String>>,
+    /// Only this document.
+    pub hash: Option<String>,
+    /// Only annotations made on or after this date (`YYYY-MM-DD`).
+    pub since: Option<String>,
+}
+
+pub fn search_with(library: &Library, filter: &Filter) -> Vec<NoteHit> {
+    let color_hex = filter.colour.as_deref();
+    let query = filter.text.as_str();
     let needle = query.trim().to_lowercase();
     let docs = known_documents(library);
     let Ok(dir) = fs::read_dir(annotations_dir()) else {
@@ -104,9 +123,30 @@ pub fn search(library: &Library, query: &str, color_hex: Option<&str>) -> Vec<No
                     .unwrap_or_else(|| c.to_string()),
                 _ => String::new(),
             };
+            if !filter
+                .tags
+                .iter()
+                .all(|t| a.tags().iter().any(|x| x.eq_ignore_ascii_case(t)))
+            {
+                continue;
+            }
+            if let Some(since) = &filter.since {
+                if a.created.as_deref().missing_or_older(since) {
+                    continue;
+                }
+            }
+            if filter.hash.as_deref().is_some_and(|h| h != hash) {
+                continue;
+            }
+            if let Some(want) = &filter.shelf {
+                if library.shelf_of(&hash) != *want {
+                    continue;
+                }
+            }
             let hit = NoteHit {
                 hash: hash.clone(),
                 area: a.kind == fond_annot::AnnotationKind::Area,
+                tags: a.tags(),
                 label,
                 path: doc.map(|d| d.1.clone()),
                 doc_title: doc_title.clone(),
@@ -130,4 +170,14 @@ pub fn search(library: &Library, query: &str, color_hex: Option<&str>) -> Vec<No
     });
     hits.truncate(MAX_HITS);
     hits
+}
+
+trait OlderThan {
+    fn missing_or_older(self, since: &str) -> bool;
+}
+
+impl OlderThan for Option<&str> {
+    fn missing_or_older(self, since: &str) -> bool {
+        self.map_or(true, |d| d < since)
+    }
 }

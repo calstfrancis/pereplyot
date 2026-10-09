@@ -2,6 +2,8 @@ pub mod highlight_labels;
 pub mod menu;
 pub mod notebooks_page;
 pub mod notes_page;
+pub mod resurface;
+pub mod search_page;
 pub mod styles;
 pub mod window;
 
@@ -31,6 +33,8 @@ pub struct Widgets {
     pub library_empty_hint: gtk4::Label,
     pub config: Rc<RefCell<Config>>,
     pub library: RefCell<Library>,
+    /// The strip of resurfaced highlights above the Library cards.
+    pub resurface_strip: gtk4::Box,
 }
 
 pub fn toast(widgets: &Rc<Widgets>, message: &str) {
