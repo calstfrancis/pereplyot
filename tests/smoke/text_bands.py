@@ -4,6 +4,8 @@
 text_bands.py IMG            -> "x0 y0 x1 y1" of all dark text inside the PDF page area
 text_bands.py IMG --has-search-match -> number of blue search-match pixels in the PDF page area
 text_bands.py IMG --has-highlight -> number of amber highlight pixels in the PDF page area
+text_bands.py IMG --highlight-box -> "x0 y0 x1 y1" of the amber highlight pixels in the PDF page area
+text_bands.py IMG --sidebar-ink -> number of text pixels on the first thumbnail card
 text_bands.py IMG --last-line -> "x0 y0 x1 y1" of the lowest text line in the EPUB content area
 """
 import subprocess, sys
@@ -15,6 +17,33 @@ if "--has-search-match" in sys.argv:
         capture_output=True,
     ).stdout
     print(sum(1 for i in range(0, len(raw) - 2, 3) if raw[i + 2] > 200 and raw[i] < 190 and raw[i + 1] < 215 and raw[i + 2] - raw[i] > 40))
+    sys.exit(0)
+
+if "--sidebar-ink" in sys.argv:
+    W0, H0, X0, Y0 = 190, 400, 20, 100
+    raw = subprocess.run(
+        ["convert", sys.argv[1], "-crop", f"{W0}x{H0}+{X0}+{Y0}", "-colorspace", "Gray", "-depth", "8", "gray:-"],
+        capture_output=True,
+    ).stdout
+    first_card = raw[8 * W0 : 196 * W0]
+    print(sum(1 for v in first_card if v < 215))
+    sys.exit(0)
+
+if "--highlight-box" in sys.argv:
+    W0, H0, X0, Y0 = 800, 645, 100, 95
+    raw = subprocess.run(
+        ["convert", sys.argv[1], "-crop", f"{W0}x{H0}+{X0}+{Y0}", "-depth", "8", "rgb:-"],
+        capture_output=True,
+    ).stdout
+    hits = [
+        divmod(i // 3, W0)
+        for i in range(0, len(raw) - 2, 3)
+        if raw[i] > 200 and 150 < raw[i + 1] < 235 and raw[i + 2] < 170
+    ]
+    if hits:
+        ys = [y for y, _ in hits]
+        xs = [x for _, x in hits]
+        print(X0 + min(xs), Y0 + min(ys), X0 + max(xs), Y0 + max(ys))
     sys.exit(0)
 
 if "--has-highlight" in sys.argv:

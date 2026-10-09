@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- **Edit a highlight in place.** Pointing at a highlight, underline or strikeout outlines it;
+  clicking selects it and shows a handle at each end. Drag a handle to cover more or less
+  text (the new extent follows the pointer, and Ctrl+Z puts it back), press Delete to remove
+  the selected mark, Escape to let go. Selecting text and drawing new marks over an existing
+  one work as before.
 - **Zooming far in on a sharp screen no longer balloons memory.** At high zoom on a 2× display one
   page used to be rendered as a single bitmap of 6500 × 8500 pixels. Pages wider than 3000
   device pixels are now drawn in 1024-pixel tiles, only for the part of the page on screen

@@ -171,6 +171,35 @@ except Exception as e:
         screenshot "$WORK/$label-redone.png"
         on="$(python3 "$HERE/text_bands.py" "$WORK/$label-redone.png" --has-highlight)"
         check "$label: Ctrl+Shift+Z brings it back" "$([ "${on:-0}" -gt 200 ] && [ -n "$(snippets)" ] && echo 1 || echo 0)" "(amber pixels: $on, saved: '$(snippets)')"
+        local hx0 hy0 hx1 hy1 original
+        read -r hx0 hy0 hx1 hy1 <<<"$(python3 "$HERE/text_bands.py" "$WORK/$label-redone.png" --highlight-box)"
+        original="$(snippets)"
+        local hmid=$(( (hy0 + hy1) / 2 ))
+        xdotool mousemove $(( (hx0 + hx1) / 2 )) "$hmid" click 1
+        sleep 0.5
+        xdotool key Delete
+        sleep 1
+        check "$label: selecting a highlight and pressing Delete removes it" "$([ -z "$(snippets)" ] && echo 1 || echo 0)" "(saved: '$(snippets)')"
+        xdotool key ctrl+z
+        sleep 1
+        check "$label: Ctrl+Z brings the deleted highlight back" "$([ "$(snippets)" = "$original" ] && echo 1 || echo 0)" "(saved: '$(snippets)')"
+        xdotool mousemove $(( (hx0 + hx1) / 2 )) "$hmid" click 1
+        sleep 0.5
+        xdotool mousemove "$hx1" "$hy1" mousedown 1
+        sleep 0.2
+        xdotool mousemove $(( hx0 + (hx1 - hx0) * 8 / 10 )) "$hmid"
+        sleep 0.2
+        xdotool mousemove $(( hx0 + (hx1 - hx0) * 6 / 10 )) "$hmid"
+        sleep 0.3
+        xdotool mouseup 1
+        sleep 1
+        local shorter
+        shorter="$(snippets)"
+        check "$label: dragging the end handle shortens the highlight" "$([ -n "$shorter" ] && [ "${#shorter}" -lt "${#original}" ] && [[ "$original" == "$shorter"* ]] && echo 1 || echo 0)" "(was '$original', now '$shorter')"
+        xdotool key ctrl+z
+        sleep 1
+        check "$label: Ctrl+Z puts the highlight back to its full length" "$([ "$(snippets)" = "$original" ] && echo 1 || echo 0)" "(saved: '$(snippets)')"
+        xdotool key Escape
         xdotool key ctrl+z
         sleep 0.5
         xdotool key ctrl+f
@@ -183,6 +212,21 @@ except Exception as e:
         blue="$(python3 "$HERE/text_bands.py" "$WORK/$label-search.png" --has-search-match)"
         check "$label: searching marks the match on the page" "$([ "${blue:-0}" -gt 150 ] && echo 1 || echo 0)" "(blue pixels: $blue)"
     fi
+    stop_app
+}
+
+run_thumbs_case() {
+    start_app "$FX/plain.pdf"
+    local w
+    w="$(reader_window)" || { check "thumbs: reader window opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
+    sleep 2
+    xdotool windowfocus "$w" 2>/dev/null
+    xdotool mousemove 29 28 click 1
+    sleep 2.5
+    screenshot "$WORK/thumbs.png"
+    local ink
+    ink="$(python3 "$HERE/text_bands.py" "$WORK/thumbs.png" --sidebar-ink)"
+    check "thumbs: opening the sidebar fills in the page thumbnails" "$([ "${ink:-0}" -gt 100 ] && echo 1 || echo 0)" "(text pixels on the first thumbnail: $ink)"
     stop_app
 }
 
@@ -250,6 +294,7 @@ want() { [ -z "${SMOKE_CASES:-}" ] || [[ " $SMOKE_CASES " == *" $1 "* ]]; }
 want plain && run_pdf_case plain plain.pdf y 2 "Pack my box with five dozen liquor jugs."
 want cropbox && run_pdf_case cropbox cropbox.pdf y 2 "Pack my box with five dozen liquor jugs."
 want rotated && run_pdf_case rotated rotated.pdf y 2 "Pack my box with five dozen liquor jugs."
+want thumbs && run_thumbs_case
 want epub && run_epub_case
 want mixed && run_mixed_case
 

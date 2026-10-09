@@ -126,6 +126,9 @@ pub(super) fn install_keys(ui: &PdfUi) {
             if focus_in_text_entry {
                 return glib::Propagation::Proceed;
             }
+            if modifiers.is_empty() && mark_edit::handle_key(&reader, keyval) {
+                return glib::Propagation::Stop;
+            }
             if crate::focus_owns_activation_keys(&view_for_focus)
                 && matches!(
                     keyval,

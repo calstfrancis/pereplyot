@@ -145,6 +145,7 @@ pub(super) fn build_drag_preview_overlay(
         move || page_of()
     }));
     overlay.add_overlay(&preview);
+    mark_edit::install(&overlay, reader, page_of.clone());
 
     (overlay, preview, live_rect)
 }

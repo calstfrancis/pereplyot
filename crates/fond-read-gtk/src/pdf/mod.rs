@@ -25,6 +25,7 @@ mod drag_gesture;
 mod drag_preview;
 mod export;
 mod keys;
+mod mark_edit;
 mod mark_layer;
 mod open_pdf;
 mod scrollbar_ticks;
@@ -178,6 +179,10 @@ struct ReaderState {
     /// app's own dark theme can't reach them) — applied to the same final pixel buffer
     /// `rotation` is, in both paged and continuous mode alike.
     tone: Tone,
+    /// Which saved mark is under the pointer or selected, and the outline of one being resized.
+    mark_edit: mark_edit::MarkEdit,
+    /// Every page's mark layer, so a change of hover or selection can repaint them all.
+    mark_layers: Vec<glib::WeakRef<gtk4::DrawingArea>>,
     /// While the zoom is changing, pages keep their last picture (stretched) instead of asking
     /// the render thread for one at every size they pass through.
     defer_renders: bool,

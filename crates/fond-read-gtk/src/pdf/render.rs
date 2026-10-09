@@ -90,6 +90,8 @@ pub(super) fn apply_tone(rgba: &mut [u8], tone: Tone) {
 /// The marks drawn over a page — saved highlights, the current search match and the live
 /// selection — as rectangles in the page's displayed point space.
 pub(super) struct Mark {
+    /// The saved annotation this is, if it is one (a search match or selection has no id).
+    pub id: Option<String>,
     pub kind: fond_doc::MarkupKind,
     pub quads: Vec<[f64; 8]>,
     pub rgba: [u8; 4],
@@ -115,9 +117,14 @@ pub(super) fn marks_for(r: &ReaderState, page: u16, geom: PageGeom) -> Vec<Mark>
             fond_annot::AnnotationKind::Strikeout => fond_doc::MarkupKind::Strikeout,
             _ => continue,
         };
+        let quads = match &r.mark_edit.preview {
+            Some((id, quads)) if *id == a.id => quads,
+            _ => &a.quadpoints,
+        };
         marks.push(Mark {
+            id: Some(a.id.clone()),
             kind,
-            quads: geom.quads_to_display(&a.quadpoints),
+            quads: geom.quads_to_display(quads),
             rgba: annotation_rgba(a.color.as_deref()),
         });
     }
@@ -126,6 +133,7 @@ pub(super) fn marks_for(r: &ReaderState, page: u16, geom: PageGeom) -> Vec<Mark>
     if let Some(current) = r.search_matches.get(r.search_current) {
         if current.page == page {
             marks.push(Mark {
+                id: None,
                 kind: fond_doc::MarkupKind::Highlight,
                 quads: geom.quads_to_display(&current.quads),
                 rgba: SEARCH_MATCH_RGBA,
@@ -135,6 +143,7 @@ pub(super) fn marks_for(r: &ReaderState, page: u16, geom: PageGeom) -> Vec<Mark>
     if let Some((sel_page, _, quads)) = &r.last_selection {
         if *sel_page == page {
             marks.push(Mark {
+                id: None,
                 kind: fond_doc::MarkupKind::Highlight,
                 quads: geom.quads_to_display(quads),
                 rgba: SELECTION_RGBA,
