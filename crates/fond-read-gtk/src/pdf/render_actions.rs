@@ -98,6 +98,10 @@ pub(super) fn build_render_actions(
         let reader = reader.clone();
         let render = render.clone();
         worker.set_sink(Rc::new(move |done: Rendered| {
+            if done.key.thumb {
+                show_thumbnail(&reader.borrow(), done);
+                return;
+            }
             let page = done.key.page;
             accept_render(&mut reader.borrow_mut(), done);
             let (current, wanted_in_continuous) = {

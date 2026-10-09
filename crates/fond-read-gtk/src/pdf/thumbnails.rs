@@ -67,6 +67,8 @@ pub(super) fn build_thumbnails_sidebar(
         pictures.push(picture);
     }
 
+    reader.borrow_mut().thumbnail_pictures = pictures;
+
     let scroll = gtk4::ScrolledWindow::new();
     scroll.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
     scroll.set_child(Some(&rows));
@@ -81,9 +83,7 @@ pub(super) fn build_thumbnails_sidebar(
                 return;
             }
             let current_page = reader.borrow().page;
-            let mut order: Vec<u16> = (0..count).collect();
-            order.sort_by_key(|&p| (p as i32 - current_page as i32).unsigned_abs());
-            schedule_thumbnail_render(reader.clone(), pictures.clone(), order, 0);
+            request_thumbnails(&reader.borrow(), current_page);
 
             // Jump the list roughly to the current page on first show, rather than always
             // opening at the top — exact scrolling would need each row's real allocation,
@@ -104,31 +104,41 @@ pub(super) fn build_thumbnails_sidebar(
     (scroll, trigger)
 }
 
-/// One tick of `show_thumbnail_grid`'s lazy rasterization — see that function's doc comment.
-pub(super) fn schedule_thumbnail_render(
-    reader: Rc<RefCell<ReaderState>>,
-    pictures: Vec<gtk4::Picture>,
-    order: Vec<u16>,
-    idx: usize,
-) {
-    let Some(&page) = order.get(idx) else {
+/// Queue every page's thumbnail on the render thread, nearest the current page first.
+fn request_thumbnails(r: &ReaderState, current_page: u16) {
+    let Some(worker) = &r.worker else {
         return;
     };
-    if let Some(picture) = pictures.get(page as usize) {
-        let r = reader.borrow();
-        if let Some(rp) = render_open(&r, page, THUMBNAIL_GRID_WIDTH) {
-            let data = glib::Bytes::from(&rp.rgba);
-            let texture = gdk::MemoryTexture::new(
-                rp.width as i32,
-                rp.height as i32,
-                gdk::MemoryFormat::R8g8b8a8,
-                &data,
-                (rp.width * 4) as usize,
-            );
-            picture.set_paintable(Some(&texture));
-        }
+    for page in 0..r.count {
+        let distance = (page as i32 - current_page as i32).unsigned_abs();
+        worker.submit(Job {
+            key: RenderKey {
+                page,
+                width: THUMBNAIL_GRID_WIDTH,
+                rotation: 0,
+                tone: Tone::Normal,
+                thumb: true,
+            },
+            priority: THUMBNAIL_PRIORITY + distance,
+        });
     }
-    glib::idle_add_local_once(move || {
-        schedule_thumbnail_render(reader, pictures, order, idx + 1);
-    });
 }
+
+/// Put a finished thumbnail on its row.
+pub(super) fn show_thumbnail(r: &ReaderState, done: Rendered) {
+    let Some(picture) = r.thumbnail_pictures.get(done.key.page as usize) else {
+        return;
+    };
+    let stride = done.width as usize * 4;
+    let texture = gdk::MemoryTexture::new(
+        done.width as i32,
+        done.height as i32,
+        gdk::MemoryFormat::R8g8b8a8,
+        &glib::Bytes::from_owned(done.rgba),
+        stride,
+    );
+    picture.set_paintable(Some(&texture));
+}
+
+/// Page jobs always run before thumbnails.
+const THUMBNAIL_PRIORITY: u32 = 1_000_000;

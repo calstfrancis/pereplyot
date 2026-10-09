@@ -87,25 +87,6 @@ pub(super) fn apply_tone(rgba: &mut [u8], tone: Tone) {
     }
 }
 
-pub(super) fn render_open(
-    r: &ReaderState,
-    page: u16,
-    width: u32,
-) -> Option<fond_doc::RenderedPage> {
-    let Some(doc) = &r.doc else {
-        return fond_doc::render_page(r.pdfium, r.bytes(), page, width).ok();
-    };
-    let pdf_page = doc.pages().get(page).ok()?;
-    let config = pdfium_render::prelude::PdfRenderConfig::new()
-        .set_target_width(width.max(1) as pdfium_render::prelude::Pixels);
-    let bitmap = pdf_page.render_with_config(&config).ok()?;
-    Some(fond_doc::RenderedPage {
-        width: bitmap.width() as u32,
-        height: bitmap.height() as u32,
-        rgba: bitmap.as_rgba_bytes(),
-    })
-}
-
 /// The marks drawn over a page — saved highlights, the current search match and the live
 /// selection — as rectangles in the page's displayed point space.
 pub(super) struct Mark {
@@ -193,6 +174,7 @@ pub(super) fn paint_page(
         width: unrotated_w * scale,
         rotation: r.rotation,
         tone: r.tone,
+        thumb: false,
     };
     mark_layer::redraw_beside(picture);
     if let Some(texture) = r.textures.get(&key) {

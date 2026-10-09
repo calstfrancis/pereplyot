@@ -90,6 +90,7 @@ pub(super) fn open_pdf(
         rotation: 0,
         tone: Tone::Normal,
         tick_layer: None,
+        thumbnail_pictures: Vec::new(),
         scanned: false,
         layout_page: start_page,
         textures: TextureCache::new(96 * 1024 * 1024),

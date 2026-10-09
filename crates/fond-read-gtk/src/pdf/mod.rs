@@ -184,6 +184,8 @@ struct ReaderState {
     /// Marks on the continuous view's scrollbar edge, repainted when annotations or search
     /// matches change.
     tick_layer: Option<gtk4::DrawingArea>,
+    /// The sidebar's thumbnail pictures, filled in as the render thread delivers them.
+    thumbnail_pictures: Vec<gtk4::Picture>,
     /// Bookmarked pages, 1-based (`Annotation.page` numbering) — loaded once at open,
     /// rewritten to the host on every add/remove, same lifecycle as `annotations`. Kept
     /// sorted so the Notes sidebar's "Bookmarks" section lists them in page order.

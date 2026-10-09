@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- **Thumbnails are drawn by the render thread.** The sidebar's thumbnails used to be rasterised
+  one per idle tick on the window thread, so opening the Thumbnails tab on a long book made
+  scrolling stutter while they filled in. They now queue behind page renders on the render
+  thread, nearest the current page first, and never delay the page you are reading.
 - **Dark mode that keeps pictures looking right, plus Sepia.** The night button used to invert
   every colour, which turned photographs and coloured figures into negatives and left
   highlights the wrong colour. It now cycles Normal, Dark and Sepia: Dark flips lightness

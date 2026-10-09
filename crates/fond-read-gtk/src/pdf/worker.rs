@@ -41,6 +41,9 @@ pub(super) struct RenderKey {
     pub width: u32,
     pub rotation: u16,
     pub tone: Tone,
+    /// A small page for the sidebar, not a reading surface: queued behind every page job and
+    /// never discarded in favour of one.
+    pub thumb: bool,
 }
 
 impl RenderKey {
@@ -122,8 +125,10 @@ impl RenderWorker {
         }
         // A new view (zoom, rotation, scale, colours) makes everything queued for the old one
         // pointless, and a newer picture of the same page replaces an older one.
-        q.jobs
-            .retain(|j| j.key.same_view(&job.key) && j.key.page != job.key.page);
+        q.jobs.retain(|j| {
+            j.key.thumb != job.key.thumb
+                || (j.key.same_view(&job.key) && j.key.page != job.key.page)
+        });
         q.jobs.push(job);
         self.shared.wake.notify_one();
     }

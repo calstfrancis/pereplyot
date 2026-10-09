@@ -57,6 +57,7 @@ mod tests {
             width: 100,
             rotation: 0,
             tone: Tone::Normal,
+            thumb: false,
         }
     }
 
