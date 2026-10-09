@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+- **Ctrl+K command palette**, in the PDF reader, the EPUB reader and the launcher: type to run any
+  command, jump to a heading or contents entry, to a note (it flashes), or to a page — by number
+  or, in a PDF or EPUB with printed pages, by its printed label — and in the launcher to any tab,
+  recent document or notebook. *Posture: Read / Study / Synthesise* are palette commands that set
+  the sidebars and the notebook in one go.
+- **Caret browsing on the page (F7).** Arrow keys move a caret over the page's own text,
+  Ctrl+arrows by word, Home/End by line, Up/Down by line keeping the column, carrying on across
+  pages; Shift extends a selection, and 1–4 mark it — so a PDF can be read and marked from the
+  keyboard alone, on the real page.
+- **Textures on highlights** (menu, off by default): each of the four reading colours gets its own
+  hatching or dots — in the PDF page and in EPUBs — so they can be told apart without colour.
+
 ## [0.11.0] "Gilt Spine" — 2026-10-09
 
 - **Search everything you've read.** The new *Search* tab (Ctrl+F in the launcher) searches the

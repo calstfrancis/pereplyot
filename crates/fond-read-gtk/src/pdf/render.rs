@@ -152,6 +152,16 @@ pub(super) fn marks_for(r: &ReaderState, page: u16, geom: PageGeom) -> Vec<Mark>
             });
         }
     }
+    if let Some(caret) = r.caret.as_ref().filter(|c| c.page == page) {
+        marks.push(Mark {
+            id: None,
+            kind: fond_doc::MarkupKind::Highlight,
+            quads: geom.quads_to_display(&[caret.quad()]),
+            rgba: [20, 20, 20, 235],
+            shape: shapes::Shape::Text,
+            has_note: false,
+        });
+    }
     if let Some((sel_page, _, quads)) = &r.last_selection {
         if *sel_page == page {
             marks.push(Mark {

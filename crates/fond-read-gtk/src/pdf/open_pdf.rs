@@ -78,6 +78,7 @@ pub(super) fn open_pdf(
         page_geoms: RefCell::new(std::collections::HashMap::new()),
         draw_kind: None,
         last_selection: None,
+        caret: None,
         search_matches: Vec::new(),
         search_current: 0,
         draw_color: crate::palette::HIGHLIGHT_COLORS[0].hex.to_string(),

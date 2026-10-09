@@ -56,6 +56,67 @@ thread_local! {
     static LABELS: RefCell<[Option<String>; 4]> = const { RefCell::new([None, None, None, None]) };
 }
 
+/// A texture laid over a mark, so its colour is not the only thing that tells it apart.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Pattern {
+    SlashUp,
+    SlashDown,
+    Dots,
+    Cross,
+}
+
+thread_local! {
+    static PATTERNS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether marks carry a texture as well as a colour (for readers who cannot rely on colour).
+pub fn set_patterns(on: bool) {
+    PATTERNS.with(|p| p.set(on));
+}
+
+pub fn patterns_on() -> bool {
+    PATTERNS.with(|p| p.get())
+}
+
+fn hex_rgb(hex: &str) -> Option<[i32; 3]> {
+    let h = hex.trim_start_matches('#');
+    if h.len() < 6 {
+        return None;
+    }
+    let v = |i: usize| i32::from_str_radix(&h[i..i + 2], 16).ok();
+    Some([v(0)?, v(2)?, v(4)?])
+}
+
+/// The texture of the reading colour nearest `rgb` (one per meaning), if it is one of the four.
+pub fn pattern_of_rgb(rgb: [u8; 3]) -> Option<Pattern> {
+    const PATTERNS: [Pattern; 4] = [
+        Pattern::SlashUp,
+        Pattern::SlashDown,
+        Pattern::Dots,
+        Pattern::Cross,
+    ];
+    HIGHLIGHT_COLORS
+        .iter()
+        .enumerate()
+        .filter_map(|(i, c)| {
+            let t = hex_rgb(c.hex)?;
+            let d: i32 = (0..3).map(|k| (t[k] - rgb[k] as i32).abs()).sum();
+            (d < 45).then_some((d, PATTERNS[i]))
+        })
+        .min_by_key(|(d, _)| *d)
+        .map(|(_, p)| p)
+}
+
+/// The same texture as a CSS `background-image`, for the EPUB reader.
+pub fn pattern_css(p: Pattern) -> &'static str {
+    match p {
+        Pattern::SlashUp => "repeating-linear-gradient(45deg, rgba(0,0,0,.4) 0 1px, transparent 1px 5px)",
+        Pattern::SlashDown => "repeating-linear-gradient(-45deg, rgba(0,0,0,.4) 0 1px, transparent 1px 5px)",
+        Pattern::Dots => "radial-gradient(rgba(0,0,0,.5) 1px, transparent 1.6px)",
+        Pattern::Cross => "repeating-linear-gradient(45deg, rgba(0,0,0,.4) 0 1px, transparent 1px 5px), repeating-linear-gradient(-45deg, rgba(0,0,0,.4) 0 1px, transparent 1px 5px)",
+    }
+}
+
 /// Override the colours' labels, in [`HIGHLIGHT_COLORS`] order. A blank entry falls back to
 /// that colour's default. Tooltips read this at hover time, so already-open readers pick up a
 /// change without being rebuilt.
@@ -239,4 +300,22 @@ pub fn palette_widget(
         row.append(&button);
     }
     row
+}
+
+#[cfg(test)]
+mod pattern_tests {
+    use super::*;
+
+    #[test]
+    fn each_reading_colour_has_its_own_texture_and_other_colours_none() {
+        let mut seen = Vec::new();
+        for c in HIGHLIGHT_COLORS.iter() {
+            let v = hex_rgb(c.hex).unwrap();
+            let p = pattern_of_rgb([v[0] as u8, v[1] as u8, v[2] as u8]).unwrap();
+            assert!(!seen.contains(&p));
+            seen.push(p);
+        }
+        assert_eq!(pattern_of_rgb([255, 255, 255]), None);
+        assert_eq!(pattern_of_rgb([0, 0, 0]), None);
+    }
 }

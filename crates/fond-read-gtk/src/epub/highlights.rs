@@ -32,6 +32,9 @@ pub(super) struct EpubHighlightPayload<'a> {
     /// Highlight colour (hex) — meaningless for underline/strikeout, which use the text colour.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) color: Option<&'a str>,
+    /// A CSS texture, when marks carry one besides their colour.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) pattern: Option<&'static str>,
 }
 
 /// The chapter's text as the script that wraps marks sees it.
@@ -89,6 +92,10 @@ pub(super) const EPUB_APPLY_HIGHLIGHTS_FN: &str = r#"(function(annotations, scro
       mark.style.textDecorationColor = a.color || 'currentColor';
     } else {
       mark.style.backgroundColor = a.color ? (a.color + '59') : 'rgba(246, 195, 68, 0.35)';
+      if (a.pattern) {
+        mark.style.backgroundImage = a.pattern;
+        mark.style.backgroundSize = '5px 5px';
+      }
     }
     try {
       range.surroundContents(mark);
@@ -252,6 +259,7 @@ pub(super) fn epub_apply_highlights(
                             end: *end,
                             kind: a.kind,
                             color: a.color.as_deref(),
+                            pattern: pattern_for(a),
                         })
                     })
                     .collect();
@@ -590,4 +598,13 @@ pub(super) fn install_selection_popover(
         });
         web_view.add_controller(click);
     }
+}
+
+fn pattern_for(a: &fond_annot::Annotation) -> Option<&'static str> {
+    if !crate::palette::patterns_on() || a.kind != fond_annot::AnnotationKind::Highlight {
+        return None;
+    }
+    let hex = a.color.as_deref()?.trim_start_matches('#');
+    let v = |i: usize| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok();
+    crate::palette::pattern_of_rgb([v(0)?, v(2)?, v(4)?]).map(crate::palette::pattern_css)
 }

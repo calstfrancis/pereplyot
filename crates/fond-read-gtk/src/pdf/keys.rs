@@ -57,6 +57,15 @@ pub(super) fn install_keys(ui: &PdfUi) {
             if !is_pane && focus_in_pane(&view_for_focus) {
                 return glib::Propagation::Proceed;
             }
+            if keyval == gdk::Key::F7 {
+                caret::toggle(&ui_for_palette);
+                return glib::Propagation::Stop;
+            }
+            if caret::is_active(&ui_for_palette.reader)
+                && caret::handle_key(&ui_for_palette, keyval, modifiers)
+            {
+                return glib::Propagation::Stop;
+            }
             if matches!(keyval, gdk::Key::k | gdk::Key::K)
                 && modifiers.contains(gdk::ModifierType::CONTROL_MASK)
             {

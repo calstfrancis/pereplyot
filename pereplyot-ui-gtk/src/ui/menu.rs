@@ -121,6 +121,16 @@ pub fn build(widgets: &Rc<Widgets>) -> gtk4::Popover {
     resurface.set_tooltip_text(Some(
         "Show a few highlights from past reading on the Library page, a different few each day",
     ));
+    let patterns = activate_row(
+        widgets,
+        &rows,
+        &popover,
+        "Textures on highlights (on/off)",
+        "win.patterns",
+    );
+    patterns.set_tooltip_text(Some(
+        "Give each of the four colours its own hatching or dots, so they can be told apart without colour",
+    ));
     activate_row(widgets, &rows, &popover, "About Pereplyot", "win.about");
 
     popover

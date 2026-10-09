@@ -17,6 +17,7 @@ use crate::page_geom::PageGeom;
 use crate::{color_swatch, note_edit_widget, popover_button, popover_separator, ReaderHost};
 
 mod bookmark;
+mod caret;
 mod command_palette;
 mod context_click;
 mod context_menu;
@@ -137,6 +138,8 @@ struct ReaderState {
     /// highlighted after the drag ends instead of the selection just vanishing (see
     /// `SELECTION_RGBA`). Cleared once consumed by a note, or replaced by the next selection.
     last_selection: Option<(u16, String, Vec<[f64; 8]>)>,
+    /// Caret browsing (F7), while it is on.
+    caret: Option<caret::Caret>,
     /// Every match from the last search (empty if none run yet, or the last search found
     /// nothing), and which one is "current" — `render()` blends that one's quads in a
     /// distinct colour when the current page matches, and prev/next-match cycle this index.

@@ -27,6 +27,8 @@ pub struct Config {
     pub library_shelf: String,
     /// Show a few highlights from past reading on the Library page.
     pub resurface: bool,
+    /// Texture each reading colour as well as colouring it.
+    pub patterns: bool,
 }
 
 pub const LIBRARY_SIZE_MIN: u32 = 80;
@@ -41,6 +43,7 @@ impl Default for Config {
             library_sort: "added".to_string(),
             library_shelf: String::new(),
             resurface: false,
+            patterns: false,
         }
     }
 }

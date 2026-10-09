@@ -29,6 +29,7 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
 
     app.style_manager().set_color_scheme(config.color_scheme());
     fond_read_gtk::palette::set_highlight_labels(&config.highlight_labels);
+    fond_read_gtk::palette::set_patterns(config.patterns);
 
     // The shared reader host window (`fond-read-gtk`, also embedded in Kartoteka/Sputnik)
     // has no version of its own to show — only Pereplyot's makes sense here, so this app
@@ -400,6 +401,7 @@ fn show_palette(widgets: &Rc<Widgets>, stack: &adw::ViewStack) {
     list.push(action("Open a file…", "Ctrl+O", "open"));
     list.push(action("Highlight labels…", "", "highlight-labels"));
     list.push(action("Resurface highlights (on/off)", "", "resurface"));
+    list.push(action("Textures on highlights (on/off)", "", "patterns"));
     list.push(action("About Pereplyot", "", "about"));
     for (label, name) in [("System", "system"), ("Light", "light"), ("Dark", "dark")] {
         let window = widgets.window.clone();
@@ -594,6 +596,29 @@ fn install_actions(app: &adw::Application, widgets: &Rc<Widgets>) {
         });
     }
     window.add_action(&resurface_action);
+
+    let patterns_action = gio::SimpleAction::new("patterns", None);
+    {
+        let widgets = widgets.clone();
+        patterns_action.connect_activate(move |_, _| {
+            let on = {
+                let mut c = widgets.config.borrow_mut();
+                c.patterns = !c.patterns;
+                c.save();
+                c.patterns
+            };
+            fond_read_gtk::palette::set_patterns(on);
+            toast(
+                &widgets,
+                if on {
+                    "Highlights now carry a texture as well as a colour (shown as each page is drawn again)"
+                } else {
+                    "Highlight textures are off"
+                },
+            );
+        });
+    }
+    window.add_action(&patterns_action);
 
     app.set_accels_for_action("win.open", &["<Control>o"]);
 }

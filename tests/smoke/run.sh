@@ -1088,6 +1088,61 @@ run_palette_case() {
     stop_app
 }
 
+run_patterns_case() {
+    local variant label
+    for variant in off on; do
+        rm -rf "$WORK/h"
+        mkdir -p "$WORK/h/config/pereplyot"
+        [ "$variant" = on ] && echo '{"patterns": true}' >"$WORK/h/config/pereplyot/config.json"
+        start_app "$FX/plain.pdf" keep
+        local w
+        w="$(reader_window)" || { check "patterns: reader opens" 0; stop_app; return; }
+        sleep 2
+        xdotool windowfocus "$w" 2>/dev/null
+        screenshot "$WORK/pt-base.png"
+        local geom x0 y0 x1 y1
+        geom="$(text_bands "$WORK/pt-base.png")"
+        read -r x0 y0 x1 y1 <<<"$geom"
+        local h=$(( (y1 - y0) / 4 )) sy
+        sy=$(( y0 + 2 * h + h / 2 ))
+        xdotool mousemove $((x0 - 6)) "$sy" mousedown 1 mousemove $(( (x0 + x1) / 2 )) "$sy" mousemove $((x1 + 6)) "$sy" mouseup 1
+        sleep 1
+        xdotool key 1
+        sleep 1.5
+        screenshot "$WORK/pt-$variant.png"
+        stop_app
+    done
+    check "patterns: with textures on, a highlight is drawn with hatching as well as colour" "$([ "$(same_region "$WORK/pt-off.png" "$WORK/pt-on.png" 95 240 360 28)" = 0 ] && echo 1 || echo 0)"
+}
+
+run_caret_case() {
+    start_app "$FX/plain.pdf"
+    local w
+    w="$(reader_window)" || { check "caret: reader opens" 0; stop_app; return; }
+    sleep 2
+    xdotool windowfocus "$w" 2>/dev/null
+    xdotool key F7
+    sleep 1
+    screenshot "$WORK/ca-0.png"
+    for _ in $(seq 6); do xdotool key shift+Right; done
+    sleep 0.6
+    screenshot "$WORK/ca-1.png"
+    check "caret: Shift+arrows select on the page itself" "$([ "$(same_region "$WORK/ca-0.png" "$WORK/ca-1.png" 95 185 400 30)" = 0 ] && echo 1 || echo 0)"
+    xdotool key 1
+    sleep 1
+    local got
+    got="$(snippets)"
+    check "caret: 1 marks what the caret selected" "$([[ "$got" == "Page 1"* ]] && echo 1 || echo 0)" "(got '$got')"
+    xdotool key Down
+    sleep 0.5
+    xdotool key shift+End
+    xdotool key 2
+    sleep 1
+    got="$(snippets)"
+    check "caret: Down, then Shift+End, selects to the end of that line" "$([[ "$got" == *"Pack my box with five dozen liquor jugs"* ]] && echo 1 || echo 0)" "(got '$got')"
+    stop_app
+}
+
 # Line order in the fixtures: "Page N", fox, Pack, Sphinx.
 want() { [ -z "${SMOKE_CASES:-}" ] || [[ " $SMOKE_CASES " == *" $1 "* ]]; }
 want plain && run_pdf_case plain plain.pdf y 2 "Pack my box with five dozen liquor jugs."
@@ -1115,6 +1170,8 @@ want launcher && run_launcher_case
 want search && run_search_case
 want browser && run_browser_case
 want palette && run_palette_case
+want caret && run_caret_case
+want patterns && run_patterns_case
 
 echo
 if [ "$FAILS" -eq 0 ]; then echo "smoke: all passed"; else echo "smoke: $FAILS failed"; exit 1; fi

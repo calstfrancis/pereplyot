@@ -30,6 +30,31 @@ pub(super) fn open(ui: &PdfUi) {
             run,
         });
     };
+    for p in crate::posture::Posture::ALL {
+        let notes = ui.notes_toggle.clone();
+        let notebook = ui.notebook_toggle.clone();
+        let sidebar = ui.sidebar_toggle.clone();
+        add(
+            &format!("Posture: {}", p.name()),
+            p.tooltip(),
+            Rc::new(move || {
+                let (n, b) = p.panes();
+                if p == crate::posture::Posture::Read {
+                    sidebar.set_active(false);
+                }
+                notes.set_active(n);
+                notebook.set_active(b);
+            }),
+        );
+    }
+    add(
+        "Caret browsing on the page (select with the keyboard)",
+        "F7",
+        {
+            let ui = ui.clone();
+            Rc::new(move || caret::toggle(&ui))
+        },
+    );
     add("Reading mode", "T", Rc::new(toggled(&ui.text_toggle)));
     add("Notebook", "N", Rc::new(toggled(&ui.notebook_toggle)));
     add("Notes sidebar", "", Rc::new(toggled(&ui.notes_toggle)));

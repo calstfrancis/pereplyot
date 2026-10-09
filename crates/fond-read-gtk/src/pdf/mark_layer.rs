@@ -82,6 +82,19 @@ pub(super) fn build_mark_layer(
                         cr.rectangle(x0, y0, x1 - x0, y1 - y0);
                     }
                     let _ = cr.fill();
+                    if crate::palette::patterns_on() && mark.kind == fond_doc::MarkupKind::Highlight
+                    {
+                        if let Some(pattern) = crate::palette::pattern_of_rgb([
+                            mark.rgba[0],
+                            mark.rgba[1],
+                            mark.rgba[2],
+                        ]) {
+                            for quad in &mark.quads {
+                                let rect = band(mark.kind, quad_rect(quad, geom, uw, uh));
+                                hatch(cr, rotate_rect(rect, rotation, uw, uh), pattern);
+                            }
+                        }
+                    }
                 }
             }
             if mark.has_note {
@@ -235,6 +248,57 @@ fn rotate_rect(
     let (ax, ay) = point(x0, y0);
     let (bx, by) = point(x1, y1);
     (ax.min(bx), ay.min(by), ax.max(bx), ay.max(by))
+}
+
+/// Lines or dots over `rect`, so a mark's colour is not the only thing that identifies it.
+fn hatch(
+    cr: &gtk4::cairo::Context,
+    (x0, y0, x1, y1): (f64, f64, f64, f64),
+    pattern: crate::palette::Pattern,
+) {
+    use crate::palette::Pattern::*;
+    let _ = cr.save();
+    cr.rectangle(x0, y0, x1 - x0, y1 - y0);
+    cr.clip();
+    cr.set_source_rgba(0.0, 0.0, 0.0, 0.3);
+    cr.set_line_width(1.0);
+    let step = 5.0;
+    let h = y1 - y0;
+    let slash = |cr: &gtk4::cairo::Context, up: bool| {
+        let mut x = x0 - h;
+        while x < x1 {
+            if up {
+                cr.move_to(x, y1);
+                cr.line_to(x + h, y0);
+            } else {
+                cr.move_to(x, y0);
+                cr.line_to(x + h, y1);
+            }
+            x += step;
+        }
+        let _ = cr.stroke();
+    };
+    match pattern {
+        SlashUp => slash(cr, true),
+        SlashDown => slash(cr, false),
+        Cross => {
+            slash(cr, true);
+            slash(cr, false);
+        }
+        Dots => {
+            let mut y = y0 + step / 2.0;
+            while y < y1 {
+                let mut x = x0 + step / 2.0;
+                while x < x1 {
+                    cr.arc(x, y, 0.9, 0.0, std::f64::consts::TAU);
+                    let _ = cr.fill();
+                    x += step;
+                }
+                y += step;
+            }
+        }
+    }
+    let _ = cr.restore();
 }
 
 #[cfg(test)]
