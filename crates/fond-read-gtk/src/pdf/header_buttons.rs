@@ -13,6 +13,8 @@ pub(super) struct HeaderButtonsParts {
     pub(super) header_start: gtk4::Box,
     pub(super) header_end: gtk4::Box,
     pub(super) more_button: gtk4::MenuButton,
+    pub(super) split_side_button: gtk4::Button,
+    pub(super) split_stack_button: gtk4::Button,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -119,9 +121,15 @@ pub(super) fn build_header_buttons(
     header_end.append(&continuous_toggle);
     header_end.append(&palette);
     header_end.append(&style_drop);
+    // Two ways to split the document into a second pane of itself (see `split.rs`); the menu rows
+    // below press these.
+    let split_side_button = gtk4::Button::new();
+    let split_stack_button = gtk4::Button::new();
     let more_button = gtk4::MenuButton::new();
     more_button.set_icon_name("view-more-symbolic");
-    more_button.set_tooltip_text(Some("More: note, page numbering, export, new window"));
+    more_button.set_tooltip_text(Some(
+        "More: note, page numbering, export, split view, new window",
+    ));
     more_button.add_css_class("flat");
     {
         let rows = gtk4::Box::new(Orientation::Vertical, 2);
@@ -134,6 +142,8 @@ pub(super) fn build_header_buttons(
             ("Add note on this page…", note_button.clone()),
             ("Set page numbering…", page_num_button.clone()),
             ("Export notes…", export_button.clone()),
+            ("Split view: side by side", split_side_button.clone()),
+            ("Split view: top and bottom", split_stack_button.clone()),
             ("Open in a new window", popout_button.clone()),
         ] {
             let row = popover_button(label, false);
@@ -161,5 +171,7 @@ pub(super) fn build_header_buttons(
         header_start,
         header_end,
         more_button,
+        split_side_button,
+        split_stack_button,
     }
 }

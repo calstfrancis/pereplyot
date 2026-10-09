@@ -20,6 +20,30 @@ if "--has-search-match" in sys.argv:
     print(sum(1 for i in range(0, len(raw) - 2, 3) if raw[i + 2] > 200 and raw[i] < 190 and raw[i + 1] < 215 and raw[i + 2] - raw[i] > 40))
     sys.exit(0)
 
+if "--ink-box" in sys.argv:
+    i = sys.argv.index("--ink-box")
+    x0, y0, x1, y1 = (int(v) for v in sys.argv[i + 1 : i + 5])
+    W, H = x1 - x0, y1 - y0
+    raw = subprocess.run(
+        ["convert", sys.argv[1], "-crop", f"{W}x{H}+{x0}+{y0}", "-colorspace", "Gray", "-depth", "8", "gray:-"],
+        capture_output=True,
+    ).stdout
+    rows = [y for y in range(H) if any(raw[y * W + x] < 90 for x in range(W))]
+    if rows:
+        cols = [x for x in range(W) if any(raw[y * W + x] < 90 for y in range(rows[0], rows[-1] + 1))]
+        print(x0 + cols[0], y0 + rows[0], x0 + cols[-1], y0 + rows[-1])
+    sys.exit(0)
+
+if "--amber-in" in sys.argv:
+    i = sys.argv.index("--amber-in")
+    x0, y0, x1, y1 = (int(v) for v in sys.argv[i + 1 : i + 5])
+    raw = subprocess.run(
+        ["convert", sys.argv[1], "-crop", f"{x1 - x0}x{y1 - y0}+{x0}+{y0}", "-depth", "8", "rgb:-"],
+        capture_output=True,
+    ).stdout
+    print(sum(1 for k in range(0, len(raw) - 2, 3) if raw[k] > 200 and 150 < raw[k + 1] < 235 and raw[k + 2] < 170))
+    sys.exit(0)
+
 if "--ink-in" in sys.argv:
     i = sys.argv.index("--ink-in")
     x0, y0, x1, y1 = (int(v) for v in sys.argv[i + 1 : i + 5])

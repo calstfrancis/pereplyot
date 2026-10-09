@@ -63,6 +63,10 @@ pub(super) fn install_session(ui: &PdfUi, start_page: u16) {
                 of: count,
                 chapter_percent: None,
             });
+            let hooks = std::mem::take(&mut reader.borrow_mut().close_hooks);
+            for hook in hooks {
+                hook();
+            }
             reader.borrow().store.clear_listeners();
             {
                 let mut r = reader.borrow_mut();

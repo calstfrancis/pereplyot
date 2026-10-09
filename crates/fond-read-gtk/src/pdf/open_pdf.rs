@@ -15,6 +15,7 @@ pub(super) fn open_pdf(
     pdf_hash: &str,
     blob: &std::path::Path,
     start_page: u32,
+    shared_store: Option<Rc<AnnotationStore>>,
 ) -> Option<OpenedPdf> {
     let pdfium = match crate::pdfium::get() {
         Ok(p) => p,
@@ -56,7 +57,9 @@ pub(super) fn open_pdf(
         .map(|ov| ov.apply(count))
         .unwrap_or_else(|| vec![None; count as usize]);
 
-    let store = AnnotationStore::new(host, Some(pdf_hash.to_string()));
+    let store = shared_store
+        .clone()
+        .unwrap_or_else(|| AnnotationStore::new(host, Some(pdf_hash.to_string())));
     let mut bookmarks = host.load_bookmarks();
     bookmarks.sort_unstable();
 
@@ -93,6 +96,8 @@ pub(super) fn open_pdf(
         mark_edit: Default::default(),
         previews: Default::default(),
         pin: Default::default(),
+        is_pane: shared_store.is_some(),
+        close_hooks: Vec::new(),
         mark_layers: Vec::new(),
         thumbnail_pictures: Vec::new(),
         scanned: false,

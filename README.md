@@ -28,6 +28,16 @@ keyboard/mouse page and chapter navigation (from anywhere in the reader window),
 a Notes list, and tabs for reading more than one document at once. No Welcome window, no
 screenshot automation, and EPUB cover art (Library shows a placeholder icon for EPUBs) yet.
 
+**Since then (unreleased, see `CHANGELOG.md`):** a much faster reader (page rendering and search on
+background threads, sharp on HiDPI, tiles at high zoom, smooth zoom, a virtual scroll view);
+**Reading mode** — a PDF re-set as restylable text with printed page numbers in a left margin and
+footnotes beside the lines that cite them, one typography panel shared with the EPUB reader, and
+Tesseract OCR for scans; vector highlights you can select, resize and delete, dark and sepia page
+tones, scrollbar ticks; and navigation that keeps your place — Back/Forward through every jump,
+hover previews of links and (unlinked) citations, pinned figures, split view of one document, the
+Contents following you with a breadcrumb, and a "Continue here" marker on reopening. The plan is
+in `ACADEMIC-READER-PLAN.md`.
+
 ## Building
 
 ```bash

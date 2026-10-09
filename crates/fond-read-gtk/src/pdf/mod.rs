@@ -66,6 +66,7 @@ mod search;
 mod search_thread;
 mod session;
 mod sidebar_toggle;
+mod split;
 mod text_view;
 mod texture_cache;
 mod ui;
@@ -188,6 +189,11 @@ struct ReaderState {
     mark_edit: mark_edit::MarkEdit,
     /// Every page's mark layer, so a change of hover or selection can repaint them all.
     mark_layers: Vec<glib::WeakRef<gtk4::DrawingArea>>,
+    /// This reader is the second pane of a split view: it shares the first's annotations, and
+    /// leaves the tab's header, keys, progress and window registration to the first.
+    is_pane: bool,
+    /// Run when the reader closes, by whatever opened things that need closing with it.
+    close_hooks: Vec<Rc<dyn Fn()>>,
     /// Pinned figures: floating cards of regions of the pages.
     pin: pin::PinState,
     /// The hover preview: what it has been asked for, what is showing, what it has read.
@@ -333,16 +339,84 @@ pub fn show_pdf_reader(
     }
     crate::perf::watch_main_loop();
     crate::perf::mark("show_pdf_reader start");
+    build_reader(host, window, pdf_hash, blob, title, start_page, None);
+}
+
+/// A second view of the document the tab is showing, for a split view: a complete reader of its
+/// own (page, zoom, search, selection) that shares the first's annotations, without the tab's
+/// header, keys, progress or window registration, which stay with the first. Returns its view
+/// and a function to call when it goes away.
+fn build_pane(first: &PdfUi, zoom: f64) -> Option<(adw::ToolbarView, Rc<dyn Fn()>)> {
+    let (blob, start_page) = {
+        let r = first.reader.borrow();
+        (r.path.clone(), r.page as u32 + 1)
+    };
+    let store = first.reader.borrow().store.clone();
+    let before = store.listener_ids();
+    let built = build_reader(
+        &first.host,
+        &first.window,
+        &first.pdf_hash,
+        &blob,
+        &first.title,
+        start_page,
+        Some((store.clone(), first.reader_tab.clone(), zoom)),
+    )?;
+    let added: Vec<u64> = store
+        .listener_ids()
+        .into_iter()
+        .filter(|id| !before.contains(id))
+        .collect();
+    let reader = built.reader.clone();
+    let close: Rc<dyn Fn()> = Rc::new(move || {
+        for id in &added {
+            store.unsubscribe(*id);
+        }
+        let hooks = std::mem::take(&mut reader.borrow_mut().close_hooks);
+        for hook in hooks {
+            hook();
+        }
+        let mut r = reader.borrow_mut();
+        r.worker = None;
+        r.search = None;
+        r.nav = None;
+        r.continuous = None;
+    });
+    Some((built.view, close))
+}
+
+struct BuiltReader {
+    view: adw::ToolbarView,
+    reader: Rc<RefCell<ReaderState>>,
+}
+
+fn build_reader(
+    host: &Rc<dyn ReaderHost>,
+    window: &adw::ApplicationWindow,
+    pdf_hash: &str,
+    blob: &std::path::Path,
+    title: &str,
+    start_page: u32,
+    pane_of: Option<(Rc<AnnotationStore>, crate::reader_host::ReaderTab, f64)>,
+) -> Option<BuiltReader> {
+    let is_pane = pane_of.is_some();
     let open_span = crate::perf::span(|| "open_pdf".to_string());
-    let Some(OpenedPdf {
+    let OpenedPdf {
         reader,
         outline_entries,
         has_native_page_labels,
         start_page,
-    }) = open_pdf::open_pdf(host, window, pdf_hash, blob, start_page)
-    else {
-        return;
-    };
+    } = open_pdf::open_pdf(
+        host,
+        window,
+        pdf_hash,
+        blob,
+        start_page,
+        pane_of.as_ref().map(|(store, _, _)| store.clone()),
+    )?;
+    if let Some((_, _, zoom)) = &pane_of {
+        reader.borrow_mut().zoom = *zoom;
+    }
     drop(open_span);
 
     let PageNavParts {
@@ -385,6 +459,8 @@ pub fn show_pdf_reader(
         header_start,
         header_end,
         more_button,
+        split_side_button,
+        split_stack_button,
     } = header_buttons::build_header_buttons(&note_button, &page_num_button, &palette, &style_drop);
     header_end.append(&more_button);
     let StatusBarParts {
@@ -407,7 +483,17 @@ pub fn show_pdf_reader(
         &notes_toggle,
         &nav,
     );
-    view.add_bottom_bar(&statusbar);
+    if is_pane {
+        // Beside another pane there is not room for the whole bar: let it scroll sideways
+        // rather than demand its full width.
+        let strip = gtk4::ScrolledWindow::new();
+        strip.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Never);
+        strip.set_propagate_natural_height(true);
+        strip.set_child(Some(&statusbar));
+        view.add_bottom_bar(&strip);
+    } else {
+        view.add_bottom_bar(&statusbar);
+    }
 
     let CanvasParts {
         hint,
@@ -427,11 +513,16 @@ pub fn show_pdf_reader(
     // `content` is reparented into the sidebar Paned below instead of set directly here —
     // the Notes sidebar (and, when present, Contents) always builds that Paned now, and
     // `Paned::set_end_child` asserts its child has no existing parent.
-    let reader_tab = crate::reader_host::open_reader_tab(window, title, &view);
+    let reader_tab = match &pane_of {
+        Some((_, tab, _)) => tab.clone(),
+        None => crate::reader_host::open_reader_tab(window, title, &view),
+    };
     let reader_window = reader_tab.host_window.clone();
     let quick_mark: QuickMarkSlot = Rc::new(RefCell::new(None));
     let reflow_popover: RebuildNotesCell = Rc::new(RefCell::new(None));
-    crate::register_reader(pdf_hash, &reader_tab);
+    if !is_pane {
+        crate::register_reader(pdf_hash, &reader_tab);
+    }
     crate::label_icon_buttons(&header_start);
     crate::label_icon_buttons(&header_end);
     crate::label_icon_buttons(&statusbar);
@@ -533,7 +624,17 @@ pub fn show_pdf_reader(
     paned.set_vexpand(true);
     paned.set_hexpand(true);
     paned.set_position(220);
-    view.set_content(Some(&paned));
+    // The document, with room beside or below it for a second pane of the same document.
+    let split_paned = gtk4::Paned::new(Orientation::Horizontal);
+    split_paned.set_start_child(Some(&paned));
+    split_paned.set_resize_start_child(true);
+    split_paned.set_shrink_start_child(true);
+    split_paned.set_end_child(gtk4::Widget::NONE);
+    split_paned.set_resize_end_child(true);
+    split_paned.set_shrink_end_child(true);
+    split_paned.set_vexpand(true);
+    split_paned.set_hexpand(true);
+    view.set_content(Some(&split_paned));
     let ui = ui::PdfUi {
         host: host.clone(),
         reader: reader.clone(),
@@ -585,6 +686,9 @@ pub fn show_pdf_reader(
         notes_scroll: notes_scroll.clone(),
         notes_paned: notes_paned.clone(),
         paned: paned.clone(),
+        split_paned: split_paned.clone(),
+        split_side_button: split_side_button.clone(),
+        split_stack_button: split_stack_button.clone(),
         pdf_hash: pdf_hash.to_string(),
         title: title.to_string(),
         sidebar_box: sidebar_box.clone(),
@@ -592,7 +696,9 @@ pub fn show_pdf_reader(
         drag_live_rect: drag_live_rect.clone(),
         window: window.clone(),
     };
-    keys::install_keys(&ui);
+    if !is_pane {
+        keys::install_keys(&ui);
+    }
     text_view::install_text_view(&ui);
     link_nav::install_link_nav(&ui);
     sidebar_toggle::install_sidebar_toggle(&ui);
@@ -609,15 +715,24 @@ pub fn show_pdf_reader(
     note_button::install_note_button(&ui);
     bookmark::install_bookmark(&ui);
     page_number::install_page_number(&ui);
-    popout::install_popout(&ui);
+    if !is_pane {
+        popout::install_popout(&ui);
+    }
     export::install_export(&ui);
     search::install_search(&ui);
     scan::install_scan(&ui);
-    session::install_session(&ui, start_page);
-    position::restore(&ui, start_page);
+    split::install_split(&ui);
+    if !is_pane {
+        session::install_session(&ui, start_page);
+        position::restore(&ui, start_page);
+    }
     // @wiring
 
+    if is_pane {
+        return Some(BuiltReader { view, reader });
+    }
     warn_if_no_text_layer(host, &reader, blob);
     crate::perf::mark_rss("pdf reader presented");
     reader_tab.present();
+    Some(BuiltReader { view, reader })
 }

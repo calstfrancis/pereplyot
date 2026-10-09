@@ -1,4 +1,4 @@
-use std::cell::{Ref, RefCell};
+use std::cell::{Cell, Ref, RefCell};
 use std::rc::Rc;
 
 use fond_annot::{Annotation, AnnotationSidecar};
@@ -68,7 +68,8 @@ pub struct AnnotationStore {
     host: Rc<dyn ReaderHost>,
     source_hash: Option<String>,
     state: RefCell<State>,
-    listeners: RefCell<Vec<Listener>>,
+    listeners: RefCell<Vec<(u64, Listener)>>,
+    next_listener: Cell<u64>,
 }
 
 impl AnnotationStore {
@@ -84,6 +85,7 @@ impl AnnotationStore {
                 redo: Vec::new(),
             }),
             listeners: RefCell::new(Vec::new()),
+            next_listener: Cell::new(1),
         })
     }
 
@@ -111,8 +113,22 @@ impl AnnotationStore {
 
     /// Run `f` after every change, with the store it came from. Called once the change has been
     /// saved and the store's own borrows released, so `f` may read the store freely.
-    pub fn subscribe(&self, f: impl Fn(&AnnotationStore, &Change) + 'static) {
-        self.listeners.borrow_mut().push(Rc::new(f));
+    pub fn subscribe(&self, f: impl Fn(&AnnotationStore, &Change) + 'static) -> u64 {
+        let id = self.next_listener.get();
+        self.next_listener.set(id + 1);
+        self.listeners.borrow_mut().push((id, Rc::new(f)));
+        id
+    }
+
+    /// Stop calling the subscriber `id`, as returned by `subscribe`.
+    pub fn unsubscribe(&self, id: u64) {
+        self.listeners.borrow_mut().retain(|(i, _)| *i != id);
+    }
+
+    /// The subscribers there are now, so a view that is built and later torn down can tell which
+    /// ones it added.
+    pub fn listener_ids(&self) -> Vec<u64> {
+        self.listeners.borrow().iter().map(|(i, _)| *i).collect()
     }
 
     /// Drop every subscriber. Listeners typically capture the views they redraw, and those
@@ -270,7 +286,12 @@ impl AnnotationStore {
     }
 
     fn notify(&self, change: &Change) {
-        let listeners: Vec<Listener> = self.listeners.borrow().clone();
+        let listeners: Vec<Listener> = self
+            .listeners
+            .borrow()
+            .iter()
+            .map(|(_, l)| l.clone())
+            .collect();
         for l in listeners {
             l(self, change);
         }

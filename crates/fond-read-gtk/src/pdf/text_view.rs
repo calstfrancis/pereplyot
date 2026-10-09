@@ -37,8 +37,11 @@ pub(super) fn install_text_view(ui: &PdfUi) {
         let reflow_popover = reflow_popover.clone();
         let host_for_labels = host.clone();
         let host_for_mode = host.clone();
+        let reader_for_mode = reader.clone();
         text_toggle.connect_toggled(move |btn| {
-            host_for_mode.set_reading_mode(btn.is_active());
+            if !reader_for_mode.borrow().is_pane {
+                host_for_mode.set_reading_mode(btn.is_active());
+            }
             if !btn.is_active() {
                 {
                     let mut r = reader.borrow_mut();
@@ -302,7 +305,7 @@ pub(super) fn install_text_view(ui: &PdfUi) {
             view.text_view.grab_focus();
         });
     }
-    if host.reading_mode() {
+    if host.reading_mode() && !reader.borrow().is_pane {
         let text_toggle = text_toggle.clone();
         glib::idle_add_local_once(move || text_toggle.set_active(true));
     }

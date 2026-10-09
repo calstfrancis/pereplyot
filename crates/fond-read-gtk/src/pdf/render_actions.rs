@@ -43,7 +43,9 @@ pub(super) fn build_render_actions(
     let title_widget = title_widget.clone();
     let two_page_toggle = two_page_toggle.clone();
     let undo_button = undo_button.clone();
-    crate::reader_host::set_tab_header(&reader_tab, header_start, title_widget, header_end);
+    if !reader.borrow().is_pane {
+        crate::reader_host::set_tab_header(&reader_tab, header_start, title_widget, header_end);
+    }
 
     // Render the current page into the Picture (via the shared helper both this view and
     // continuous-scroll mode use), and refresh the page label. Also fills `right_picture`

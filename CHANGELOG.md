@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- **Split view.** *More ▸ Split view: side by side* (or *top and bottom*) opens a second pane of
+  the same document beside or below the first, for reading chapter 3 with the endnotes or a
+  figure open in the other. Each pane has its own page, zoom, search and selection; they share
+  one set of annotations, so a highlight made in either shows in both (and Undo covers it).
+  The same menu row closes it.
 - **Reopening puts you back on the line, and shows you where.** The reader used to remember only
   the page; it now also remembers how far down it you were (kept with your progress, in this
   app's own settings), scrolls back to that spot, and draws a hairline with **Continue here**

@@ -397,6 +397,49 @@ run_resume_case() {
     stop_app
 }
 
+run_split_case() {
+    start_app "$FX/plain.pdf"
+    local w
+    w="$(reader_window)" || { check "split: reader window opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
+    sleep 2
+    xdotool windowfocus "$w" 2>/dev/null
+    xdotool mousemove 771 28 click 1
+    sleep 1
+    xdotool mousemove 757 196 click 1
+    sleep 3
+    screenshot "$WORK/split.png"
+    local left right
+    left="$(python3 "$HERE/text_bands.py" "$WORK/split.png" --ink-in 20 150 480 400)"
+    right="$(python3 "$HERE/text_bands.py" "$WORK/split.png" --ink-in 520 150 980 400)"
+    check "split: both halves show the document" "$([ "${left:-0}" -gt 200 ] && [ "${right:-0}" -gt 200 ] && echo 1 || echo 0)" "(ink left $left, right $right)"
+    # Mark a line in the right-hand pane (its own text, found by measuring), and see it in the left.
+    local geom
+    geom="$(python3 "$HERE/text_bands.py" "$WORK/split.png" --ink-box 520 90 985 700)"
+    read -r x0 y0 x1 y1 <<<"$geom"
+    local h=$(( (y1 - y0) / 4 ))
+    local y=$(( y0 + 2 * h + h / 2 ))
+    xdotool mousemove $((x0 - 6)) "$y" mousedown 1 mousemove $(( (x0 + x1) / 2 )) "$y" mousemove $((x1 + 6)) "$y" mouseup 1
+    sleep 1
+    xdotool key 1
+    sleep 1.5
+    screenshot "$WORK/split-marked.png"
+    local amber_left amber_right saved
+    amber_left="$(python3 "$HERE/text_bands.py" "$WORK/split-marked.png" --amber-in 20 90 485 700)"
+    amber_right="$(python3 "$HERE/text_bands.py" "$WORK/split-marked.png" --amber-in 520 90 985 700)"
+    saved="$(snippets)"
+    check "split: a mark made in one pane is saved and shows in both" "$([ -n "$saved" ] && [ "${amber_left:-0}" -gt 120 ] && [ "${amber_right:-0}" -gt 120 ] && echo 1 || echo 0)" "(saved '$saved', amber left $amber_left, right $amber_right)"
+    xdotool mousemove 771 28 click 1
+    sleep 1
+    xdotool mousemove 757 196 click 1
+    sleep 1.5
+    screenshot "$WORK/split-closed.png"
+    local bar_open bar_closed
+    bar_open="$(python3 "$HERE/text_bands.py" "$WORK/split-marked.png" --ink-in 600 733 985 760)"
+    bar_closed="$(python3 "$HERE/text_bands.py" "$WORK/split-closed.png" --ink-in 600 733 985 760)"
+    check "split: the same menu row closes it" "$([ "${bar_open:-0}" -gt 150 ] && [ "${bar_closed:-999}" -lt 30 ] && echo 1 || echo 0)" "(second status bar ink open $bar_open, closed $bar_closed)"
+    stop_app
+}
+
 run_epub_case() {
     start_app "$FX/book.epub"
     local w
@@ -462,6 +505,7 @@ want plain && run_pdf_case plain plain.pdf y 2 "Pack my box with five dozen liqu
 want cropbox && run_pdf_case cropbox cropbox.pdf y 2 "Pack my box with five dozen liquor jugs."
 want rotated && run_pdf_case rotated rotated.pdf y 2 "Pack my box with five dozen liquor jugs."
 want history && run_history_case
+want split && run_split_case
 want resume && run_resume_case
 want pin && run_pin_case
 want hover && run_hover_case
