@@ -108,10 +108,9 @@ pub(super) fn build_render_actions(
                 let r = reader.borrow();
                 (
                     r.page,
-                    r.continuous_rendered
-                        .get(page as usize)
-                        .copied()
-                        .unwrap_or(false),
+                    r.continuous
+                        .as_ref()
+                        .is_some_and(|p| p.live.contains_key(&page)),
                 )
             };
             if page == current || page == current + 1 {

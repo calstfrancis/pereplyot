@@ -35,8 +35,10 @@ pub(super) fn install_mark_mode(ui: &PdfUi) {
             }
             let cursor = cursor_for_select_mode(kind.is_none());
             picture.set_cursor(cursor.as_ref());
-            for p in &reader.borrow().continuous_pictures {
-                p.set_cursor(cursor.as_ref());
+            if let Some(pages) = &reader.borrow().continuous {
+                for (_, picture) in pages.live.values() {
+                    picture.set_cursor(cursor.as_ref());
+                }
             }
             let text = match kind {
                 None => "Drag over text to select it, then choose a colour (or press 1–4)",

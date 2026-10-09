@@ -130,15 +130,12 @@ struct ReaderState {
     /// `DropDown`, defaulting to the original hardcoded amber.
     draw_color: String,
     /// Continuous-scroll mode's state — empty until the mode is toggled on for the first
-    /// time (built lazily, not at reader-open, so plain "Read" stays as fast as it always
-    /// was). `continuous_pictures[i]` is page `i`'s permanent `Picture` widget (unlike the
-    /// paged view's single recycled one); `continuous_offsets[i]` is that page's cumulative
-    /// top position in the continuous view, in pixels, for scroll-to-page and for tracking
-    /// which page is "current" from scroll position; `continuous_rendered[i]` avoids
-    /// re-rendering a page that hasn't changed since it was last drawn.
-    continuous_pictures: Vec<gtk4::Picture>,
+    /// time (built lazily, not at reader-open, so plain "Read" stays as fast as it always was).
+    /// `continuous_offsets[i]` is page `i`'s top position in the view, in pixels, for
+    /// scroll-to-page and for tracking which page is "current" from scroll position; `continuous`
+    /// holds the widgets, which exist only for pages near the viewport.
+    continuous: Option<ContinuousPages>,
     continuous_offsets: Vec<f64>,
-    continuous_rendered: Vec<bool>,
     /// Jump to a page because a link was followed (records where we came from); set once the
     /// widgets it drives exist.
     link_goto: Option<Rc<dyn Fn(u16)>>,
@@ -148,8 +145,7 @@ struct ReaderState {
     /// zoom steps are applied (to the text size instead of the page render).
     text_goto: Option<Rc<dyn Fn(u16)>>,
     text_zoom: Option<Rc<dyn Fn(f64)>>,
-    /// Inclusive range of pages currently kept rendered in continuous mode; everything else
-    /// is unloaded so a long book at high zoom doesn't hold every page as a texture.
+    /// Inclusive range of pages that currently have widgets in continuous mode.
     continuous_window: (u16, u16),
     /// Finished page pictures, reused across scrolling, zooming back and forth, and redraws.
     textures: TextureCache,

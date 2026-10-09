@@ -82,14 +82,8 @@ pub(super) fn install_zoom(ui: &PdfUi) {
                     );
                     let page = reader.borrow().page;
                     scroll_continuous_to_page(&reader, &continuous_scroll, page);
-                } else if !reader.borrow().continuous_pictures.is_empty() {
-                    while let Some(child) = continuous_box.first_child() {
-                        continuous_box.remove(&child);
-                    }
-                    let mut r = reader.borrow_mut();
-                    r.continuous_pictures.clear();
-                    r.continuous_offsets.clear();
-                    r.continuous_rendered.clear();
+                } else if !reader.borrow().continuous_offsets.is_empty() {
+                    clear_continuous_view(&reader, &continuous_box);
                 }
                 glib::ControlFlow::Break
             });

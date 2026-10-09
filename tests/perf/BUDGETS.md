@@ -76,3 +76,21 @@ all 600 thumbnails behind a hidden sidebar.
 
 Still open: the open stall is now mostly creating 600 page widgets; making the scroll view
 virtual (only widgets near the viewport) would remove it.
+
+## After the virtual scroll view — 2026-10-09
+
+| | paper-50 | book-600 | scan-600 | budget |
+|---|---:|---:|---:|---|
+| launch → reader window up | 144 ms | 147 ms | 152 ms | ≤ 300 ms ✔ |
+| stall at open | 75 ms | 76 ms | 31 ms | ≤ 16 ms ✘ |
+| memory after open | 199 MB | 213 MB | 332 MB | ✔ |
+| memory after paging | 292 MB | 302 MB | 472 MB | |
+| peak memory | 368 MB | 387 MB | 700 MB | |
+
+The continuous view now builds in 0.1 ms and holds widgets for the pages near the viewport
+only. That removed ~22 ms from the scan's stall, but the stall on the small documents did not
+move, so page widgets were not its main cost there. The perf log shows what is: reading the
+first page's geometry on the window thread (23 ms, mostly PDFium loading the page while the
+render thread loads it too) and GTK's first frame under the Cairo renderer in Xvfb (~30 ms).
+Both happen before the window can be shown, so getting under 16 ms would mean showing a blank
+window first and reading the geometry afterwards.

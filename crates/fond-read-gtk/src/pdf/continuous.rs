@@ -1,41 +1,31 @@
 use super::*;
+use std::collections::BTreeMap;
 
-/// Build continuous-scroll mode's per-page `Picture` widgets, if not already built. A no-op
-/// if `reader.continuous_pictures` is already populated (from an earlier toggle-on this
-/// session).
-///
-/// Widget layout (sizes and offsets) is computed eagerly from each page's cheap PDF-point
-/// metadata alone — every page gets one *permanent* widget up front, so its drag-to-annotate
-/// gesture can capture that page's index directly with no risk of a recycled widget later
-/// belonging to a different page (the failure mode a `ListView`-based virtualized version
-/// would have to guard against), and so scrolling to any page works immediately. Actually
-/// rasterizing each page's texture is the expensive part (PDFium render), so that's deferred
-/// to `schedule_continuous_render`, spread one page per idle tick starting from the reader's
-/// current page — this used to run inline here, which blocked the whole UI thread for the
-/// entire document on every open once continuous mode became the default (previously it only
-/// cost anything on an explicit toggle-on, rare enough not to notice).
-pub(super) fn build_continuous_view(
+/// Builds the widgets for one page of the continuous view: its picture, the marks layer and the
+/// drag preview over it, and the gestures that act on that page.
+pub(super) type PageFactory = Rc<dyn Fn(u16) -> (gtk4::Overlay, gtk4::Picture)>;
+
+/// The live page widgets of the continuous view, by page, between two blank spacers that stand
+/// in for every page above and below them.
+pub(super) struct ContinuousPages {
+    pub top: gtk4::Box,
+    pub bottom: gtk4::Box,
+    pub live: BTreeMap<u16, (gtk4::Overlay, gtk4::Picture)>,
+    pub factory: PageFactory,
+}
+
+fn make_page(
     host: &Rc<dyn ReaderHost>,
     reader: &Rc<RefCell<ReaderState>>,
-    continuous_box: &gtk4::Box,
     continuous_scroll: &gtk4::ScrolledWindow,
     reader_window: &adw::Window,
-) {
-    if !reader.borrow().continuous_pictures.is_empty() {
-        return;
-    }
-    let _span = crate::perf::span(|| "build continuous view".to_string());
-    let (count, zoom, current_page) = {
+    page: u16,
+) -> (gtk4::Overlay, gtk4::Picture) {
+    let (count, select_mode) = {
         let r = reader.borrow();
-        (r.count, r.zoom, r.page)
+        (r.count, r.draw_kind.is_none())
     };
-
-    let mut pictures = Vec::with_capacity(count as usize);
-    let mut offsets = Vec::with_capacity(count as usize + 1);
-    let mut y = 0.0f64;
-
-    let select_mode = reader.borrow().draw_kind.is_none();
-    for page in 0..count {
+    {
         let picture = gtk4::Picture::new();
         picture.set_halign(gtk4::Align::Center);
         picture.set_can_target(true);
@@ -44,17 +34,8 @@ pub(super) fn build_continuous_view(
 
         // Plausible size from the page's own point dimensions — cheap metadata, not a
         // rasterization — so the layout is correct before this page's texture has rendered.
-        let pts = reader.borrow().layout_size(page);
-        let w = (READER_BASE_WIDTH * zoom) as u32;
-        let h = if pts.0 > 0.0 {
-            (w as f32 * pts.1 / pts.0) as u32
-        } else {
-            (w as f32 * 792.0 / 612.0) as u32
-        };
+        let (w, h) = logical_page_size(&reader.borrow(), page);
         picture.set_size_request(w as i32, h as i32);
-        offsets.push(y);
-        y += h as f64 + CONTINUOUS_PAGE_GAP;
-
         let (page_overlay, drag_preview, drag_live_rect) =
             build_drag_preview_overlay(&picture, reader, move || page);
         page_overlay.set_halign(gtk4::Align::Center);
@@ -206,27 +187,74 @@ pub(super) fn build_continuous_view(
             picture.add_controller(click_nav);
         }
 
-        continuous_box.append(&page_overlay);
-        pictures.push(picture);
+        (page_overlay, picture)
     }
-    offsets.push(y); // sentinel: total content height
+}
 
+/// Where each page starts in the continuous view, in pixels, plus the total height as a final
+/// entry. Every page's size comes from the same function the pictures use, so the two agree.
+pub(super) fn continuous_offsets_for(r: &ReaderState) -> Vec<f64> {
+    let mut offsets = Vec::with_capacity(r.count as usize + 1);
+    let mut y = 0.0f64;
+    for page in 0..r.count {
+        offsets.push(y);
+        y += logical_page_size(r, page).1 as f64 + CONTINUOUS_PAGE_GAP;
+    }
+    offsets.push(y);
+    offsets
+}
+
+/// Set up continuous-scroll mode if it is not already: the page positions, and two spacers that
+/// hold the place of every page that has no widget. Only pages near the viewport get widgets (see
+/// `refresh_continuous_window`), so opening a 600-page book builds a handful of them instead of
+/// 600. A no-op if already built.
+pub(super) fn build_continuous_view(
+    host: &Rc<dyn ReaderHost>,
+    reader: &Rc<RefCell<ReaderState>>,
+    continuous_box: &gtk4::Box,
+    continuous_scroll: &gtk4::ScrolledWindow,
+    reader_window: &adw::Window,
+) {
+    if !reader.borrow().continuous_offsets.is_empty() {
+        return;
+    }
+    let _span = crate::perf::span(|| "build continuous view".to_string());
+    let current_page = reader.borrow().page;
+    let factory: PageFactory = {
+        let host = host.clone();
+        let reader = reader.clone();
+        let continuous_scroll = continuous_scroll.clone();
+        let reader_window = reader_window.clone();
+        Rc::new(move |page| make_page(&host, &reader, &continuous_scroll, &reader_window, page))
+    };
+    let top = gtk4::Box::new(Orientation::Vertical, 0);
+    let bottom = gtk4::Box::new(Orientation::Vertical, 0);
+    top.set_visible(false);
+    bottom.set_visible(false);
+    continuous_box.append(&top);
+    continuous_box.append(&bottom);
     {
         let mut r = reader.borrow_mut();
-        r.continuous_pictures = pictures;
-        r.continuous_offsets = offsets;
-        r.continuous_rendered = vec![false; count as usize];
+        r.continuous_offsets = continuous_offsets_for(&r);
+        r.continuous = Some(ContinuousPages {
+            top,
+            bottom,
+            live: BTreeMap::new(),
+            factory,
+        });
     }
-
     refresh_continuous_window(reader, continuous_scroll, Some(current_page));
 }
 
-/// Pages kept rendered on each side of the viewport, in viewports.
+/// Pages kept with widgets on each side of the viewport, in viewports; a page is only dropped
+/// once it is `CONTINUOUS_DROP_VIEWPORTS` away, so scrolling back and forth over an edge does
+/// not rebuild a page each time.
 pub(super) const CONTINUOUS_KEEP_VIEWPORTS: f64 = 1.5;
+const CONTINUOUS_DROP_VIEWPORTS: f64 = 2.5;
 
-/// Decide which pages should be rendered (viewport plus a margin), unload the rest, and
-/// render the missing ones one per idle tick, nearest first. `focus_page` overrides the
-/// scroll position for the very first build, before GTK has laid anything out.
+/// Give widgets to the pages near the viewport and take them from the ones that have drifted
+/// away, then resize the spacers to match. `focus_page` overrides the scroll position for the
+/// very first build, before GTK has laid anything out.
 pub(super) fn refresh_continuous_window(
     reader: &Rc<RefCell<ReaderState>>,
     scroll: &gtk4::ScrolledWindow,
@@ -238,81 +266,151 @@ pub(super) fn refresh_continuous_window(
     } else {
         1000.0
     };
-    let (lo, hi, center) = {
+    let (want, drop_bounds, factory, existing) = {
         let r = reader.borrow();
+        let Some(pages) = &r.continuous else {
+            return;
+        };
         if r.continuous_offsets.len() < 2 {
             return;
         }
-        let (top, center) = match focus_page {
-            Some(p) => {
-                let t = r.continuous_offsets.get(p as usize).copied().unwrap_or(0.0);
-                (t, t + viewport / 2.0)
-            }
-            None => (adj.value(), adj.value() + viewport / 2.0),
+        let top = match focus_page {
+            Some(p) => r.continuous_offsets.get(p as usize).copied().unwrap_or(0.0),
+            None => adj.value(),
         };
+        let at = |y: f64| continuous_page_at(&r.continuous_offsets, y.max(0.0));
         let keep = viewport * CONTINUOUS_KEEP_VIEWPORTS;
-        let lo = continuous_page_at(&r.continuous_offsets, (top - keep).max(0.0));
-        let hi = continuous_page_at(&r.continuous_offsets, top + viewport + keep);
-        (lo, hi, center)
+        let drop = viewport * CONTINUOUS_DROP_VIEWPORTS;
+        (
+            (at(top - keep), at(top + viewport + keep)),
+            (at(top - drop), at(top + viewport + drop)),
+            pages.factory.clone(),
+            pages
+                .live
+                .keys()
+                .next()
+                .copied()
+                .zip(pages.live.keys().next_back().copied()),
+        )
     };
-    let mut missing: Vec<u16> = Vec::new();
+    let (lo, hi) = want;
+    let (new_lo, new_hi) = match existing {
+        Some((el, eh)) if el <= hi + 1 && eh + 1 >= lo => (
+            if el < lo && el >= drop_bounds.0 {
+                el
+            } else {
+                lo
+            },
+            if eh > hi && eh <= drop_bounds.1 {
+                eh
+            } else {
+                hi
+            },
+        ),
+        _ => (lo, hi),
+    };
+
+    let mut created: Vec<u16> = Vec::new();
+    let mut removed: Vec<gtk4::Overlay> = Vec::new();
     {
         let mut r = reader.borrow_mut();
-        r.continuous_window = (lo, hi);
-        for page in 0..r.continuous_pictures.len() as u16 {
-            let in_window = page >= lo && page <= hi;
-            let rendered = r
-                .continuous_rendered
-                .get(page as usize)
-                .copied()
-                .unwrap_or(false);
-            if in_window && !rendered {
-                missing.push(page);
-            } else if !in_window && rendered {
-                r.continuous_pictures[page as usize].set_paintable(gdk::Paintable::NONE);
-                r.continuous_rendered[page as usize] = false;
+        let Some(pages) = r.continuous.as_mut() else {
+            return;
+        };
+        let gone: Vec<u16> = pages
+            .live
+            .keys()
+            .copied()
+            .filter(|p| *p < new_lo || *p > new_hi)
+            .collect();
+        for p in gone {
+            if let Some((overlay, _)) = pages.live.remove(&p) {
+                removed.push(overlay);
             }
         }
+    }
+    let box_ = reader
+        .borrow()
+        .continuous
+        .as_ref()
+        .and_then(|p| p.top.parent())
+        .and_then(|w| w.downcast::<gtk4::Box>().ok());
+    let Some(box_) = box_ else {
+        return;
+    };
+    for overlay in removed {
+        box_.remove(&overlay);
+    }
+    // Build from the page nearest the viewport outwards would be nicer, but the order
+    // widgets are inserted in is what fixes their order on screen, so go top to bottom.
+    for page in new_lo..=new_hi {
+        if reader
+            .borrow()
+            .continuous
+            .as_ref()
+            .is_some_and(|p| p.live.contains_key(&page))
+        {
+            continue;
+        }
+        let (overlay, picture) = factory(page);
+        {
+            let mut r = reader.borrow_mut();
+            let Some(pages) = r.continuous.as_mut() else {
+                return;
+            };
+            let after = pages
+                .live
+                .range(..page)
+                .next_back()
+                .map(|(_, (o, _))| o.clone().upcast::<gtk4::Widget>())
+                .unwrap_or_else(|| pages.top.clone().upcast());
+            box_.insert_child_after(&overlay, Some(&after));
+            pages.live.insert(page, (overlay, picture));
+        }
+        created.push(page);
+    }
+    {
+        let mut r = reader.borrow_mut();
+        r.continuous_window = (new_lo, new_hi);
         let offsets = r.continuous_offsets.clone();
-        missing.sort_by(|a, b| {
-            let da = (offsets[*a as usize] - center).abs();
-            let db = (offsets[*b as usize] - center).abs();
-            da.total_cmp(&db)
-        });
-    }
-    if !missing.is_empty() {
-        schedule_continuous_render(reader.clone(), missing);
-    }
-}
-
-/// Queue the pages of `order` on the render thread, nearest first. Pages that have since left
-/// the window or were already requested are skipped; nothing here waits for pixels.
-pub(super) fn schedule_continuous_render(reader: Rc<RefCell<ReaderState>>, order: Vec<u16>) {
-    for page in order {
-        let wanted = {
-            let r = reader.borrow();
-            let (lo, hi) = r.continuous_window;
-            r.continuous_pictures.get(page as usize).is_some()
-                && page >= lo
-                && page <= hi
-                && !r
-                    .continuous_rendered
-                    .get(page as usize)
-                    .copied()
-                    .unwrap_or(true)
-        };
-        if wanted {
-            render_continuous_page(&reader, page);
+        let count = r.count as usize;
+        if let Some(pages) = &r.continuous {
+            let above = if new_lo > 0 {
+                offsets[new_lo as usize] - CONTINUOUS_PAGE_GAP
+            } else {
+                0.0
+            };
+            let below = if (new_hi as usize) + 1 < count {
+                offsets[count] - CONTINUOUS_PAGE_GAP - offsets[new_hi as usize + 1]
+            } else {
+                0.0
+            };
+            for (spacer, height) in [(&pages.top, above), (&pages.bottom, below)] {
+                spacer.set_visible(height >= 1.0);
+                spacer.set_size_request(-1, height.max(0.0) as i32);
+            }
         }
     }
+    for page in created {
+        render_continuous_page(reader, page);
+    }
 }
 
-/// Tear down and rebuild continuous-scroll mode's widgets after a zoom change — page pixel
-/// sizes all changed, so every offset is stale too. A no-op if continuous mode was never
-/// built (the next toggle-on will build fresh at the new zoom already). Simpler than
-/// resizing everything in place: zoom changes are infrequent, so paying a full rebuild is a
-/// reasonable trade for not having two code paths (initial build vs. resize-in-place) to
-/// keep in sync.
+/// Throw away every continuous-view widget and position; the next `build_continuous_view`
+/// starts from scratch.
+pub(super) fn clear_continuous_view(reader: &Rc<RefCell<ReaderState>>, continuous_box: &gtk4::Box) {
+    while let Some(child) = continuous_box.first_child() {
+        continuous_box.remove(&child);
+    }
+    let mut r = reader.borrow_mut();
+    r.continuous = None;
+    r.continuous_offsets.clear();
+}
+
+/// Tear down and rebuild continuous-scroll mode's widgets after a layout change — page sizes
+/// all changed, so every offset is stale too. A no-op if continuous mode was never built (the
+/// next toggle-on will build fresh already). Cheap now that only the pages near the viewport
+/// have widgets.
 pub(super) fn rebuild_continuous_view_for_zoom(
     host: &Rc<dyn ReaderHost>,
     reader: &Rc<RefCell<ReaderState>>,
@@ -320,18 +418,10 @@ pub(super) fn rebuild_continuous_view_for_zoom(
     continuous_scroll: &gtk4::ScrolledWindow,
     reader_window: &adw::Window,
 ) {
-    if reader.borrow().continuous_pictures.is_empty() {
+    if reader.borrow().continuous_offsets.is_empty() {
         return;
     }
-    while let Some(child) = continuous_box.first_child() {
-        continuous_box.remove(&child);
-    }
-    {
-        let mut r = reader.borrow_mut();
-        r.continuous_pictures.clear();
-        r.continuous_offsets.clear();
-        r.continuous_rendered.clear();
-    }
+    clear_continuous_view(reader, continuous_box);
     build_continuous_view(
         host,
         reader,
@@ -342,38 +432,32 @@ pub(super) fn rebuild_continuous_view_for_zoom(
 }
 
 /// Re-render one page's `Picture` in continuous-scroll mode in place (after an annotation on
-/// it changed) — its position doesn't move, only its content, so this doesn't touch
-/// `continuous_offsets`.
+/// it changed) — its position doesn't move, only its content. Does nothing for a page that has
+/// no widget at the moment.
 pub(super) fn render_continuous_page(reader: &Rc<RefCell<ReaderState>>, page: u16) {
     let picture = {
         let r = reader.borrow();
-        r.continuous_pictures.get(page as usize).cloned()
+        r.continuous
+            .as_ref()
+            .and_then(|p| p.live.get(&page))
+            .map(|(_, picture)| picture.clone())
     };
     let Some(picture) = picture else {
         return;
     };
     let (w, h) = paint_page(reader, page, &picture);
     picture.set_size_request(w as i32, h as i32);
-    if let Some(flag) = reader
-        .borrow_mut()
-        .continuous_rendered
-        .get_mut(page as usize)
-    {
-        *flag = true;
-    }
 }
 
-/// Re-render only the continuous pages that currently hold a texture; the rest pick up the
-/// new state whenever they next scroll into the window.
+/// Re-render every continuous page that has a widget; the rest pick up the new state whenever
+/// they next scroll into the window.
 pub(super) fn rerender_loaded_continuous_pages(reader: &Rc<RefCell<ReaderState>>) {
     let loaded: Vec<u16> = {
         let r = reader.borrow();
-        r.continuous_rendered
-            .iter()
-            .enumerate()
-            .filter(|(_, rendered)| **rendered)
-            .map(|(i, _)| i as u16)
-            .collect()
+        r.continuous
+            .as_ref()
+            .map(|p| p.live.keys().copied().collect())
+            .unwrap_or_default()
     };
     for page in loaded {
         render_continuous_page(reader, page);

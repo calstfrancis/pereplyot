@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- **Long documents scroll with only the pages you can see.** The continuous view used to build a
+  widget for every page of the book up front (600 for a long one) and keep them all. It now
+  builds widgets only for the pages near the viewport, with blank spacers standing in for the
+  rest, so opening is cheaper and a very long document costs no more to scroll than a short
+  one. Scroll position, page tracking and jumping to a page work as before.
 - **Thumbnails are drawn by the render thread.** The sidebar's thumbnails used to be rasterised
   one per idle tick on the window thread, so opening the Thumbnails tab on a long book made
   scrolling stutter while they filled in. They now queue behind page renders on the render
