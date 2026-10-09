@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- **Zooming far in on a sharp screen no longer balloons memory.** At high zoom on a 2× display one
+  page used to be rendered as a single bitmap of 6500 × 8500 pixels. Pages wider than 3000
+  device pixels are now drawn in 1024-pixel tiles, only for the part of the page on screen
+  (plus half a screen of margin), over a low-resolution picture of the whole page that shows
+  stretched until the tiles arrive. Zoomed to 3.7× on a 2× screen, peak memory is 420 MB
+  where it was 1.1 GB.
 - **Zooming is smooth and stays where you are.** Pinch, Ctrl+wheel and the zoom buttons used to
   wait 150 ms, then throw the whole page layout away and rebuild it, which flashed blank and
   put you back at the top of the page. Pages now resize as the zoom changes, at most once a

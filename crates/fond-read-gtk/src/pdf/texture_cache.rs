@@ -58,6 +58,8 @@ mod tests {
             rotation: 0,
             tone: Tone::Normal,
             thumb: false,
+            zoom_w: 100,
+            tile: None,
         }
     }
 
@@ -66,7 +68,7 @@ mod tests {
     fn keys_hash_on_every_field() {
         let a = key(1);
         let mut b = key(1);
-        b.width = 200;
+        b.zoom_w = 200;
         assert_ne!(a, b);
         let mut c = key(1);
         c.tone = Tone::Dark;

@@ -169,24 +169,37 @@ pub(super) fn paint_page(
     let mut r = reader.borrow_mut();
     let size = logical_page_size(&r, page);
     let unrotated_w = (READER_BASE_WIDTH * r.zoom).max(1.0) as u32;
+    let device_w = unrotated_w * scale;
+    let tiled = tiles::tiling(device_w, r.rotation);
     let key = RenderKey {
         page,
-        width: unrotated_w * scale,
+        width: if tiled {
+            tiles::BACKDROP_PX.min(device_w)
+        } else {
+            device_w
+        },
         rotation: r.rotation,
         tone: r.tone,
         thumb: false,
+        zoom_w: device_w,
+        tile: None,
     };
     mark_layer::redraw_beside(picture);
     if let Some(texture) = r.textures.get(&key) {
         picture.set_paintable(Some(&texture));
-        return size;
+    } else if !r.defer_renders {
+        let priority = (page as i32 - r.page as i32).unsigned_abs();
+        if let Some(worker) = &r.worker {
+            worker.submit(Job { key, priority });
+        }
     }
-    if r.defer_renders {
-        return size;
-    }
-    let priority = (page as i32 - r.page as i32).unsigned_abs();
-    if let Some(worker) = &r.worker {
-        worker.submit(Job { key, priority });
+    tiles::sync(&mut r, picture, page);
+    if tiled {
+        let reader = reader.clone();
+        let picture = picture.clone();
+        glib::idle_add_local_once(move || {
+            tiles::sync(&mut reader.borrow_mut(), &picture, page);
+        });
     }
     size
 }

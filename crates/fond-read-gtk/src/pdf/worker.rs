@@ -44,11 +44,16 @@ pub(super) struct RenderKey {
     /// A small page for the sidebar, not a reading surface: queued behind every page job and
     /// never discarded in favour of one.
     pub thumb: bool,
+    /// Device width of the whole page at the current zoom. Equal to `width` except for a tile's
+    /// low-resolution backdrop, which is drawn smaller than the zoom it belongs to.
+    pub zoom_w: u32,
+    /// Which tile of the page, for very large renders drawn in pieces (see `tiles.rs`).
+    pub tile: Option<(u16, u16)>,
 }
 
 impl RenderKey {
     fn same_view(&self, other: &RenderKey) -> bool {
-        self.width == other.width && self.rotation == other.rotation && self.tone == other.tone
+        self.zoom_w == other.zoom_w && self.rotation == other.rotation && self.tone == other.tone
     }
 }
 
@@ -127,7 +132,8 @@ impl RenderWorker {
         // pointless, and a newer picture of the same page replaces an older one.
         q.jobs.retain(|j| {
             j.key.thumb != job.key.thumb
-                || (j.key.same_view(&job.key) && j.key.page != job.key.page)
+                || (j.key.same_view(&job.key)
+                    && (j.key.page != job.key.page || j.key.tile != job.key.tile))
         });
         q.jobs.push(job);
         self.shared.wake.notify_one();
@@ -192,21 +198,45 @@ fn run(id: u64, path: PathBuf, shared: Arc<Shared>) {
 }
 
 fn render(doc: &pdfium_render::prelude::PdfDocument<'_>, job: Job) -> Option<Rendered> {
-    use pdfium_render::prelude::{PdfRenderConfig, Pixels};
+    use pdfium_render::prelude::{PdfPoints, PdfRenderConfig, Pixels};
     let Job { key, .. } = job;
     let page = doc.pages().get(key.page).ok()?;
-    let config = PdfRenderConfig::new().set_target_width(key.width.max(1) as Pixels);
-    let bitmap = page.render_with_config(&config).ok()?;
-    let mut rp = fond_doc::RenderedPage {
-        width: bitmap.width() as u32,
-        height: bitmap.height() as u32,
-        rgba: bitmap.as_rgba_bytes(),
+    let bitmap = match key.tile {
+        None => {
+            let config = PdfRenderConfig::new().set_target_width(key.width.max(1) as Pixels);
+            page.render_with_config(&config).ok()?
+        }
+        Some((col, row)) => {
+            let scale = key.zoom_w as f32 / page.width().value.max(1.0);
+            let full_h = (page.height().value * scale).round() as u32;
+            let (x0, y0) = (
+                col as u32 * super::tiles::TILE_PX,
+                row as u32 * super::tiles::TILE_PX,
+            );
+            if x0 >= key.zoom_w || y0 >= full_h {
+                return None;
+            }
+            let tw = super::tiles::TILE_PX.min(key.zoom_w - x0);
+            let th = super::tiles::TILE_PX.min(full_h - y0);
+            let config = PdfRenderConfig::new()
+                .set_fixed_width(tw as Pixels)
+                .set_fixed_height(th as Pixels)
+                .scale_page_by_factor(scale)
+                .translate(
+                    PdfPoints::new(-(x0 as f32) / scale),
+                    PdfPoints::new(-(y0 as f32) / scale),
+                )
+                .ok()?;
+            page.render_with_config(&config).ok()?
+        }
     };
-    super::render::apply_tone(&mut rp.rgba, key.tone);
+    let mut rgba = bitmap.as_rgba_bytes();
+    super::render::apply_tone(&mut rgba, key.tone);
+    let (width, height) = (bitmap.width() as u32, bitmap.height() as u32);
     let (rgba, width, height) = if key.rotation != 0 {
-        super::render::rotate_rgba(&rp.rgba, rp.width, rp.height, key.rotation)
+        super::render::rotate_rgba(&rgba, width, height, key.rotation)
     } else {
-        (rp.rgba, rp.width, rp.height)
+        (rgba, width, height)
     };
     Some(Rendered {
         key,
@@ -214,4 +244,70 @@ fn render(doc: &pdfium_render::prelude::PdfDocument<'_>, job: Job) -> Option<Ren
         width,
         height,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pdfium_render::prelude::*;
+
+    fn rgba_of(doc: &PdfDocument<'_>, key: RenderKey) -> Option<Rendered> {
+        render(doc, Job { key, priority: 0 })
+    }
+
+    #[test]
+    fn a_tile_matches_the_same_region_of_a_full_render() {
+        let Ok(pdfium) = crate::pdfium::get() else {
+            eprintln!("no PDFium library; skipping");
+            return;
+        };
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/plain.pdf");
+        let doc = pdfium.load_pdf_from_file(&path, None).unwrap();
+        let width = 2400u32;
+        let full_key = RenderKey {
+            page: 0,
+            width,
+            rotation: 0,
+            tone: Tone::Normal,
+            thumb: false,
+            zoom_w: width,
+            tile: None,
+        };
+        let full = rgba_of(&doc, full_key.clone()).unwrap();
+        let tile = rgba_of(
+            &doc,
+            RenderKey {
+                tile: Some((1, 0)),
+                ..full_key
+            },
+        )
+        .unwrap();
+        let (x0, y0) = (
+            super::super::tiles::TILE_PX as usize,
+            super::super::tiles::TILE_PX as usize,
+        );
+        let mut differing = 0usize;
+        let mut total = 0usize;
+        for y in 0..tile.height as usize {
+            for x in 0..tile.width as usize {
+                let a = &tile.rgba[(y * tile.width as usize + x) * 4..][..3];
+                let b = &full.rgba[((y0 + y) * full.width as usize + x0 + x) * 4..][..3];
+                total += 1;
+                if a.iter()
+                    .zip(b)
+                    .any(|(p, q)| (*p as i32 - *q as i32).abs() > 40)
+                {
+                    differing += 1;
+                }
+            }
+        }
+        assert!(total > 0);
+        let inked = tile.rgba.chunks_exact(4).filter(|p| p[0] < 100).count();
+        assert!(inked > 100, "the tile is blank, so this proves nothing");
+        assert!(
+            (differing as f64) < total as f64 * 0.01,
+            "{differing} of {total} pixels differ"
+        );
+    }
 }

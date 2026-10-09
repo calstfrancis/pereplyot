@@ -3,6 +3,7 @@ use super::*;
 pub(super) fn install_zoom(ui: &PdfUi) {
     let PdfUi {
         reader,
+        picture,
         render,
         zoom_out,
         zoom_in,
@@ -19,6 +20,7 @@ pub(super) fn install_zoom(ui: &PdfUi) {
     // place and keep showing their last picture, stretched, while the render thread draws them
     // at the new size. Page renders are held back until the zoom has been still for 150 ms, so a
     // pinch does not queue a render for every size it passes through.
+    tiles::watch_paged_scroll(&reader, &scroll, &picture);
     let pending_zoom: Rc<Cell<Option<f64>>> = Rc::new(Cell::new(None));
     let last_applied: Rc<Cell<Option<std::time::Instant>>> = Rc::new(Cell::new(None));
     let apply_scheduled = Rc::new(Cell::new(false));

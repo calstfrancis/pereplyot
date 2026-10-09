@@ -118,6 +118,8 @@ fn request_thumbnails(r: &ReaderState, current_page: u16) {
                 rotation: 0,
                 tone: Tone::Normal,
                 thumb: true,
+                zoom_w: THUMBNAIL_GRID_WIDTH,
+                tile: None,
             },
             priority: THUMBNAIL_PRIORITY + distance,
         });

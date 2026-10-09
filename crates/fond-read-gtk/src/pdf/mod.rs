@@ -28,6 +28,7 @@ mod keys;
 mod mark_layer;
 mod open_pdf;
 mod scrollbar_ticks;
+mod tiles;
 use open_pdf::OpenedPdf;
 mod render_actions;
 use render_actions::*;

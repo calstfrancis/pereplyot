@@ -139,6 +139,7 @@ pub(super) fn build_drag_preview_overlay(
 
     let overlay = gtk4::Overlay::new();
     overlay.set_child(Some(picture));
+    overlay.add_overlay(&tiles::build_tile_layer());
     overlay.add_overlay(&mark_layer::build_mark_layer(reader, {
         let page_of = page_of.clone();
         move || page_of()

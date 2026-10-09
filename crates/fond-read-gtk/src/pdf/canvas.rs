@@ -50,6 +50,7 @@ pub(super) fn build_canvas(reader: &Rc<RefCell<ReaderState>>) -> CanvasParts {
     spread_box.append(&picture_overlay);
     let right_overlay = gtk4::Overlay::new();
     right_overlay.set_child(Some(&right_picture));
+    right_overlay.add_overlay(&tiles::build_tile_layer());
     right_overlay.add_overlay(&mark_layer::build_mark_layer(&reader, {
         let reader = reader.clone();
         move || reader.borrow().page + 1

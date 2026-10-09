@@ -93,7 +93,7 @@ pub(super) fn open_pdf(
         thumbnail_pictures: Vec::new(),
         scanned: false,
         layout_page: start_page,
-        textures: TextureCache::new(96 * 1024 * 1024),
+        textures: TextureCache::new(160 * 1024 * 1024),
         path: blob.to_path_buf(),
         search: None,
         worker: Some(RenderWorker::spawn(blob.to_path_buf())),

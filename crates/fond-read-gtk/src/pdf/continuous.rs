@@ -394,6 +394,15 @@ pub(super) fn refresh_continuous_window(
     for page in created {
         render_continuous_page(reader, page);
     }
+    let live: Vec<u16> = reader
+        .borrow()
+        .continuous
+        .as_ref()
+        .map(|p| p.live.keys().copied().collect())
+        .unwrap_or_default();
+    for page in live {
+        tiles::sync_continuous_page(reader, page);
+    }
 }
 
 /// Change the zoom of the continuous view without rebuilding it: positions are recomputed, the
