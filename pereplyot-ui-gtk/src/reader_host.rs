@@ -219,6 +219,11 @@ impl ReaderHost for LocalReaderHost {
 }
 
 /// How many annotations are stored locally for a content hash.
+/// The bibliography key a document is cited by, wherever Pereplyot keeps its own record of it.
+pub fn citation_key_of(hash: &str) -> Option<String> {
+    LocalMeta::load(hash).citation_key
+}
+
 pub fn local_annotation_count(hash: &str) -> usize {
     let path = data_dir().join("annotations").join(format!("{hash}.json"));
     fs::read_to_string(&path)

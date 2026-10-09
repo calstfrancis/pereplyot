@@ -265,6 +265,7 @@ fn main() -> glib::ExitCode {
         });
     }
 
+    app.connect_shutdown(|_| fond_read_gtk::notebook_ui::flush());
     app.run()
 }
 

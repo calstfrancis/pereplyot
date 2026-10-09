@@ -23,12 +23,15 @@ use gtk4::Orientation;
 pub mod annotation_store;
 pub mod annotations;
 pub mod clip;
+pub mod connections;
 pub mod deeplink;
 pub mod epub;
 pub mod export;
 pub mod fsutil;
 pub mod history;
 pub mod interop;
+pub mod notebook;
+pub mod notebook_ui;
 mod page_geom;
 pub mod palette;
 pub mod pdf;
@@ -158,6 +161,8 @@ thread_local! {
     static OPEN_READERS: RefCell<HashMap<String, reader_host::ReaderTab>> =
         RefCell::new(HashMap::new());
 
+    static JUMPS: RefCell<HashMap<String, Rc<JumpFn>>> = RefCell::new(HashMap::new());
+
     /// Callbacks registered via [`on_all_readers_closed`].
     static ON_ALL_CLOSED: RefCell<Vec<Rc<dyn Fn()>>> = RefCell::new(Vec::new());
 }
@@ -197,7 +202,27 @@ pub fn register_reader(hash: &str, tab: &reader_host::ReaderTab) {
     OPEN_READERS.with(|r| r.borrow_mut().insert(hash.to_string(), tab.clone()));
 }
 
+type JumpFn = dyn Fn(u32, Option<&str>);
+
+/// How to take the reader open on `hash` to a page and, if given, an annotation.
+pub fn register_jump(hash: &str, jump: Rc<JumpFn>) {
+    JUMPS.with(|j| j.borrow_mut().insert(hash.to_string(), jump));
+}
+
+/// Surface the reader open on `hash` and take it to `page` (1-based) or `annotation`; false if
+/// no reader is open on it.
+pub fn jump_in_open_reader(hash: &str, page: u32, annotation: Option<&str>) -> bool {
+    let jump = JUMPS.with(|j| j.borrow().get(hash).cloned());
+    let Some(jump) = jump else {
+        return false;
+    };
+    present_existing(hash);
+    jump(page, annotation);
+    true
+}
+
 pub fn unregister_window(hash: &str) {
+    JUMPS.with(|j| j.borrow_mut().remove(hash));
     let now_empty = OPEN_READERS.with(|r| {
         let mut r = r.borrow_mut();
         r.remove(hash);

@@ -180,6 +180,56 @@ pub(super) fn show_pdf_context_menu(
             rows.append(&note_widget);
             rows.append(&tag_chips(reader, &popover, &annotation));
 
+            let doc = reader.borrow().doc_ref.clone();
+            if let Some(doc) = doc {
+                let label = annotation
+                    .page
+                    .and_then(|p| {
+                        reader
+                            .borrow()
+                            .page_labels
+                            .get((p as usize).saturating_sub(1))
+                            .cloned()
+                            .flatten()
+                    })
+                    .unwrap_or_else(|| annotation.page.unwrap_or(0).to_string());
+                rows.append(&popover_separator());
+                let to_notebook = popover_button("Add to notebook", false);
+                {
+                    let host = host.clone();
+                    let popover = popover.clone();
+                    let quote = crate::notebook_ui::quote_of(&doc, &label, &annotation);
+                    to_notebook.connect_clicked(move |_| {
+                        popover.popdown();
+                        crate::notebook_ui::add_to_notebook(quote.clone(), &|m| host.notify(m));
+                    });
+                }
+                rows.append(&to_notebook);
+                let pending = crate::connections::pending();
+                let end = crate::notebook_ui::end_of(&doc, &label, &annotation);
+                let connect_label = match &pending {
+                    Some(p) if p.is(&end.hash, &end.id) => "Cancel connecting".to_string(),
+                    Some(p) => format!("Connect to {}", p.whence()),
+                    None => "Connect to another annotation…".to_string(),
+                };
+                let connect = popover_button(&connect_label, false);
+                {
+                    let host = host.clone();
+                    let popover = popover.clone();
+                    let window = reader_window.clone();
+                    connect.connect_clicked(move |_| {
+                        popover.popdown();
+                        let host = host.clone();
+                        crate::notebook_ui::connect::press(
+                            Some(window.upcast_ref::<gtk4::Window>()),
+                            end.clone(),
+                            Rc::new(move |m| host.notify(m)),
+                        );
+                    });
+                }
+                rows.append(&connect);
+            }
+
             rows.append(&popover_separator());
             let delete_button = popover_button("Delete annotation", true);
             {

@@ -1,5 +1,6 @@
 use super::*;
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn install_notes_sidebar(
     host: &Rc<dyn ReaderHost>,
     reader: &Rc<RefCell<ReaderState>>,
@@ -7,6 +8,8 @@ pub(super) fn install_notes_sidebar(
     notes_rows: &gtk4::Box,
     notes_scroll: &gtk4::ScrolledWindow,
     page_entry: &gtk4::Entry,
+    doc: crate::notebook_ui::DocRef,
+    window: &adw::Window,
 ) -> (Rc<dyn Fn()>, Rc<Cell<bool>>) {
     let rebuild_notes_cell: RebuildNotesCell = Rc::new(RefCell::new(None));
     let quiet_notes = Rc::new(Cell::new(false));
@@ -24,6 +27,8 @@ pub(super) fn install_notes_sidebar(
         let filter = filter.clone();
         let cards = cards.clone();
         let active_card = active_card.clone();
+        let doc = doc.clone();
+        let window = window.clone();
         let builder = move || {
             while let Some(child) = notes_rows.first_child() {
                 notes_rows.remove(&child);
@@ -152,6 +157,37 @@ pub(super) fn install_notes_sidebar(
                 header_label.add_css_class("dim-label");
                 header_label.add_css_class("caption-heading");
                 header_box.append(&header_label);
+                let quote_now: Rc<dyn Fn() -> Option<crate::notebook::Quote>> = {
+                    let doc = doc.clone();
+                    let label = page_label.clone();
+                    let a = annotation.clone();
+                    Rc::new(move || Some(crate::notebook_ui::quote_of(&doc, &label, &a)))
+                };
+                let to_notebook = gtk4::Button::from_icon_name("list-add-symbolic");
+                to_notebook.add_css_class("flat");
+                to_notebook.set_tooltip_text(Some("Add to the notebook (or drag it there)"));
+                to_notebook
+                    .update_property(&[gtk4::accessible::Property::Label("Add to notebook")]);
+                {
+                    let host = host.clone();
+                    let quote_now = quote_now.clone();
+                    to_notebook.connect_clicked(move |_| {
+                        if let Some(q) = quote_now() {
+                            crate::notebook_ui::add_to_notebook(q, &|m| host.notify(m));
+                        }
+                    });
+                }
+                header_box.append(&to_notebook);
+                let connect_button = {
+                    let window = window.clone();
+                    let host = host.clone();
+                    crate::notebook_ui::connect::button(
+                        Rc::new(move || Some(window.clone().upcast::<gtk4::Window>())),
+                        crate::notebook_ui::end_of(&doc, &page_label, &annotation),
+                        Rc::new(move |m| host.notify(m)),
+                    )
+                };
+                header_box.add_controller(crate::notebook_ui::drag_source(quote_now.clone()));
                 let delete_button = gtk4::Button::from_icon_name("user-trash-symbolic");
                 delete_button.add_css_class("flat");
                 delete_button.set_tooltip_text(Some("Delete this annotation"));
@@ -189,8 +225,15 @@ pub(super) fn install_notes_sidebar(
                             mark_edit::flash(&reader, &id);
                         });
                     }
+                    snippet_label
+                        .add_controller(crate::notebook_ui::drag_source(quote_now.clone()));
                     outer.append(&snippet_label);
                 }
+                outer.append(&crate::notebook_ui::connect::rows(
+                    &doc.hash,
+                    &annotation.id,
+                ));
+                outer.append(&connect_button);
                 let tags = annotation.tags();
                 if !tags.is_empty() {
                     let row = gtk4::Box::new(Orientation::Horizontal, 4);
@@ -253,7 +296,7 @@ pub(super) fn install_notes_sidebar(
                 if let Some(stripe) = color_swatch(annotation.color.as_deref()) {
                     if let Some(area) = stripe.downcast_ref::<gtk4::DrawingArea>() {
                         area.set_content_width(4);
-                        area.set_content_height(-1);
+                        area.set_content_height(0);
                     }
                     stripe.set_valign(gtk4::Align::Fill);
                     card.append(&stripe);
@@ -324,6 +367,14 @@ pub(super) fn install_notes_sidebar(
             }
         })
     };
+    {
+        let rebuild = rebuild_notes.clone();
+        let id = crate::connections::subscribe(Rc::new(move || rebuild()));
+        reader
+            .borrow_mut()
+            .close_hooks
+            .push(Rc::new(move || crate::connections::unsubscribe(id)));
+    }
     (rebuild_notes, quiet_notes)
 }
 

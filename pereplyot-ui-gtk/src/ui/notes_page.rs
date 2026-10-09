@@ -2,6 +2,8 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 
+use fond_read_gtk::notebook;
+use fond_read_gtk::notebook_ui;
 use fond_read_gtk::palette::{self, HIGHLIGHT_COLORS};
 
 use crate::notes_index::{self, NoteHit};
@@ -37,8 +39,63 @@ fn hit_row(widgets: &Rc<Widgets>, hit: NoteHit) -> gtk4::ListBoxRow {
     title.set_hexpand(true);
     title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
     head.append(&title);
+    let doc = notebook_ui::DocRef {
+        hash: hit.hash.clone(),
+        title: hit.doc_title.clone(),
+    };
+    let label = hit.page.map(|p| p.to_string()).unwrap_or_default();
+    let quote = notebook::Quote {
+        hash: hit.hash.clone(),
+        id: hit.annotation_id.clone(),
+        page: hit.page.unwrap_or(0),
+        label: label.clone(),
+        colour: hit.color.clone().unwrap_or_default(),
+        title: hit.doc_title.clone(),
+        key: notebook_ui::cite_key_for(&hit.hash).unwrap_or_default(),
+        text: hit.snippet.clone().unwrap_or_default(),
+        note: hit.note.clone().unwrap_or_default(),
+        area: hit.area,
+    };
+    let to_notebook = gtk4::Button::from_icon_name("list-add-symbolic");
+    to_notebook.add_css_class("flat");
+    to_notebook.set_tooltip_text(Some("Add to the notebook (or drag it there)"));
+    to_notebook.update_property(&[gtk4::accessible::Property::Label("Add to notebook")]);
+    {
+        let widgets = widgets.clone();
+        let quote = quote.clone();
+        to_notebook.connect_clicked(move |_| {
+            notebook_ui::add_to_notebook(quote.clone(), &|m| toast(&widgets, m));
+        });
+    }
+    head.append(&to_notebook);
+    let connect = notebook_ui::connect::button(
+        {
+            let widgets = widgets.clone();
+            Rc::new(move || Some(widgets.window.clone().upcast::<gtk4::Window>()))
+        },
+        fond_read_gtk::connections::End {
+            hash: hit.hash.clone(),
+            id: hit.annotation_id.clone(),
+            page: hit.page.unwrap_or(0),
+            label,
+            colour: hit.color.clone().unwrap_or_default(),
+            title: doc.title.clone(),
+            text: hit.snippet.clone().unwrap_or_default(),
+        },
+        {
+            let widgets = widgets.clone();
+            Rc::new(move |m| toast(&widgets, m))
+        },
+    );
+    {
+        let quote = quote.clone();
+        row.add_controller(notebook_ui::drag_source(Rc::new(move || {
+            Some(quote.clone())
+        })));
+    }
     outer.append(&head);
 
+    let connect_row = connect;
     if let Some(q) = hit.snippet.as_deref().filter(|q| !q.trim().is_empty()) {
         let label = gtk4::Label::new(Some(q));
         label.set_wrap(true);
@@ -54,6 +111,7 @@ fn hit_row(widgets: &Rc<Widgets>, hit: NoteHit) -> gtk4::ListBoxRow {
         label.set_xalign(0.0);
         outer.append(&label);
     }
+    outer.append(&connect_row);
     row.set_child(Some(&outer));
     row.set_activatable(true);
     row.update_property(&[gtk4::accessible::Property::Label(&format!(
@@ -177,6 +235,16 @@ pub fn build(widgets: &Rc<Widgets>) -> NotesPage {
     {
         let refresh = refresh.clone();
         colour.connect_selected_notify(move |_| refresh());
+    }
+
+    {
+        let refresh = refresh.clone();
+        let root = root.clone();
+        fond_read_gtk::connections::subscribe(Rc::new(move || {
+            if root.is_mapped() {
+                refresh();
+            }
+        }));
     }
 
     NotesPage { root, refresh }

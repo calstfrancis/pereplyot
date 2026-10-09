@@ -1,5 +1,6 @@
 pub mod highlight_labels;
 pub mod menu;
+pub mod notebooks_page;
 pub mod notes_page;
 pub mod styles;
 pub mod window;

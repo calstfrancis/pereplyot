@@ -37,6 +37,8 @@ pub(super) struct PdfUi {
     pub(super) notes_toggle: gtk4::ToggleButton,
     pub(super) continuous_toggle: gtk4::ToggleButton,
     pub(super) text_toggle: gtk4::ToggleButton,
+    pub(super) notebook_toggle: gtk4::ToggleButton,
+    pub(super) notebook_paned: gtk4::Paned,
     pub(super) two_page_toggle: gtk4::ToggleButton,
     pub(super) popout_button: gtk4::Button,
     pub(super) export_button: gtk4::Button,

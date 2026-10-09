@@ -19,6 +19,7 @@ pub(super) fn install_keys(ui: &PdfUi) {
         zoom_in,
         zoom_fit_width,
         text_toggle,
+        notebook_toggle,
         search_entry,
         link_back,
         link_forward,
@@ -48,6 +49,7 @@ pub(super) fn install_keys(ui: &PdfUi) {
         let quick_mark_for_keys = quick_mark.clone();
         let reflow_popover_for_keys = reflow_popover.clone();
         let text_toggle_key = text_toggle.clone();
+        let notebook_toggle_key = notebook_toggle.clone();
         let search_for_keys = search_entry.clone();
         let is_pane = reader.borrow().is_pane;
         let handler = move |keyval: gdk::Key, modifiers: gdk::ModifierType| {
@@ -111,6 +113,19 @@ pub(super) fn install_keys(ui: &PdfUi) {
                     })
             {
                 text_toggle_key.set_active(!text_toggle_key.is_active());
+                return glib::Propagation::Stop;
+            }
+            if modifiers.is_empty()
+                && matches!(keyval, gdk::Key::n | gdk::Key::N)
+                && notebook_toggle_key.is_visible()
+                && !view_for_focus
+                    .root()
+                    .and_then(|root| root.focus())
+                    .is_some_and(|w| {
+                        w.is::<gtk4::Entry>() || w.is::<gtk4::Text>() || w.is::<gtk4::TextView>()
+                    })
+            {
+                notebook_toggle_key.set_active(!notebook_toggle_key.is_active());
                 return glib::Propagation::Stop;
             }
             let in_reflow = view_for_focus

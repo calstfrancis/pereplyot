@@ -13,6 +13,8 @@ fn annotations_dir() -> PathBuf {
 
 #[derive(Debug, Clone)]
 pub struct NoteHit {
+    pub hash: String,
+    pub area: bool,
     pub path: Option<PathBuf>,
     pub doc_title: String,
     pub location: String,
@@ -97,6 +99,8 @@ pub fn search(library: &Library, query: &str, color_hex: Option<&str>) -> Vec<No
                 _ => String::new(),
             };
             let hit = NoteHit {
+                hash: hash.clone(),
+                area: a.kind == fond_annot::AnnotationKind::Area,
                 path: doc.map(|d| d.1.clone()),
                 doc_title: doc_title.clone(),
                 location,

@@ -17,7 +17,7 @@ use crate::config::{Config, LIBRARY_SIZE_MAX, LIBRARY_SIZE_MIN};
 use crate::library::{Library, LibraryEntry, Sort};
 use crate::reader_host;
 use crate::thumbnail;
-use crate::ui::{menu, notes_page, toast, Widgets};
+use crate::ui::{menu, notebooks_page, notes_page, toast, Widgets};
 
 pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
     let window = adw::ApplicationWindow::builder()
@@ -184,6 +184,8 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
     );
 
     let notes_page_slot: Rc<RefCell<Option<notes_page::NotesPage>>> = Rc::new(RefCell::new(None));
+    let notebooks_page_slot: Rc<RefCell<Option<notebooks_page::NotebooksPage>>> =
+        Rc::new(RefCell::new(None));
 
     let switcher = adw::ViewSwitcher::new();
     switcher.set_stack(Some(&view_stack));
@@ -291,12 +293,75 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
         });
     }
 
+    {
+        let page = notebooks_page::build(&widgets);
+        view_stack.add_titled_with_icon(
+            &page.root,
+            Some("notebooks"),
+            "Notebooks",
+            "accessories-text-editor-symbolic",
+        );
+        *notebooks_page_slot.borrow_mut() = Some(page);
+        let slot = notebooks_page_slot.clone();
+        view_stack.connect_visible_child_name_notify(move |stack| {
+            if stack.visible_child_name().as_deref() == Some("notebooks") {
+                if let Some(page) = slot.borrow().as_ref() {
+                    page.refresh();
+                }
+            }
+        });
+    }
+
+    install_notebook_hooks(&widgets);
     install_actions(app, &widgets);
     install_drop_target(&widgets);
     rebuild_history(&widgets);
     rebuild_library(&widgets);
 
     widgets
+}
+
+fn install_notebook_hooks(widgets: &Rc<Widgets>) {
+    let open_widgets = widgets.clone();
+    let shelf_widgets = widgets.clone();
+    fond_read_gtk::notebook_ui::set_hooks(fond_read_gtk::notebook_ui::Hooks {
+        open_source: Some(Rc::new(move |hash, id, page| {
+            let path = history::load()
+                .into_iter()
+                .find(|e| e.hash == hash)
+                .map(|e| e.path)
+                .or_else(|| {
+                    open_widgets
+                        .library
+                        .borrow()
+                        .entries()
+                        .iter()
+                        .find(|e| e.hash == hash)
+                        .map(|e| e.path.clone())
+                });
+            match path {
+                Some(path) if path.is_file() => {
+                    open_path_with_host(
+                        &open_widgets,
+                        path,
+                        LaunchOptions {
+                            start_page: (page > 0).then_some(page),
+                            start_annotation: Some(id.to_string()),
+                            ..LaunchOptions::default()
+                        },
+                    );
+                }
+                _ => toast(
+                    &open_widgets,
+                    "That document is no longer at its recorded location",
+                ),
+            }
+        })),
+        cite_key: Some(Rc::new(reader_host::citation_key_of)),
+        shelves: Some(Rc::new(move || {
+            shelf_widgets.library.borrow().shelves().to_vec()
+        })),
+    });
 }
 
 /// Flip the window between fullscreen and normal, swapping the header button's icon and
@@ -852,6 +917,7 @@ fn rebuild_shelf_bar(widgets: &Rc<Widgets>) {
                         let old = name.clone();
                         prompt_name(&w.window, "Rename shelf", &name, "Rename", move |new| {
                             if w2.library.borrow_mut().rename_shelf(&old, &new) {
+                                fond_read_gtk::notebook_ui::shelf_changed(&old, Some(new.trim()));
                                 w2.config.borrow_mut().library_shelf = new.trim().to_string();
                                 w2.config.borrow().save();
                                 rebuild_library(&w2);
@@ -868,6 +934,7 @@ fn rebuild_shelf_bar(widgets: &Rc<Widgets>) {
                     delete.connect_clicked(move |_| {
                         popover.popdown();
                         w.library.borrow_mut().delete_shelf(&name);
+                        fond_read_gtk::notebook_ui::shelf_changed(&name, None);
                         w.config.borrow_mut().library_shelf = String::new();
                         w.config.borrow().save();
                         rebuild_library(&w);

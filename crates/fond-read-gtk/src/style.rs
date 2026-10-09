@@ -23,6 +23,9 @@ pub(crate) fn ensure() {
          .figure-grip { background-color: alpha(@window_fg_color, 0.06); border-radius: 8px 8px 0 0; } \
          .note-card { padding: 4px 6px; border-radius: 6px; } \
          .note-card-active { background-color: alpha(@accent_bg_color, 0.14); } \
+         .notebook-quote { padding: 6px 8px; border-radius: 6px; \
+                           background-color: alpha(@window_fg_color, 0.05); } \
+         .notebook-drop { background-color: alpha(@accent_bg_color, 0.10); } \
          .reading-position { background-color: @accent_bg_color; } \
          .reading-position-label { background-color: @accent_bg_color; color: @accent_fg_color; \
                                    border-radius: 10px; padding: 1px 10px; }",

@@ -57,6 +57,7 @@ mod mark_mode;
 mod nav;
 mod next_page;
 mod note_button;
+mod notebook_toggle;
 mod notes_toggle;
 mod page_click;
 mod page_entry;
@@ -210,6 +211,8 @@ struct ReaderState {
     is_pane: bool,
     /// Run when the reader closes, by whatever opened things that need closing with it.
     close_hooks: Vec<Rc<dyn Fn()>>,
+    /// What a notebook quote or connection from this document names it by.
+    doc_ref: Option<crate::notebook_ui::DocRef>,
     /// Pinned figures: floating cards of regions of the pages.
     pin: pin::PinState,
     /// The hover preview: what it has been asked for, what is showing, what it has read.
@@ -438,6 +441,10 @@ fn build_reader(
         reader.borrow_mut().zoom = *zoom;
     }
     drop(open_span);
+    reader.borrow_mut().doc_ref = Some(crate::notebook_ui::DocRef {
+        hash: pdf_hash.to_string(),
+        title: title.to_string(),
+    });
 
     let PageNavParts {
         view,
@@ -471,6 +478,7 @@ fn build_reader(
         notes_toggle,
         continuous_toggle,
         text_toggle,
+        notebook_toggle,
         two_page_toggle,
         undo_button,
         redo_button,
@@ -495,6 +503,7 @@ fn build_reader(
     } = status_bar::build_status_bar(
         &header_end,
         &text_toggle,
+        &notebook_toggle,
         &invert_button,
         &rotate_button,
         &zoom_fit_page,
@@ -543,6 +552,20 @@ fn build_reader(
     let reflow_popover: RebuildNotesCell = Rc::new(RefCell::new(None));
     if !is_pane {
         crate::register_reader(pdf_hash, &reader_tab);
+        let reader = reader.clone();
+        crate::register_jump(
+            pdf_hash,
+            Rc::new(move |page: u32, id: Option<&str>| {
+                let target = page
+                    .saturating_sub(1)
+                    .min(reader.borrow().count.saturating_sub(1) as u32)
+                    as u16;
+                jump(&reader, target, JumpKind::Annotation);
+                if let Some(id) = id {
+                    mark_edit::flash(&reader, id);
+                }
+            }),
+        );
     }
     crate::label_icon_buttons(&header_start);
     crate::label_icon_buttons(&header_end);
@@ -602,6 +625,11 @@ fn build_reader(
         &notes_rows,
         &notes_scroll,
         &page_entry,
+        crate::notebook_ui::DocRef {
+            hash: pdf_hash.to_string(),
+            title: title.to_string(),
+        },
+        &reader_tab.host_window,
     );
     {
         let store = reader.borrow().store.clone();
@@ -674,7 +702,15 @@ fn build_reader(
     split_paned.set_shrink_end_child(true);
     split_paned.set_vexpand(true);
     split_paned.set_hexpand(true);
-    view.set_content(Some(&split_paned));
+    let notebook_paned = gtk4::Paned::new(Orientation::Horizontal);
+    notebook_paned.set_start_child(Some(&split_paned));
+    notebook_paned.set_resize_start_child(true);
+    notebook_paned.set_shrink_start_child(true);
+    notebook_paned.set_end_child(gtk4::Widget::NONE);
+    notebook_paned.set_vexpand(true);
+    notebook_paned.set_hexpand(true);
+    notebook_toggle.set_visible(!is_pane);
+    view.set_content(Some(&notebook_paned));
     let ui = ui::PdfUi {
         host: host.clone(),
         reader: reader.clone(),
@@ -708,6 +744,8 @@ fn build_reader(
         notes_toggle: notes_toggle.clone(),
         continuous_toggle: continuous_toggle.clone(),
         text_toggle: text_toggle.clone(),
+        notebook_toggle: notebook_toggle.clone(),
+        notebook_paned: notebook_paned.clone(),
         two_page_toggle: two_page_toggle.clone(),
         popout_button: popout_button.clone(),
         export_button: export_button.clone(),
@@ -762,6 +800,7 @@ fn build_reader(
     search::install_search(&ui);
     scan::install_scan(&ui);
     split::install_split(&ui);
+    notebook_toggle::install_notebook_toggle(&ui);
     if !is_pane {
         session::install_session(&ui, start_page);
         position::restore(&ui, start_page);

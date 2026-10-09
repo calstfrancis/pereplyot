@@ -41,6 +41,7 @@ export DISPLAY=":$(tr -d '\n' <"$WORK/display")"
 
 start_app() {
     local file="$1"
+    [ "$file" = - ] && file=""
     [ "${2:-}" = keep ] || rm -rf "$WORK/h"
     mkdir -p "$WORK/h"/{home,data,config,cache}
     # setsid gives the app its own process group so stop_app can take down dbus-run-session
@@ -49,7 +50,7 @@ start_app() {
         WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 \
         HOME="$WORK/h/home" XDG_DATA_HOME="$WORK/h/data" XDG_CONFIG_HOME="$WORK/h/config" \
         XDG_CACHE_HOME="$WORK/h/cache" \
-        setsid dbus-run-session --config-file="$WORK/session.conf" -- "$BIN" "$file" \
+        setsid dbus-run-session --config-file="$WORK/session.conf" -- "$BIN" ${file:+"$file"} \
         >"$WORK/app.log" 2>&1 </dev/null &
     APP_PGID=$!
 }
@@ -612,6 +613,176 @@ run_mixed_case() {
     stop_app
 }
 
+notebook_file() { find "$WORK/h/data" -path '*notebooks*' -name '*.typ' 2>/dev/null | head -1; }
+
+run_notebook_case() {
+    start_app "$FX/plain.pdf"
+    local w
+    w="$(reader_window)" || { check "notebook: reader window opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
+    sleep 2
+    xdotool windowfocus "$w" 2>/dev/null
+    screenshot "$WORK/nb-0.png"
+    local geom x0 y0 x1 y1
+    geom="$(text_bands "$WORK/nb-0.png")"
+    read -r x0 y0 x1 y1 <<<"$geom"
+    local h=$(( (y1 - y0) / 4 )) sy
+    sy=$(( y0 + 2 * h + h / 2 ))
+    xdotool mousemove $((x0 - 6)) "$sy" mousedown 1 mousemove $(( (x0 + x1) / 2 )) "$sy" mousemove $((x1 + 6)) "$sy" mouseup 1
+    sleep 1
+    xdotool key 1
+    sleep 1
+    xdotool key n
+    sleep 1.5
+    xdotool mousemove 812 28 click 1
+    sleep 1.5
+    xdotool mousemove 470 120 mousedown 1
+    for step in 1 2 3 4 5 6 7 8 9 10 11 12; do
+        xdotool mousemove $((470 + step * 30)) $((120 + step * 10))
+        sleep 0.15
+    done
+    sleep 0.5
+    xdotool mouseup 1
+    sleep 1.5
+    screenshot "$WORK/nb-dropped.png"
+    local ink
+    ink="$(python3 "$HERE/text_bands.py" "$WORK/nb-dropped.png" --ink-in 670 125 880 205)"
+    check "notebook: dragging a note from the list drops a quote card into it" "$([ "${ink:-0}" -gt 150 ] && echo 1 || echo 0)" "(ink in the card: $ink)"
+    xdotool mousemove 830 500 click 1
+    sleep 0.3
+    xdotool type --delay 40 "My own paragraph."
+    sleep 1.5
+    local body
+    body="$(cat "$(notebook_file)" 2>/dev/null)"
+    check "notebook: the quote is saved in the Typst file with its source, page and words" "$([[ "$body" == *'#pquote('*'page: "1"'*'text: "Pack my box with five dozen liquor jugs."'* ]] && echo 1 || echo 0)" "(file: $(tail -c 300 "$(notebook_file)" 2>/dev/null))"
+    check "notebook: what is typed is saved too" "$([[ "$body" == *'My own paragraph.'* ]] && echo 1 || echo 0)"
+    xdotool mousemove 546 120 click 1
+    sleep 1.5
+    check "notebook: the + button adds another quote" "$([ "$(grep -c '^#pquote(' "$(notebook_file)")" = 2 ] && echo 1 || echo 0)" "(quotes: $(grep -c '^#pquote(' "$(notebook_file)"))"
+    stop_app
+    start_app "$FX/plain.pdf" keep
+    reader_window >/dev/null
+    sleep 2.5
+    xdotool key n
+    sleep 2
+    screenshot "$WORK/nb-reopened.png"
+    ink="$(python3 "$HERE/text_bands.py" "$WORK/nb-reopened.png" --ink-in 670 125 880 205)"
+    check "notebook: reopening shows the same notebook, cards and all" "$([ "${ink:-0}" -gt 150 ] && echo 1 || echo 0)" "(ink in the card: $ink)"
+    xdotool mousemove 971 72 click 1
+    sleep 1
+    screenshot "$WORK/nb-more.png"
+    xdotool mousemove 879 236 click 1
+    sleep 1.5
+    screenshot "$WORK/nb-export.png"
+    xdotool mousemove 403 27 click 1
+    sleep 2
+    xdotool key ctrl+a
+    xdotool type --delay 20 "$WORK/essay.typ"
+    xdotool key Return
+    sleep 2
+    local essay
+    essay="$(cat "$WORK/essay.typ" 2>/dev/null)"
+    check "notebook: Export writes Typst with the text, and every quote cited and linked" "$([[ "$essay" == *'My own paragraph.'* && "$essay" == *'#quote(block: true, attribution: [plain, p. 1 #link("pereplyot://open?hash='*')[↗]])[Pack my box with five dozen liquor jugs.]'* ]] && echo 1 || echo 0)" "(got: $(head -c 400 "$WORK/essay.typ" 2>/dev/null))"
+    if command -v typst >/dev/null; then
+        check "notebook: the exported Typst compiles" "$(typst compile "$WORK/essay.typ" "$WORK/essay.pdf" >/dev/null 2>&1 && echo 1 || echo 0)"
+    fi
+    stop_app
+    start_app "$FX/mixed.pdf" keep
+    reader_window >/dev/null
+    sleep 2.5
+    xdotool key n
+    sleep 1.5
+    xdotool mousemove 690 140 click 1
+    sleep 3
+    screenshot "$WORK/nb-other-after.png"
+    local after_geom ax0 ay0
+    after_geom="$(text_bands "$WORK/nb-other-after.png")"
+    read -r ax0 ay0 _ <<<"$after_geom"
+    check "notebook: clicking a quote's source opens that document at the passage" "$([ "${ax0:-0}" -ge 180 ] && [ "${ax0:-0}" -le 215 ] && [ "${ay0:-0}" -ge 222 ] && [ "${ay0:-0}" -le 248 ] && echo 1 || echo 0)" "(text starts at '${after_geom:-none}', want about 200 228 in a new tab)"
+    stop_app
+}
+
+run_connect_case() {
+    start_app "$FX/plain.pdf"
+    local w
+    w="$(reader_window)" || { check "connect: reader window opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
+    sleep 2
+    xdotool windowfocus "$w" 2>/dev/null
+    screenshot "$WORK/cn-0.png"
+    local geom x0 y0 x1 y1
+    geom="$(text_bands "$WORK/cn-0.png")"
+    read -r x0 y0 x1 y1 <<<"$geom"
+    local h=$(( (y1 - y0) / 4 )) sy band
+    for band in 1 3; do
+        sy=$(( y0 + band * h + h / 2 ))
+        xdotool mousemove $((x0 - 6)) "$sy" mousedown 1 mousemove $(( (x0 + x1) / 2 )) "$sy" mousemove $((x1 + 6)) "$sy" mouseup 1
+        sleep 1
+        xdotool key $((band == 1 ? 1 : 2))
+        sleep 1
+    done
+    xdotool mousemove 812 28 click 1
+    sleep 1.5
+    xdotool mousemove 790 175 click 1
+    sleep 1.2
+    screenshot "$WORK/cn-2.png"
+    xdotool mousemove 790 347 click 1
+    sleep 1.5
+    screenshot "$WORK/cn-3.png"
+    xdotool type --delay 40 "contradicts"
+    xdotool key Return
+    sleep 1.5
+    screenshot "$WORK/cn-4.png"
+    local got
+    got="$(python3 -c 'import json,sys
+try:
+    c=json.load(open(sys.argv[1]))["connections"]
+    print(len(c), c[0]["note"], c[0]["a"]["id"] != c[0]["b"]["id"])
+except Exception:
+    print("")' "$WORK/h/data/pereplyot/connections.json")"
+    check "connect: Connect on two annotations, with a note, saves one link" "$([[ "$got" == "1 contradicts True" ]] && echo 1 || echo 0)" "(got '$got')"
+    local row
+    row="$(python3 "$HERE/text_bands.py" "$WORK/cn-4.png" --ink-in 745 355 985 395)"
+    check "connect: the link shows on the other annotation's card too" "$([ "${row:-0}" -gt 150 ] && echo 1 || echo 0)" "(ink in the second card's link row: $row)"
+    xdotool mousemove 966 173 click 1
+    sleep 1.2
+    got="$(python3 -c 'import json,sys
+print(len(json.load(open(sys.argv[1]))["connections"]))' "$WORK/h/data/pereplyot/connections.json" 2>/dev/null)"
+    check "connect: removing it from one card removes it from both" "$([ "$got" = 0 ] && echo 1 || echo 0)" "(links left: $got)"
+    stop_app
+}
+
+launcher_window() {
+    for _ in $(seq 100); do
+        for w in $(xdotool search --onlyvisible --name '' 2>/dev/null); do
+            [ "$(xdotool getwindowname "$w" 2>/dev/null)" = Pereplyot ] && { echo "$w"; return 0; }
+        done
+        sleep 0.2
+    done
+    return 1
+}
+
+run_launcher_case() {
+    start_app -
+    local w
+    w="$(launcher_window)" || { check "launcher: window opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
+    sleep 1.5
+    xdotool windowfocus "$w" 2>/dev/null
+    xdotool mousemove 424 28 click 1
+    sleep 1
+    screenshot "$WORK/ln-1.png"
+    xdotool mousemove 640 75 click 1
+    sleep 1
+    screenshot "$WORK/ln-2.png"
+    xdotool type --delay 40 "Chapter three"
+    xdotool key Return
+    sleep 2
+    screenshot "$WORK/ln-3.png"
+    check "launcher: New notebook (Notebooks tab) creates a Typst file under the chosen name" "$([[ "$(head -1 "$(notebook_file)" 2>/dev/null)" == *'"title":"Chapter three"'* ]] && echo 1 || echo 0)" "(file: $(head -c 120 "$(notebook_file)" 2>/dev/null))"
+    local ink
+    ink="$(python3 "$HERE/text_bands.py" "$WORK/ln-3.png" --ink-in 20 60 500 85)"
+    check "launcher: the new notebook opens in a window of its own" "$([ "${ink:-0}" -gt 100 ] && echo 1 || echo 0)" "(ink in its title: $ink)"
+    stop_app
+}
+
 # Line order in the fixtures: "Page N", fox, Pack, Sphinx.
 want() { [ -z "${SMOKE_CASES:-}" ] || [[ " $SMOKE_CASES " == *" $1 "* ]]; }
 want plain && run_pdf_case plain plain.pdf y 2 "Pack my box with five dozen liquor jugs."
@@ -629,6 +800,9 @@ want area && run_area_case
 want import && run_import_case
 want epub && run_epub_case
 want mixed && run_mixed_case
+want notebook && run_notebook_case
+want connect && run_connect_case
+want launcher && run_launcher_case
 
 echo
 if [ "$FAILS" -eq 0 ]; then echo "smoke: all passed"; else echo "smoke: $FAILS failed"; exit 1; fi

@@ -14,6 +14,7 @@ pub(super) struct StatusBarParts {
 pub(super) fn build_status_bar(
     header_end: &gtk4::Box,
     text_toggle: &gtk4::ToggleButton,
+    notebook_toggle: &gtk4::ToggleButton,
     invert_button: &gtk4::ToggleButton,
     rotate_button: &gtk4::Button,
     zoom_fit_page: &gtk4::Button,
@@ -27,6 +28,7 @@ pub(super) fn build_status_bar(
     let nav = nav.clone();
     let header_end = header_end.clone();
     let text_toggle = text_toggle.clone();
+    let notebook_toggle = notebook_toggle.clone();
     let invert_button = invert_button.clone();
     let rotate_button = rotate_button.clone();
     let zoom_fit_page = zoom_fit_page.clone();
@@ -93,6 +95,7 @@ pub(super) fn build_status_bar(
         });
     }
     statusbar.append(&text_toggle);
+    statusbar.append(&notebook_toggle);
     statusbar.append(&typography_button);
     statusbar.append(&rotate_button);
     statusbar.append(&invert_button);

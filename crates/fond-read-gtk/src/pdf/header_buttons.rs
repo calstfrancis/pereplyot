@@ -5,6 +5,7 @@ pub(super) struct HeaderButtonsParts {
     pub(super) notes_toggle: gtk4::ToggleButton,
     pub(super) continuous_toggle: gtk4::ToggleButton,
     pub(super) text_toggle: gtk4::ToggleButton,
+    pub(super) notebook_toggle: gtk4::ToggleButton,
     pub(super) two_page_toggle: gtk4::ToggleButton,
     pub(super) undo_button: gtk4::Button,
     pub(super) redo_button: gtk4::Button,
@@ -77,6 +78,16 @@ pub(super) fn build_header_buttons(
     text_toggle.set_tooltip_text(Some(
         "Reading mode (T) — the document re-set as text you can restyle: page numbers in the left \
          margin, footnotes in the right; selectable with the keyboard (Shift+arrows, then 1–4 to mark)",
+    ));
+    let notebook_toggle = gtk4::ToggleButton::new();
+    notebook_toggle.add_css_class("flat");
+    crate::set_icon_with_fallback(
+        &notebook_toggle,
+        &["accessories-text-editor-symbolic", "document-edit-symbolic"],
+    );
+    notebook_toggle.set_tooltip_text(Some(
+        "Notebook (N) — a page of your own writing beside the document; drag highlights from the \
+         Notes list into it and they keep their source and page",
     ));
     let two_page_toggle = gtk4::ToggleButton::new();
     crate::set_icon_with_fallback(
@@ -166,6 +177,7 @@ pub(super) fn build_header_buttons(
         notes_toggle,
         continuous_toggle,
         text_toggle,
+        notebook_toggle,
         two_page_toggle,
         undo_button,
         redo_button,

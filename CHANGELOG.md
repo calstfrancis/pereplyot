@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+- **The Notebook.** Press **N** (or the *Notebook* toggle in the status bar) for a page of your own
+  writing beside the document. Drag a card from the Notes list into it — or press **+** on the
+  card, or *Add to notebook* in a mark's right-click menu — and it becomes a quote block showing
+  its source, page and colour; click the source line and the document opens at that passage
+  (in the tab that already has it, or a new one). Quotes can come from any document, and the
+  Notes tab of the launcher drags into it too. A notebook is a plain Typst file under
+  `~/.local/share/pereplyot/notebooks/` that compiles by itself and carries each quote's text
+  inline, so it reads correctly with Pereplyot closed. The *Notebooks* tab lists them by Library
+  shelf; each notebook can belong to a shelf, which follows the shelf when it is renamed.
+- **Connections.** *Connect…* on one annotation, then on another — in any two documents — links
+  them with a note of how they relate ("contradicts p. 12"). The link shows on both cards, in the
+  Notes list and in the notebook, and clicking it opens the other passage. Connections live in
+  their own file (`connections.json`), so nothing in your annotation files changes.
+- **Export the notebook** to Typst, Markdown or LaTeX with every quote cited — `@key[p. 12]`,
+  `[@key, p. 12]`, `\autocite[p.~12]{key}` when the document has a citation key, its title and
+  page in words when it does not — plus your own text, notes, connections and the clipped figures.
+  Typst gets an optional `#bibliography(…)` line; the exported file and the stored notebook are both
+  compiled by the real `typst` in a test. *Open in Zerkalo* saves the Typst and opens it there.
 - **Bring in marks made in other readers.** Open a PDF carrying highlights, underlines,
   strike-outs or sticky notes from Acrobat, Zotero, Preview or Okular and Pereplyot offers, once,
   to bring them in as ordinary annotations of its own (colours go to the nearest of the four

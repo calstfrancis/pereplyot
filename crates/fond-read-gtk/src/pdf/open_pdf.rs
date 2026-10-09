@@ -102,6 +102,7 @@ pub(super) fn open_pdf(
         pin: Default::default(),
         is_pane: shared_store.is_some(),
         close_hooks: Vec::new(),
+        doc_ref: None,
         mark_layers: Vec::new(),
         thumbnail_pictures: Vec::new(),
         scanned: false,
