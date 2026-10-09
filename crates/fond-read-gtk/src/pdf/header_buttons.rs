@@ -10,6 +10,7 @@ pub(super) struct HeaderButtonsParts {
     pub(super) redo_button: gtk4::Button,
     pub(super) popout_button: gtk4::Button,
     pub(super) export_button: gtk4::Button,
+    pub(super) copy_button: gtk4::Button,
     pub(super) header_start: gtk4::Box,
     pub(super) header_end: gtk4::Box,
     pub(super) more_button: gtk4::MenuButton,
@@ -101,6 +102,7 @@ pub(super) fn build_header_buttons(
     popout_button.add_css_class("flat");
     popout_button.set_tooltip_text(Some("Open in a new window"));
 
+    let copy_button = gtk4::Button::new();
     let export_button = gtk4::Button::from_icon_name("document-save-symbolic");
     export_button.add_css_class("flat");
     export_button.set_tooltip_text(Some("Export notes & highlights…"));
@@ -142,6 +144,7 @@ pub(super) fn build_header_buttons(
             ("Add note on this page…", note_button.clone()),
             ("Set page numbering…", page_num_button.clone()),
             ("Export notes…", export_button.clone()),
+            ("Save a copy with annotations…", copy_button.clone()),
             ("Split view: side by side", split_side_button.clone()),
             ("Split view: top and bottom", split_stack_button.clone()),
             ("Open in a new window", popout_button.clone()),
@@ -168,6 +171,7 @@ pub(super) fn build_header_buttons(
         redo_button,
         popout_button,
         export_button,
+        copy_button,
         header_start,
         header_end,
         more_button,

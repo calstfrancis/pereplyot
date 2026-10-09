@@ -7,10 +7,12 @@ pub(super) fn export_notes(
     reader: &Rc<RefCell<ReaderState>>,
     title: &str,
     reader_window: &adw::Window,
+    hash: &str,
 ) {
     let (items, bookmarks, clips, path) = {
         let r = reader.borrow();
-        let items = crate::export::items_with_figures(&r.store.sidecar(), &r.page_labels);
+        let items =
+            crate::export::items_with_figures(&r.store.sidecar(), &r.page_labels, Some(hash));
         let clips = crate::export::clips_of(&r.store.sidecar());
         let bookmarks = r
             .bookmarks

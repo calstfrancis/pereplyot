@@ -52,6 +52,8 @@ fn parse_args(args: &[std::ffi::OsString]) -> Result<ParsedArgs, String> {
     let mut progress_file: Option<PathBuf> = None;
     let mut title: Option<String> = None;
     let mut annotations_only = false;
+    let mut start_annotation: Option<String> = None;
+    let mut start_page: Option<u32> = None;
     let mut file: Option<PathBuf> = None;
 
     for arg in args {
@@ -68,13 +70,28 @@ fn parse_args(args: &[std::ffi::OsString]) -> Result<ParsedArgs, String> {
             title = Some(v.to_string());
         } else if s == "--annotations" {
             annotations_only = true;
+        } else if let Some(v) = s.strip_prefix("--annotation=") {
+            start_annotation = Some(v.to_string());
+        } else if let Some(link) = fond_read_gtk::deeplink::parse(&s) {
+            let entry = fond_read_gtk::history::load()
+                .into_iter()
+                .find(|e| e.hash == link.hash)
+                .ok_or_else(|| {
+                    "That link points at a document Pereplyot has not opened on this computer"
+                        .to_string()
+                })?;
+            file = Some(entry.path);
+            start_annotation = link.annotation;
+            start_page = link.page;
         } else if s.starts_with("--") {
             // Ignored rather than fatal: Kartoteka/Sputnik may pass an option a
             // not-yet-updated Pereplyot doesn't know, and opening the file anyway beats
             // opening nothing.
             eprintln!("pereplyot: ignoring unknown option {s}");
         } else if file.is_none() {
-            file = Some(PathBuf::from(arg));
+            file = Some(
+                fond_read_gtk::deeplink::file_uri_path(&s).unwrap_or_else(|| PathBuf::from(arg)),
+            );
         } else {
             return Err(format!("Unexpected extra argument: {s}"));
         }
@@ -120,7 +137,8 @@ fn parse_args(args: &[std::ffi::OsString]) -> Result<ParsedArgs, String> {
             host_override,
             title,
             annotations_only,
-            ..ui::window::LaunchOptions::default()
+            start_annotation,
+            start_page,
         },
     })
 }
@@ -302,6 +320,25 @@ mod tests {
             }
             _ => panic!(),
         }
+    }
+
+    #[test]
+    fn an_annotation_option_and_file_uris_are_understood() {
+        match parse_args(&args(&["--annotation=hl-1", "file:///tmp/a%20b.pdf"])) {
+            Ok(ParsedArgs::Open { file, options }) => {
+                assert_eq!(file, PathBuf::from("/tmp/a b.pdf"));
+                assert_eq!(options.start_annotation.as_deref(), Some("hl-1"));
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn a_link_to_a_document_never_opened_here_says_so() {
+        let err = parse_args(&args(&["pereplyot://open?hash=not-a-real-hash-0000"]))
+            .err()
+            .expect("an error");
+        assert!(err.contains("has not opened"), "{err}");
     }
 
     #[test]

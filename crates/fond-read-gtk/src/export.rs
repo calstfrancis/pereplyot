@@ -36,10 +36,23 @@ const FIGURES_DIR: &str = "pereplyot-figures-dir/";
 pub fn items_with_figures(
     sidecar: &fond_annot::AnnotationSidecar,
     page_labels: &[Option<String>],
+    hash: Option<&str>,
 ) -> Vec<Item> {
-    fond_annot::export::items_with_images(sidecar, page_labels, &|_| None, &|id| {
-        Some(format!("{FIGURES_DIR}{id}.png"))
-    })
+    fond_annot::export::items_with_links(
+        sidecar,
+        page_labels,
+        &|_| None,
+        &|id| Some(format!("{FIGURES_DIR}{id}.png")),
+        &|id| {
+            hash.map(|h| {
+                crate::deeplink::build(&crate::deeplink::DeepLink {
+                    hash: h.to_string(),
+                    annotation: Some(id.to_string()),
+                    page: None,
+                })
+            })
+        },
+    )
 }
 
 /// The clipped areas of a sidecar.
@@ -309,7 +322,7 @@ mod tests {
         );
         area.id = "area-1".into();
         sidecar.annotations.push(area);
-        let items = items_with_figures(&sidecar, &[]);
+        let items = items_with_figures(&sidecar, &[], Some("abc"));
         let clips = clips_of(&sidecar);
         assert_eq!(clips.len(), 1);
         let dir = std::env::temp_dir().join(format!("pereplyot-export-{}", std::process::id()));

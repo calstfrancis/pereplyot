@@ -57,6 +57,7 @@ pub(super) struct PdfUi {
     pub(super) paned: gtk4::Paned,
     pub(super) split_paned: gtk4::Paned,
     pub(super) split_side_button: gtk4::Button,
+    pub(super) copy_button: gtk4::Button,
     pub(super) split_stack_button: gtk4::Button,
     pub(super) pdf_hash: String,
     pub(super) title: String,

@@ -23,10 +23,12 @@ use gtk4::Orientation;
 pub mod annotation_store;
 pub mod annotations;
 pub mod clip;
+pub mod deeplink;
 pub mod epub;
 pub mod export;
 pub mod fsutil;
 pub mod history;
+pub mod interop;
 mod page_geom;
 pub mod palette;
 pub mod pdf;
@@ -114,6 +116,14 @@ pub trait ReaderHost {
     }
 
     fn save_position(&self, _page: u32, _fraction: f32) {}
+
+    /// Whether the offer to bring in annotations made in another app has been made for this
+    /// document, so it is made once.
+    fn import_offered(&self) -> bool {
+        true
+    }
+
+    fn set_import_offered(&self) {}
 
     /// Figures pinned over the page, as (1-based page, region `[x0, y0, x1, y1]` in page points as
     /// displayed, card x, card y), kept so they are back on reopening.

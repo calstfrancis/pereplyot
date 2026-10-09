@@ -41,6 +41,8 @@ struct LocalMeta {
     position: Option<(u32, f32)>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pins: Vec<(u32, [f32; 4], i32, i32)>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    import_offered: bool,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -187,6 +189,16 @@ impl ReaderHost for LocalReaderHost {
 
     fn pins(&self) -> Vec<(u32, [f32; 4], i32, i32)> {
         LocalMeta::load(&self.hash).pins
+    }
+
+    fn import_offered(&self) -> bool {
+        LocalMeta::load(&self.hash).import_offered
+    }
+
+    fn set_import_offered(&self) {
+        let mut meta = LocalMeta::load(&self.hash);
+        meta.import_offered = true;
+        meta.save(&self.hash);
     }
 
     fn save_pins(&self, pins: &[(u32, [f32; 4], i32, i32)]) {
@@ -464,6 +476,16 @@ impl ReaderHost for VaultReaderHost {
         LocalMeta::load(&self.hash).pins
     }
 
+    fn import_offered(&self) -> bool {
+        LocalMeta::load(&self.hash).import_offered
+    }
+
+    fn set_import_offered(&self) {
+        let mut meta = LocalMeta::load(&self.hash);
+        meta.import_offered = true;
+        meta.save(&self.hash);
+    }
+
     fn save_pins(&self, pins: &[(u32, [f32; 4], i32, i32)]) {
         let mut meta = LocalMeta::load(&self.hash);
         meta.pins = pins.to_vec();
@@ -590,6 +612,16 @@ impl ReaderHost for ExternalPathReaderHost {
 
     fn pins(&self) -> Vec<(u32, [f32; 4], i32, i32)> {
         LocalMeta::load(&self.hash).pins
+    }
+
+    fn import_offered(&self) -> bool {
+        LocalMeta::load(&self.hash).import_offered
+    }
+
+    fn set_import_offered(&self) {
+        let mut meta = LocalMeta::load(&self.hash);
+        meta.import_offered = true;
+        meta.save(&self.hash);
     }
 
     fn save_pins(&self, pins: &[(u32, [f32; 4], i32, i32)]) {

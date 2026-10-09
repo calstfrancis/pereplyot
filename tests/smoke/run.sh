@@ -433,7 +433,7 @@ run_split_case() {
     xdotool windowfocus "$w" 2>/dev/null
     xdotool mousemove 771 28 click 1
     sleep 1
-    xdotool mousemove 757 196 click 1
+    xdotool mousemove 757 232 click 1
     sleep 3
     screenshot "$WORK/split.png"
     local left right
@@ -469,7 +469,7 @@ run_split_case() {
     check "split: a key pressed in the second pane acts on that pane alone" "$([ "$rbox1" != "$rbox0" ] && [ "$lbox1" = "$lbox0" ] && echo 1 || echo 0)" "(left '$lbox0' -> '$lbox1', right '$rbox0' -> '$rbox1')"
     xdotool mousemove 771 28 click 1
     sleep 1
-    xdotool mousemove 757 196 click 1
+    xdotool mousemove 757 232 click 1
     sleep 1.5
     screenshot "$WORK/split-closed.png"
     local bar_open bar_closed
@@ -521,6 +521,35 @@ try:
     print(len(json.load(sys.stdin)["annotations"]))
 except Exception:
     print(0)' | grep -v '^0$')" ] && echo 1 || echo 0)" "(annotations left: $(annotations_json | head -c 80))"
+    stop_app
+}
+
+run_import_case() {
+    start_app "$FX/annotated.pdf"
+    local w
+    w="$(reader_window)" || { check "import: reader window opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
+    sleep 3
+    screenshot "$WORK/import.png"
+    local bar
+    bar="$(python3 "$HERE/text_bands.py" "$WORK/import.png" --ink-in 240 748 760 788)"
+    check "import: a PDF carrying another app's annotations offers to bring them in" "$([ "${bar:-0}" -gt 400 ] && echo 1 || echo 0)" "(toast ink: $bar)"
+    xdotool mousemove 655 767 click 1
+    sleep 1.5
+    local got
+    got="$(annotations_json | python3 -c 'import sys,json
+try:
+    a=json.load(sys.stdin)["annotations"]
+    print(len(a), ",".join(sorted(x["kind"] for x in a)))
+except Exception:
+    print("")')"
+    check "import: they become ordinary annotations of this app" "$([[ "$got" == "4 highlight,note,strikeout,underline" ]] && echo 1 || echo 0)" "(got '$got')"
+    stop_app
+    start_app "$FX/annotated.pdf" keep
+    reader_window >/dev/null
+    sleep 3
+    screenshot "$WORK/import-again.png"
+    bar="$(python3 "$HERE/text_bands.py" "$WORK/import-again.png" --ink-in 240 748 760 788)"
+    check "import: it does not ask a second time" "$([ "${bar:-999}" -lt 150 ] && echo 1 || echo 0)" "(toast ink: $bar)"
     stop_app
 }
 
@@ -597,6 +626,7 @@ want thumbs && run_thumbs_case
 want reading && run_reading_case
 want figures && run_figures_case
 want area && run_area_case
+want import && run_import_case
 want epub && run_epub_case
 want mixed && run_mixed_case
 

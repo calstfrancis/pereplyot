@@ -26,6 +26,7 @@ mod drag_preview;
 mod export;
 mod figures;
 mod hover_preview;
+mod interop_ui;
 mod keys;
 mod mark_edit;
 mod mark_layer;
@@ -475,6 +476,7 @@ fn build_reader(
         redo_button,
         popout_button,
         export_button,
+        copy_button,
         header_start,
         header_end,
         more_button,
@@ -709,6 +711,7 @@ fn build_reader(
         two_page_toggle: two_page_toggle.clone(),
         popout_button: popout_button.clone(),
         export_button: export_button.clone(),
+        copy_button: copy_button.clone(),
         search_entry: search_entry.clone(),
         search_prev: search_prev.clone(),
         search_next: search_next.clone(),
@@ -755,6 +758,7 @@ fn build_reader(
         popout::install_popout(&ui);
     }
     export::install_export(&ui);
+    interop_ui::install(&ui);
     search::install_search(&ui);
     scan::install_scan(&ui);
     split::install_split(&ui);

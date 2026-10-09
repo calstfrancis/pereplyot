@@ -70,7 +70,10 @@ pereplyot --annotations-file=<path> [--progress-file=<path>] <file>   # a Sputni
 Any of them also takes `--title=<title>` (the caller's own name for the document, used in
 place of the file's metadata title) and `--annotations` (open the document's Annotations
 dialog instead of the reader — what Kartoteka's "Annotations…" does; falls back to the
-reader if there are none yet). Unknown `--options` are ignored with a warning rather than
+reader if there are none yet) and `--annotation=<id>` (open at that annotation's page). A
+`pereplyot://open?hash=<content hash>[&annotation=<id>][&page=<n>]` link, or a `file://` URI, may
+stand where the file goes: Pereplyot finds the document by hash in its own History, so the links
+that exported notes carry open the exact passage. Unknown `--options` are ignored with a warning rather than
 rejected, so a newer Kartoteka/Sputnik can't break an older Pereplyot by passing one.
 
 The `--vault`/`--key` form writes straight into that vault's `notes/<key>.md` /

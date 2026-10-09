@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+- **Bring in marks made in other readers.** Open a PDF carrying highlights, underlines,
+  strike-outs or sticky notes from Acrobat, Zotero, Preview or Okular and Pereplyot offers, once,
+  to bring them in as ordinary annotations of its own (colours go to the nearest of the four
+  reading colours). Marks it already has are not duplicated.
+- **Save a copy with annotations…** (*More* menu) writes a PDF with every mark you have made —
+  highlights, underlines, strike-outs, sticky notes and clipped areas, with their colours and
+  notes — as standard annotations any reader shows. It always writes a new file, never the
+  original. Checked against poppler, which Okular uses.
+- **Links that open the passage.** Exports carry a ↗ link on each quotation
+  (`pereplyot://open?hash=…&annotation=…`); Pereplyot registers the `pereplyot://` scheme, finds the
+  document by its hash in its History, and opens at that page. `--annotation=<id>` does the same
+  from the command line, and `file://` URIs are accepted as files.
 - **Area capture.** Press **A** (or choose *Area* in the mark-style menu) and drag a box round a
   figure, table or equation: it is kept as a dashed, tinted rectangle on the page with the text
   the page has inside it. Right-click it to add a note, a tag or a colour. When you export

@@ -575,7 +575,17 @@ pub fn open_path_with_host(
     }
     match kind {
         DocKind::Pdf => {
-            let start_page = start_page.or(saved_progress.map(|p| p.page)).unwrap_or(1);
+            let annotation_page = start_annotation.as_deref().and_then(|id| {
+                host.load_annotations()
+                    .annotations
+                    .iter()
+                    .find(|a| a.id == id)
+                    .and_then(|a| a.page)
+            });
+            let start_page = start_page
+                .or(annotation_page)
+                .or(saved_progress.map(|p| p.page))
+                .unwrap_or(1);
             fond_read_gtk::pdf::show_pdf_reader(
                 &host,
                 &widgets.window,
