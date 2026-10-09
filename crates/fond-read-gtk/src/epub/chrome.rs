@@ -31,36 +31,18 @@ pub(super) fn export_notes(
     crate::export::show_export_dialog(host, reader_window, title, items, bookmarks);
 }
 
-/// Replace the reading-theme/font stylesheet registered on `view`'s `UserContentManager`
-/// with one built from the theme/font dropdowns' current selections — see the call site's
-/// doc comment for why this goes through a `WebKitUserStyleSheet` rather than a JS injection
-/// per chapter load. `theme`/`font` are the dropdowns' `selected()` indices, matching
-/// `theme_labels`/`font_labels`'s declared order.
-pub(super) fn apply_epub_style(view: &webkit6::WebView, theme: u32, font: u32) {
+/// Replace the stylesheet registered on `view`'s `UserContentManager` with one built from the
+/// shared reading typography — see the call site's doc comment for why this goes through a
+/// `WebKitUserStyleSheet` rather than a JS injection per chapter load.
+pub(super) fn apply_epub_style(
+    view: &webkit6::WebView,
+    typography: &crate::typography::Typography,
+) {
     let Some(ucm) = webkit6::prelude::WebViewExt::user_content_manager(view) else {
         return;
     };
     ucm.remove_all_style_sheets();
-
-    let theme_css = match theme {
-        1 => {
-            "html, body { background: #f4ecd8 !important; color: #5b4636 !important; } \
-              a, a:visited { color: #8a6d3b !important; }"
-        }
-        2 => {
-            "html, body { background: #1e1e1e !important; color: #dddddd !important; } \
-              a, a:visited { color: #8ab4f8 !important; }"
-        }
-        _ => "",
-    };
-    let font_css = match font {
-        1 => {
-            "body, p, div, span, li { font-family: Georgia, 'Times New Roman', serif !important; }"
-        }
-        2 => "body, p, div, span, li { font-family: -webkit-system-font, sans-serif !important; }",
-        _ => "",
-    };
-    let css = format!("{theme_css}\n{font_css}");
+    let css = typography.epub_css();
     if css.trim().is_empty() {
         return;
     }

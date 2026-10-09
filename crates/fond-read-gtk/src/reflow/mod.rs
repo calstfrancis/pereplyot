@@ -2,8 +2,10 @@
 
 pub mod extract;
 pub mod layout;
+pub mod margin;
 pub mod model;
 pub mod thread;
+pub mod view;
 
 #[cfg(test)]
 mod tests {

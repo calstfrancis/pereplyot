@@ -35,6 +35,12 @@ struct LocalMeta {
     bookmarks: Vec<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     citation_key: Option<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    reading_mode: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 impl LocalMeta {
@@ -152,6 +158,16 @@ impl ReaderHost for LocalReaderHost {
     fn save_bookmarks(&self, pages: &[u32]) {
         let mut meta = LocalMeta::load(&self.hash);
         meta.bookmarks = pages.to_vec();
+        meta.save(&self.hash);
+    }
+
+    fn reading_mode(&self) -> bool {
+        LocalMeta::load(&self.hash).reading_mode
+    }
+
+    fn set_reading_mode(&self, on: bool) {
+        let mut meta = LocalMeta::load(&self.hash);
+        meta.reading_mode = on;
         meta.save(&self.hash);
     }
 
@@ -400,6 +416,16 @@ impl ReaderHost for VaultReaderHost {
         meta.save(&self.hash);
     }
 
+    fn reading_mode(&self) -> bool {
+        LocalMeta::load(&self.hash).reading_mode
+    }
+
+    fn set_reading_mode(&self, on: bool) {
+        let mut meta = LocalMeta::load(&self.hash);
+        meta.reading_mode = on;
+        meta.save(&self.hash);
+    }
+
     fn citation_key(&self) -> Option<String> {
         Some(self.key.clone())
     }
@@ -495,6 +521,16 @@ impl ReaderHost for ExternalPathReaderHost {
     fn save_bookmarks(&self, pages: &[u32]) {
         let mut meta = LocalMeta::load(&self.hash);
         meta.bookmarks = pages.to_vec();
+        meta.save(&self.hash);
+    }
+
+    fn reading_mode(&self) -> bool {
+        LocalMeta::load(&self.hash).reading_mode
+    }
+
+    fn set_reading_mode(&self, on: bool) {
+        let mut meta = LocalMeta::load(&self.hash);
+        meta.reading_mode = on;
         meta.save(&self.hash);
     }
 

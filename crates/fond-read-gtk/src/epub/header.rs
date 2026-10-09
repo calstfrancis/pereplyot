@@ -74,68 +74,34 @@ pub(super) fn build_header(
     let apply_button = gtk4::Button::with_label("Apply");
     apply_button.set_tooltip_text(Some("Mark the selected text"));
 
-    // Font size: text-only zoom (see `set_zoom_text_only` above), stepped like the PDF
-    // reader's own zoom buttons. Not persisted across sessions (unlike window/pane sizing)
-    // — a book-length reading choice you're more likely to want to readjust per-book than
-    // to lock in globally.
-    let font_zoom: Rc<Cell<f64>> = Rc::new(Cell::new(1.0));
+    // Size, font, theme, spacing and column width come from the shared reading typography (the
+    // same panel and saved settings as the PDF Reading mode). The text-size buttons and
+    // Ctrl+plus/minus step its size; the page is restyled through a `WebKitUserStyleSheet` at
+    // `UserStyleLevel::User` — the highest-priority stylesheet WebKit has, so it overrides the
+    // EPUB's own CSS — registered once on the view's `UserContentManager` and left in place across
+    // chapter navigation, rather than re-injected via JS on every `load-changed`. Text size is the
+    // view's text-only zoom.
     let zoom_out_button = gtk4::Button::from_icon_name("zoom-out-symbolic");
     zoom_out_button.add_css_class("flat");
     zoom_out_button.set_tooltip_text(Some("Smaller text"));
     let zoom_in_button = gtk4::Button::from_icon_name("zoom-in-symbolic");
     zoom_in_button.add_css_class("flat");
     zoom_in_button.set_tooltip_text(Some("Larger text"));
+    zoom_out_button.connect_clicked(|_| {
+        crate::typography::shared().update(|t| t.size -= 0.1);
+    });
+    zoom_in_button.connect_clicked(|_| {
+        crate::typography::shared().update(|t| t.size += 0.1);
+    });
+    let typography_button = crate::typography::button();
     {
-        let web_view = web_view.clone();
-        let font_zoom = font_zoom.clone();
-        zoom_out_button.connect_clicked(move |_| {
-            let z = (font_zoom.get() - 0.1).max(0.5);
-            font_zoom.set(z);
-            web_view.set_zoom_level(z);
+        let weak = web_view.downgrade();
+        crate::typography::shared().watch(move |t| {
+            if let Some(web_view) = weak.upgrade() {
+                apply_epub_style(&web_view, t);
+                web_view.set_zoom_level(t.size);
+            }
         });
-    }
-    {
-        let web_view = web_view.clone();
-        let font_zoom = font_zoom.clone();
-        zoom_in_button.connect_clicked(move |_| {
-            let z = (font_zoom.get() + 0.1).min(3.0);
-            font_zoom.set(z);
-            web_view.set_zoom_level(z);
-        });
-    }
-
-    // Reading theme and font family — independent of the app's own System/Light/Dark
-    // toggle, since a WebView's page content doesn't inherit `adw::StyleManager` and people
-    // have real preferences about reading typography that don't always track their OS theme
-    // (paper-toned "sepia" being the obvious example neither Light nor Dark covers). Applied
-    // via a `WebKitUserStyleSheet` at `UserStyleLevel::User` — the highest-priority stylesheet
-    // WebKit has, so it overrides the EPUB's own CSS without needing `!important` fragility —
-    // registered once on the view's `UserContentManager` and left in place across chapter
-    // navigation, rather than re-injected via JS on every `load-changed`.
-    let theme_labels = ["Light", "Sepia", "Dark"];
-    let theme_drop = gtk4::DropDown::from_strings(&theme_labels);
-    theme_drop.set_tooltip_text(Some("Reading theme"));
-    let font_labels = ["Default font", "Serif", "Sans-serif"];
-    let font_drop = gtk4::DropDown::from_strings(&font_labels);
-    font_drop.set_tooltip_text(Some("Font family"));
-    {
-        let apply_style: Rc<dyn Fn()> = {
-            let web_view = web_view.clone();
-            let theme_drop = theme_drop.clone();
-            let font_drop = font_drop.clone();
-            Rc::new(move || {
-                apply_epub_style(&web_view, theme_drop.selected(), font_drop.selected())
-            })
-        };
-        {
-            let apply_style = apply_style.clone();
-            theme_drop.connect_selected_notify(move |_| apply_style());
-        }
-        {
-            let apply_style = apply_style.clone();
-            font_drop.connect_selected_notify(move |_| apply_style());
-        }
-        apply_style();
     }
 
     let export_button = gtk4::Button::from_icon_name("document-save-symbolic");
@@ -161,8 +127,7 @@ pub(super) fn build_header(
     header_start.append(&undo_button);
     header_start.append(&redo_button);
     let header_end = gtk4::Box::new(Orientation::Horizontal, 6);
-    header_end.append(&theme_drop);
-    header_end.append(&font_drop);
+    header_end.append(&typography_button);
     header_end.append(&export_button);
     header_end.append(&zoom_out_button);
     header_end.append(&zoom_in_button);

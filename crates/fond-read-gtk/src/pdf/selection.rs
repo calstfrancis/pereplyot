@@ -1,33 +1,80 @@
 use super::*;
 
-/// Repaint the Text view's marks from the reader's annotations.
+/// Repaint the Reading view's marks from the reader's annotations.
 pub(super) fn paint_text_marks(
     reader: &Rc<RefCell<ReaderState>>,
-    view: &Rc<crate::pdf_text::ReflowView>,
+    view: &Rc<crate::reflow::view::ReadingView>,
 ) {
-    use crate::pdf_text::{MarkStyle, TextMark};
-    let marks: Vec<TextMark> = reader
-        .borrow()
-        .store
-        .sidecar()
-        .annotations
-        .iter()
-        .filter_map(|a| {
-            let page = a.page?.checked_sub(1)? as u16;
-            let quote = a.snippet.clone()?;
-            Some(TextMark {
-                page,
-                quote,
-                rgba: annotation_rgba(a.color.as_deref()),
-                style: match a.kind {
-                    fond_annot::AnnotationKind::Underline => MarkStyle::Underline,
-                    fond_annot::AnnotationKind::Strikeout => MarkStyle::Strikeout,
-                    _ => MarkStyle::Highlight,
-                },
+    use crate::reflow::view::{MarkStyle, TextMark};
+    let marks: Vec<TextMark> = {
+        let r = reader.borrow();
+        let sidecar = r.store.sidecar();
+        let collected: Vec<TextMark> = sidecar
+            .annotations
+            .iter()
+            .filter_map(|a| {
+                let page = a.page?.checked_sub(1)? as u16;
+                let quote = a.snippet.clone()?;
+                let rects = r
+                    .geom(page)
+                    .map(|geom| display_rects(geom, &a.quadpoints))
+                    .unwrap_or_default();
+                Some(TextMark {
+                    page,
+                    quote,
+                    rects,
+                    rgba: annotation_rgba(a.color.as_deref()),
+                    style: match a.kind {
+                        fond_annot::AnnotationKind::Underline => MarkStyle::Underline,
+                        fond_annot::AnnotationKind::Strikeout => MarkStyle::Strikeout,
+                        _ => MarkStyle::Highlight,
+                    },
+                })
             })
-        })
-        .collect();
+            .collect();
+        collected
+    };
     view.apply_marks(&marks);
+}
+
+/// Quadpoints (PDF user space) as rectangles in page points as displayed, origin top left.
+fn display_rects(geom: PageGeom, quads: &[[f64; 8]]) -> Vec<[f32; 4]> {
+    let (_, height) = geom.display_size();
+    geom.quads_to_display(quads)
+        .iter()
+        .map(|q| {
+            let xs = [q[0], q[2], q[4], q[6]];
+            let ys = [q[1], q[3], q[5], q[7]];
+            let min = |v: &[f64; 4]| v.iter().cloned().fold(f64::INFINITY, f64::min) as f32;
+            let max = |v: &[f64; 4]| v.iter().cloned().fold(f64::NEG_INFINITY, f64::max) as f32;
+            [min(&xs), height - max(&ys), max(&xs), height - min(&ys)]
+        })
+        .collect()
+}
+
+/// Rectangles on `page`, in page points as displayed with the origin top left, as quadpoints in
+/// PDF user space — what an annotation stores.
+pub(super) fn rects_to_quads(
+    reader: &Rc<RefCell<ReaderState>>,
+    page: u16,
+    rects: &[(u16, [f32; 4])],
+) -> Vec<[f64; 8]> {
+    let r = reader.borrow();
+    let Some(geom) = r.geom(page) else {
+        return Vec::new();
+    };
+    let (w, h) = geom.display_size();
+    let (w, h) = (w as f64, h as f64);
+    rects
+        .iter()
+        .filter(|(p, _)| *p == page)
+        .map(|(_, b)| {
+            let corner = |x: f32, y: f32| geom.px_to_pdf(x as f64, y as f64, w, h);
+            let (tl, tr) = (corner(b[0], b[1]), corner(b[2], b[1]));
+            let (bl, br) = (corner(b[0], b[3]), corner(b[2], b[3]));
+            [tl.0, tl.1, tr.0, tr.1, bl.0, bl.1, br.0, br.1]
+        })
+        .collect()
 }
 
 /// The pointer shown over the page: an I-beam in "Select text" mode (this is a text

@@ -18,6 +18,7 @@ pub(super) fn install_keys(ui: &PdfUi) {
         zoom_in,
         zoom_fit_width,
         continuous_toggle,
+        text_toggle,
         search_entry,
         link_back,
         continuous_scroll,
@@ -46,6 +47,7 @@ pub(super) fn install_keys(ui: &PdfUi) {
         let palette_for_keys = palette.clone();
         let quick_mark_for_keys = quick_mark.clone();
         let reflow_popover_for_keys = reflow_popover.clone();
+        let text_toggle_key = text_toggle.clone();
         let search_for_keys = search_entry.clone();
         crate::reader_host::set_tab_key_handler(&reader_tab, move |keyval, modifiers| {
             if (keyval == gdk::Key::z || keyval == gdk::Key::Z)
@@ -85,6 +87,20 @@ pub(super) fn install_keys(ui: &PdfUi) {
                     }
                     _ => {}
                 }
+            }
+            if modifiers.is_empty()
+                && matches!(keyval, gdk::Key::t | gdk::Key::T)
+                && !view_for_focus
+                    .root()
+                    .and_then(|root| root.focus())
+                    .is_some_and(|w| {
+                        w.is::<gtk4::Entry>()
+                            || w.is::<gtk4::Text>()
+                            || w.is::<gtk4::TextView>() && w.widget_name() != "fond-reflow"
+                    })
+            {
+                text_toggle_key.set_active(!text_toggle_key.is_active());
+                return glib::Propagation::Stop;
             }
             let in_reflow = view_for_focus
                 .root()

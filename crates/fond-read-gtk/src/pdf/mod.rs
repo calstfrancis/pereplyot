@@ -387,6 +387,7 @@ pub fn show_pdf_reader(
         link_back,
     } = status_bar::build_status_bar(
         &header_end,
+        &text_toggle,
         &invert_button,
         &rotate_button,
         &zoom_fit_page,

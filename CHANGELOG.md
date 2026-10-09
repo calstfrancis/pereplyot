@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+- **Reading mode: a PDF that reads like an EPUB.** The old Text view is now **Reading** (the
+  named toggle in the status bar, or `T`): the document re-set as clean, restylable text.
+  Running headers, footers and page numbers are removed from the flow; two-column pages read
+  one column after the other; paragraphs and headings are recognised from indents, gaps and
+  type size, and a paragraph that runs over a column or page break stays one paragraph. A
+  quiet **printed page number** sits in a left margin at the line where each source page
+  begins (click it to copy a citation or jump to the original page), and **footnotes sit in
+  a right margin, level with the marker that cites them**, ragged-right and set smaller;
+  point at a marker and its note lights up, click either to open a long note. A note with
+  no marker is kept and flagged as unmatched rather than dropped. Selecting text and
+  pressing 1–4 saves a mark with the exact place of those words on the page, so it shows
+  there too, and marks made on the page show in the text. The mode is remembered per
+  document. The text is laid out on a background thread while you start reading: 600 pages
+  in under a second.
+- **One typography panel for both formats.** The **Aa** button (EPUB header, and the status
+  bar in Reading mode) sets font, size, line spacing, column width, margins, justification,
+  paragraph style (indented or spaced) and the Light / Sepia / Dark reading theme, once, for
+  both the EPUB reader and PDF Reading mode, and remembers it (`~/.config/pereplyot/reading.json`).
+  The EPUB reader's separate theme and font menus are replaced by it.
+- **Fixed: a mark made in the Text view never appeared until you reopened it.** Marks now
+  repaint as soon as they change, like they do on the page.
 - **Edit a highlight in place.** Pointing at a highlight, underline or strikeout outlines it;
   clicking selects it and shows a handle at each end. Drag a handle to cover more or less
   text (the new extent follows the pointer, and Ctrl+Z puts it back), press Delete to remove

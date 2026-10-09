@@ -66,18 +66,14 @@ pub(super) fn build_header_buttons(
     // `view_stack` child and `render()` (extended to also fill `right_picture`) rather than
     // being a separate mode with its own render path, so navigation/zoom/search/outline/
     // notes-sidebar jumps all stay in sync with two-page mode for free.
+    // Reading mode: the page re-set as clean, restylable text. A named toggle (house style: the
+    // label is the function's name, bold when on) that lives in the status bar.
     let text_toggle = gtk4::ToggleButton::new();
-    crate::set_icon_with_fallback(
-        &text_toggle,
-        &[
-            "format-justify-left-symbolic",
-            "view-reader-symbolic",
-            "text-x-generic-symbolic",
-        ],
-    );
+    text_toggle.add_css_class("flat");
+    text_toggle.set_label("Reading");
     text_toggle.set_tooltip_text(Some(
-        "Text view — the document's text reflowed: readable by screen readers, resizable, \
-         and selectable with the keyboard (Shift+arrows, then 1–4 to mark)",
+        "Reading mode (T) — the document re-set as text you can restyle: page numbers in the left \
+         margin, footnotes in the right; selectable with the keyboard (Shift+arrows, then 1–4 to mark)",
     ));
     let two_page_toggle = gtk4::ToggleButton::new();
     crate::set_icon_with_fallback(
@@ -121,7 +117,6 @@ pub(super) fn build_header_buttons(
     let header_end = gtk4::Box::new(Orientation::Horizontal, 6);
     header_end.append(&two_page_toggle);
     header_end.append(&continuous_toggle);
-    header_end.append(&text_toggle);
     header_end.append(&palette);
     header_end.append(&style_drop);
     let more_button = gtk4::MenuButton::new();

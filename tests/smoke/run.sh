@@ -230,6 +230,42 @@ run_thumbs_case() {
     stop_app
 }
 
+run_reading_case() {
+    start_app "$FX/monograph.pdf"
+    local w
+    w="$(reader_window)" || { check "reading: reader window opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
+    sleep 2
+    xdotool windowfocus "$w" 2>/dev/null
+    xdotool key t
+    sleep 3
+    screenshot "$WORK/reading.png"
+    local left right
+    left="$(python3 "$HERE/text_bands.py" "$WORK/reading.png" --ink-in 36 128 70 160)"
+    right="$(python3 "$HERE/text_bands.py" "$WORK/reading.png" --ink-in 770 380 960 440)"
+    check "reading: the printed page number is in the left margin" "$([ "${left:-0}" -gt 6 ] && echo 1 || echo 0)" "(ink: $left)"
+    check "reading: the footnote is in the right margin beside its line" "$([ "${right:-0}" -gt 80 ] && echo 1 || echo 0)" "(ink: $right)"
+    xdotool mousemove 110 205 mousedown 1 mousemove 400 205 mousemove 650 205 mouseup 1
+    sleep 1
+    xdotool key 1
+    sleep 1
+    local saved
+    saved="$(annotations_json | python3 -c 'import sys,json
+try:
+    d=json.load(sys.stdin)
+    a=d["annotations"][0]
+    print(a.get("page"), len(a.get("quadpoints", [])), (a.get("snippet") or "")[:14])
+except Exception:
+    print("")')"
+    check "reading: marking a selection saves its words, page and where they sit (a line of the reading text spans two lines of the page)" "$([[ "$saved" == "1 2 of for at from" ]] && echo 1 || echo 0)" "(got '$saved')"
+    xdotool key t
+    sleep 2
+    screenshot "$WORK/reading-page.png"
+    local on
+    on="$(python3 "$HERE/text_bands.py" "$WORK/reading-page.png" --has-highlight)"
+    check "reading: the mark made in Reading mode is drawn on the page" "$([ "${on:-0}" -gt 150 ] && echo 1 || echo 0)" "(amber pixels: $on)"
+    stop_app
+}
+
 run_epub_case() {
     start_app "$FX/book.epub"
     local w
@@ -295,6 +331,7 @@ want plain && run_pdf_case plain plain.pdf y 2 "Pack my box with five dozen liqu
 want cropbox && run_pdf_case cropbox cropbox.pdf y 2 "Pack my box with five dozen liquor jugs."
 want rotated && run_pdf_case rotated rotated.pdf y 2 "Pack my box with five dozen liquor jugs."
 want thumbs && run_thumbs_case
+want reading && run_reading_case
 want epub && run_epub_case
 want mixed && run_mixed_case
 

@@ -29,13 +29,13 @@ pub mod history;
 mod page_geom;
 pub mod palette;
 pub mod pdf;
-mod pdf_text;
 pub mod pdfium;
 mod pdfium_lock;
 pub mod perf;
 pub mod reader_host;
 pub mod reflow;
 pub mod store;
+pub mod typography;
 
 /// A slot holding a "rebuild this list" closure, filled in after the widgets it rebuilds
 /// exist. Shared by both readers' notes sidebars.
@@ -97,6 +97,13 @@ pub trait ReaderHost {
     }
 
     fn set_citation_key(&self, _key: Option<String>) {}
+
+    /// Whether this document was last left in Reading mode, so it reopens that way.
+    fn reading_mode(&self) -> bool {
+        false
+    }
+
+    fn set_reading_mode(&self, _on: bool) {}
 
     /// Like [`Self::notify`], with one button. Hosts that can't show buttons just notify.
     fn notify_action(&self, message: &str, _label: &str, _action: Rc<dyn Fn()>) {

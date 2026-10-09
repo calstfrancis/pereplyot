@@ -20,7 +20,7 @@ pub(super) fn install_text_view(ui: &PdfUi) {
     } = ui.clone();
     // Text view: the document's text reflowed into a text widget (see `pdf_text`).
     {
-        let reflow: Rc<RefCell<Option<Rc<crate::pdf_text::ReflowView>>>> =
+        let reflow: Rc<RefCell<Option<Rc<crate::reflow::view::ReadingView>>>> =
             Rc::new(RefCell::new(None));
         let host = host.clone();
         let reader = reader.clone();
@@ -35,7 +35,10 @@ pub(super) fn install_text_view(ui: &PdfUi) {
         let next = next.clone();
         let bookmark_button = bookmark_button.clone();
         let reflow_popover = reflow_popover.clone();
+        let host_for_labels = host.clone();
+        let host_for_mode = host.clone();
         text_toggle.connect_toggled(move |btn| {
+            host_for_mode.set_reading_mode(btn.is_active());
             if !btn.is_active() {
                 {
                     let mut r = reader.borrow_mut();
@@ -65,7 +68,16 @@ pub(super) fn install_text_view(ui: &PdfUi) {
             let view = match existing {
                 Some(v) => v,
                 None => {
-                    let view = crate::pdf_text::ReflowView::new(count);
+                    let labels = page_labels.clone();
+                    let view = crate::reflow::view::ReadingView::new(
+                        count,
+                        Rc::new(move |page| {
+                            labels
+                                .get(page as usize)
+                                .and_then(|l| l.clone())
+                                .unwrap_or_else(|| (page + 1).to_string())
+                        }),
+                    );
                     view_stack.add_named(&view.scroll, Some("text"));
                     *reflow.borrow_mut() = Some(view.clone());
 
@@ -121,9 +133,12 @@ pub(super) fn install_text_view(ui: &PdfUi) {
                             if reader.borrow().text_goto.is_none() {
                                 return;
                             }
-                            let selection = view_for_sel.selection();
-                            reader.borrow_mut().last_selection =
-                                selection.map(|(page, text)| (page, text, Vec::new()));
+                            let selection = view_for_sel.selection().map(|(page, text)| {
+                                let quads =
+                                    rects_to_quads(&reader, page, &view_for_sel.selection_rects());
+                                (page, text, quads)
+                            });
+                            reader.borrow_mut().last_selection = selection;
                         });
                         let buffer = view.text_view.buffer();
                         {
@@ -218,41 +233,38 @@ pub(super) fn install_text_view(ui: &PdfUi) {
                 }));
             }
             hint.set_text(
-                "Text view: Shift+arrows select, then 1–4 mark it; Ctrl+plus/minus resize the text",
+                "Reading mode: Shift+arrows select, then 1–4 mark it; Ctrl+plus/minus resize the text",
             );
 
-            let reader_for_text = reader.clone();
-            let page_labels_text = page_labels.clone();
-            view.start_loading(
-                Rc::new({
-                    let reader = reader_for_text.clone();
-                    move |page| {
-                        let r = reader.borrow();
-                        r.doc
-                            .as_ref()
-                            .and_then(|d| {
-                                let page = d.pages().get(page).ok()?;
-                                Some(crate::page_text(&page))
-                            })
-                            .unwrap_or_default()
-                    }
-                }),
-                Rc::new(move |page| {
-                    page_labels_text
-                        .get(page as usize)
-                        .and_then(|l| l.clone())
-                        .unwrap_or_else(|| (page + 1).to_string())
-                }),
-                Rc::new({
-                    let view = view.clone();
-                    let reader = reader.clone();
-                    move |loaded| {
-                        if loaded == count {
-                            paint_text_marks(&reader, &view);
-                        }
-                    }
-                }),
-            );
+            {
+                let reader_for_marks = reader.clone();
+                let view_for_marks = view.clone();
+                *view.on_content.borrow_mut() = Some(Rc::new(move || {
+                    paint_text_marks(&reader_for_marks, &view_for_marks);
+                }));
+                // A mark added, changed, removed or undone repaints here as it does on the page.
+                let store = reader.borrow().store.clone();
+                let reader_for_store = reader.clone();
+                let view_for_store = view.clone();
+                store.subscribe(move |_, _| paint_text_marks(&reader_for_store, &view_for_store));
+                let host = host.clone();
+                *view.on_no_text.borrow_mut() = Some(Rc::new(move || {
+                    host.notify("This document has no text layer, so there is nothing to reflow");
+                }));
+                let host_click = host_for_labels.clone();
+                let reader_click = reader.clone();
+                let text_toggle_click = btn.clone();
+                *view.on_page_label_click.borrow_mut() = Some(Rc::new(move |page, parent| {
+                    show_page_label_menu(
+                        &host_click,
+                        &reader_click,
+                        &text_toggle_click,
+                        page,
+                        parent,
+                    );
+                }));
+                view.load(reader.borrow().path.clone());
+            }
             view_stack.set_visible_child_name("text");
             let start_page = reader.borrow().page;
             let view_jump = view.clone();
@@ -267,4 +279,62 @@ pub(super) fn install_text_view(ui: &PdfUi) {
             view.text_view.grab_focus();
         });
     }
+    if host.reading_mode() {
+        let text_toggle = text_toggle.clone();
+        glib::idle_add_local_once(move || text_toggle.set_active(true));
+    }
+}
+
+/// The small menu on a page number in the Reading view's left margin: cite the page, or go to the
+/// original page image.
+fn show_page_label_menu(
+    host: &Rc<dyn ReaderHost>,
+    reader: &Rc<RefCell<ReaderState>>,
+    text_toggle: &gtk4::ToggleButton,
+    page: u16,
+    parent: &gtk4::Widget,
+) {
+    let popover = gtk4::Popover::new();
+    popover.set_parent(parent);
+    let rows = gtk4::Box::new(Orientation::Vertical, 2);
+    rows.set_margin_top(6);
+    rows.set_margin_bottom(6);
+    rows.set_margin_start(6);
+    rows.set_margin_end(6);
+    let label = {
+        let r = reader.borrow();
+        r.page_labels
+            .get(page as usize)
+            .and_then(|l| l.clone())
+            .unwrap_or_else(|| (page + 1).to_string())
+    };
+    let cite = popover_button(&format!("Copy “p. {label}” citation"), false);
+    {
+        let host = host.clone();
+        let popover = popover.clone();
+        let label = label.clone();
+        cite.connect_clicked(move |_| {
+            popover.popdown();
+            copy_to_clipboard(&host, &format!("p. {label}"));
+        });
+    }
+    rows.append(&cite);
+    let original = popover_button("Show the original page", false);
+    {
+        let popover = popover.clone();
+        let reader = reader.clone();
+        let text_toggle = text_toggle.clone();
+        original.connect_clicked(move |_| {
+            popover.popdown();
+            reader.borrow_mut().page = page;
+            text_toggle.set_active(false);
+        });
+    }
+    rows.append(&original);
+    popover.set_child(Some(&rows));
+    popover.connect_closed(|p| {
+        let p = p.clone();
+        glib::idle_add_local_once(move || p.unparent());
+    });
+    popover.popup();
 }
