@@ -72,7 +72,7 @@ modules:
       - -DOPENMP_BUILD=OFF
       - -DGRAPHICS_DISABLED=ON
     post-install:
-      - install -Dm644 eng.traineddata /app/share/tessdata/eng.traineddata
+      - install -Dm644 ../eng.traineddata /app/share/tessdata/eng.traineddata
     cleanup:
       - /include
       - /lib/cmake
