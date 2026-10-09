@@ -4,6 +4,8 @@ pub(super) struct SidebarParts {
     pub(super) sidebar_box: gtk4::Box,
     pub(super) notes_rows: gtk4::Box,
     pub(super) notes_scroll: gtk4::ScrolledWindow,
+    pub(super) outline_rows: Vec<gtk4::Button>,
+    pub(super) outline_scroll: gtk4::ScrolledWindow,
 }
 
 pub(super) fn build_sidebar(
@@ -16,6 +18,7 @@ pub(super) fn build_sidebar(
     // Stack, since only one is useful to see at a time; the two toggles are mutually
     // exclusive (activating one deactivates the other) but each can still be clicked again
     // to close the sidebar entirely, unlike a strict radio-group.
+    let mut outline_rows: Vec<gtk4::Button> = Vec::new();
     let contents_scroll = {
         let rows = gtk4::Box::new(Orientation::Vertical, 2);
         rows.set_margin_top(6);
@@ -41,6 +44,7 @@ pub(super) fn build_sidebar(
                 row.set_sensitive(false);
             }
             rows.append(&row);
+            outline_rows.push(row);
         }
         let scroll = gtk4::ScrolledWindow::new();
         scroll.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
@@ -136,5 +140,7 @@ pub(super) fn build_sidebar(
         sidebar_box,
         notes_rows,
         notes_scroll,
+        outline_rows,
+        outline_scroll: contents_scroll,
     }
 }

@@ -76,6 +76,7 @@ use ui::PdfUi;
 use worker::{Job, RenderKey, RenderWorker, Rendered, Tone};
 mod notes;
 mod ocr;
+mod outline_track;
 mod render;
 mod selection;
 mod thumbnails;
@@ -403,6 +404,7 @@ pub fn show_pdf_reader(
 
     let CanvasParts {
         hint,
+        breadcrumb,
         picture,
         drag_preview,
         drag_live_rect,
@@ -448,7 +450,17 @@ pub fn show_pdf_reader(
         sidebar_box,
         notes_rows,
         notes_scroll,
+        outline_rows,
+        outline_scroll,
     } = sidebar::build_sidebar(&outline_entries, &reader);
+    outline_track::install_outline_tracking(
+        &reader,
+        outline_entries.clone(),
+        outline_rows,
+        outline_scroll,
+        &breadcrumb,
+        &page_entry,
+    );
     let (rebuild_notes, quiet_notes) =
         notes::install_notes_sidebar(host, &reader, &bookmark_button, &notes_rows);
     {

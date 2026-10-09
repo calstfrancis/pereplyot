@@ -2,6 +2,7 @@ use super::*;
 
 pub(super) struct CanvasParts {
     pub(super) hint: gtk4::Label,
+    pub(super) breadcrumb: gtk4::Label,
     pub(super) picture: gtk4::Picture,
     pub(super) drag_preview: gtk4::DrawingArea,
     pub(super) drag_live_rect: DragRectCell,
@@ -84,11 +85,24 @@ pub(super) fn build_canvas(reader: &Rc<RefCell<ReaderState>>) -> CanvasParts {
     view_stack.add_named(&continuous_overlay, Some("continuous"));
     view_stack.set_visible_child_name("paged");
 
+    // The hint, and where in the book you are (the outline's section path) at the end of its row.
+    let breadcrumb = gtk4::Label::new(None);
+    breadcrumb.add_css_class("dim-label");
+    breadcrumb.add_css_class("caption");
+    breadcrumb.set_ellipsize(gtk4::pango::EllipsizeMode::Middle);
+    breadcrumb.set_max_width_chars(44);
+    breadcrumb.set_margin_end(12);
+    breadcrumb.set_visible(false);
+    hint.set_hexpand(true);
+    let hint_row = gtk4::Box::new(Orientation::Horizontal, 0);
+    hint_row.append(&hint);
+    hint_row.append(&breadcrumb);
     let content = gtk4::Box::new(Orientation::Vertical, 0);
-    content.append(&hint);
+    content.append(&hint_row);
     content.append(&view_stack);
     CanvasParts {
         hint,
+        breadcrumb,
         picture,
         drag_preview,
         drag_live_rect,

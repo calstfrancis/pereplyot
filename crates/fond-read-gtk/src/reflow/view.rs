@@ -119,6 +119,7 @@ fn escape(s: &str) -> String {
 
 impl ReadingView {
     pub fn new(total: u16, page_label: Rc<dyn Fn(u16) -> String>) -> Rc<ReadingView> {
+        crate::style::ensure();
         let text_view = gtk4::TextView::new();
         text_view.set_editable(false);
         text_view.set_cursor_visible(true);

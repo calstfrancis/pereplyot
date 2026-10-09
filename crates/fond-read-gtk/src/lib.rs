@@ -35,6 +35,7 @@ pub mod perf;
 pub mod reader_host;
 pub mod reflow;
 pub mod store;
+mod style;
 pub mod typography;
 
 /// A slot holding a "rebuild this list" closure, filled in after the widgets it rebuilds
