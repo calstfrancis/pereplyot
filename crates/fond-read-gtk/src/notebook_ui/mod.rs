@@ -215,6 +215,37 @@ pub fn show_in_pane(paned: &gtk4::Paned, hidden: Rc<dyn Fn()>) {
     };
 }
 
+/// Make `toggle` show and hide the notebook in `paned`'s end child, and let go of it when the
+/// pane's window goes away.
+pub fn bind_toggle(toggle: &gtk4::ToggleButton, paned: &gtk4::Paned) {
+    let hiding = Rc::new(std::cell::Cell::new(false));
+    {
+        let paned = paned.clone();
+        let hiding = hiding.clone();
+        let this = toggle.clone();
+        toggle.connect_toggled(move |t| {
+            if hiding.get() {
+                return;
+            }
+            if t.is_active() {
+                let this = this.clone();
+                let hiding = hiding.clone();
+                show_in_pane(
+                    &paned,
+                    Rc::new(move || {
+                        hiding.set(true);
+                        this.set_active(false);
+                        hiding.set(false);
+                    }),
+                );
+            } else {
+                hide_in_pane(&paned);
+            }
+        });
+    }
+    paned.connect_destroy(hide_in_pane);
+}
+
 /// Take the notebook out of `paned`, if that is where it is.
 pub fn hide_in_pane(paned: &gtk4::Paned) {
     let s = session();

@@ -3,6 +3,8 @@ use super::*;
 pub(super) struct LayoutParts {
     pub(super) notes_paned: gtk4::Paned,
     pub(super) paned: gtk4::Paned,
+    /// The whole reading area, with room beside it for the notebook.
+    pub(super) notebook_paned: gtk4::Paned,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -41,7 +43,14 @@ pub(super) fn build_layout(
     paned.set_vexpand(true);
     paned.set_hexpand(true);
     paned.set_position(220);
-    view.set_content(Some(&paned));
+    let notebook_paned = gtk4::Paned::new(Orientation::Horizontal);
+    notebook_paned.set_start_child(Some(&paned));
+    notebook_paned.set_resize_start_child(true);
+    notebook_paned.set_shrink_start_child(true);
+    notebook_paned.set_end_child(gtk4::Widget::NONE);
+    notebook_paned.set_vexpand(true);
+    notebook_paned.set_hexpand(true);
+    view.set_content(Some(&notebook_paned));
 
     // Status bar: just the reader-host footer (if the embedding app registered one, e.g.
     // Pereplyot's version/changelog button) — this reader otherwise has nothing that
@@ -63,5 +72,9 @@ pub(super) fn build_layout(
     }
     view.add_bottom_bar(&statusbar);
 
-    LayoutParts { notes_paned, paned }
+    LayoutParts {
+        notes_paned,
+        paned,
+        notebook_paned,
+    }
 }

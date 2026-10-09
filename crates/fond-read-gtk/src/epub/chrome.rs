@@ -16,25 +16,24 @@ pub(super) fn export_notes(
     hash: &str,
     reader_window: &adw::Window,
 ) {
-    let (items, bookmarks) = {
+    let (items, bookmarks, clips) = {
         let r = reader.borrow();
-        let items = epub_items(&r.store.sidecar(), &r.spine, hash);
+        let items = epub_items(&r.store.sidecar(), &r.spine, hash, &r.cache_dir);
+        let clips: Vec<crate::export::AreaClip> = r
+            .store
+            .sidecar()
+            .annotations
+            .iter()
+            .filter_map(|a| epub_clip_of(a, &r.cache_dir))
+            .collect();
         let bookmarks = r
             .bookmarks
             .iter()
             .map(|&c| format!("ch. {}", c + 1))
             .collect();
-        (items, bookmarks)
+        (items, bookmarks, clips)
     };
-    crate::export::show_export_dialog(
-        host,
-        reader_window,
-        title,
-        items,
-        bookmarks,
-        None,
-        Vec::new(),
-    );
+    crate::export::show_export_dialog(host, reader_window, title, items, bookmarks, None, clips);
 }
 
 /// Export items for an EPUB's annotations in reading order, each cited by its printed page when
@@ -43,6 +42,7 @@ pub(super) fn epub_items(
     sidecar: &fond_annot::AnnotationSidecar,
     spine: &[String],
     hash: &str,
+    cache_dir: &std::path::Path,
 ) -> Vec<crate::export::Item> {
     let chapter_number = |c: &str| spine.iter().position(|p| p == c).map(|i| i + 1);
     let mut keyed: Vec<((usize, Option<String>), crate::export::Item)> = Vec::new();
@@ -67,6 +67,13 @@ pub(super) fn epub_items(
             item.locator = label;
             item.is_chapter = false;
         }
+        if let Some(clip) = epub_clip_of(a, cache_dir) {
+            item.image = Some(format!(
+                "{}{}",
+                crate::export::FIGURES_DIR,
+                clip.file_name()
+            ));
+        }
         let at = a
             .chapter
             .as_deref()
@@ -76,6 +83,21 @@ pub(super) fn epub_items(
     }
     keyed.sort_by(|a, b| a.0.cmp(&b.0));
     keyed.into_iter().map(|(_, i)| i).collect()
+}
+
+/// The picture file a clipped image annotation stands for, as an export figure to copy.
+fn epub_clip_of(
+    a: &fond_annot::Annotation,
+    cache_dir: &std::path::Path,
+) -> Option<crate::export::AreaClip> {
+    let image = crate::image_of(a)?;
+    let source = cache_dir.join(&image);
+    source.is_file().then(|| crate::export::AreaClip {
+        id: a.id.clone(),
+        page: 0,
+        rect: [0.0; 4],
+        copy_from: Some(source),
+    })
 }
 
 /// Replace the stylesheet registered on `view`'s `UserContentManager` with one built from the
@@ -196,4 +218,53 @@ pub(super) fn build_contents_sidebar(
     scroll.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
     scroll.set_child(Some(&rows));
     scroll
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn annotation(chapter: &str, snippet: &str, label: Option<&str>) -> fond_annot::Annotation {
+        let mut a = fond_annot::Annotation::drawn_epub(
+            fond_annot::AnnotationKind::Highlight,
+            chapter.to_string(),
+            snippet.to_string(),
+            None,
+            None,
+            None,
+        );
+        crate::set_page_label(&mut a, label);
+        a
+    }
+
+    #[test]
+    fn exports_cite_the_printed_page_when_there_is_one_and_the_chapter_when_not() {
+        let spine = vec!["a.xhtml".to_string(), "b.xhtml".to_string()];
+        let mut sidecar = fond_annot::AnnotationSidecar::new("k");
+        sidecar.annotations = vec![
+            annotation("b.xhtml", "later", None),
+            annotation("a.xhtml", "first", Some("xii")),
+        ];
+        let items = epub_items(
+            &sidecar,
+            &spine,
+            "hash",
+            std::path::Path::new("/nonexistent"),
+        );
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].quote.as_deref(), Some("first"));
+        assert_eq!(
+            (items[0].locator.as_str(), items[0].is_chapter),
+            ("xii", false)
+        );
+        assert_eq!(
+            (items[1].locator.as_str(), items[1].is_chapter),
+            ("2", true)
+        );
+        assert!(items[0]
+            .link
+            .as_deref()
+            .unwrap()
+            .starts_with("pereplyot://open?hash=hash&annotation="));
+    }
 }

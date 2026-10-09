@@ -14,6 +14,7 @@ pub(super) fn install_keys(ui: &EpubUi) {
         epub_redo,
         page_turn,
         reader,
+        notebook_toggle,
         ..
     } = ui;
     {
@@ -31,6 +32,7 @@ pub(super) fn install_keys(ui: &EpubUi) {
         let bookmark_button = bookmark_button.clone();
         let view_for_focus = web_view.clone();
         let page_turn = page_turn.clone();
+        let notebook_toggle = notebook_toggle.clone();
         let reader = reader.clone();
         let zoom_in_key = zoom_in_button.clone();
         let zoom_out_key = zoom_out_button.clone();
@@ -74,6 +76,10 @@ pub(super) fn install_keys(ui: &EpubUi) {
                     }
                     _ => {}
                 }
+            }
+            if modifiers.is_empty() && matches!(keyval, gdk::Key::n | gdk::Key::N) {
+                notebook_toggle.set_active(!notebook_toggle.is_active());
+                return glib::Propagation::Stop;
             }
             // Paginated: the keys turn pages, and a chapter ends only when its pages do.
             if reader.borrow().paginated && !modifiers.contains(gdk::ModifierType::CONTROL_MASK) {

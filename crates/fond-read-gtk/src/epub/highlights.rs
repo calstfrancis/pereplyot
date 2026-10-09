@@ -41,7 +41,7 @@ const EPUB_BODY_TEXT_JS: &str = "document.body ? document.body.textContent : ''"
 /// chapter's text in a `<mark class="kartoteka-hl">`, clearing marks left by a previous call
 /// first (so adding a highlight just re-runs this instead of reloading the page), and scrolls
 /// the mark matching `scrollToId` into view.
-pub(super) const EPUB_APPLY_HIGHLIGHTS_FN: &str = r#"(function(annotations, scrollToId) {
+pub(super) const EPUB_APPLY_HIGHLIGHTS_FN: &str = r#"(function(annotations, scrollToId, images) {
   function rangeAt(start, end) {
     var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null);
     var node, pos = 0, startNode = null, startOffset = 0, endNode = null, endOffset = 0;
@@ -101,6 +101,23 @@ pub(super) const EPUB_APPLY_HIGHLIGHTS_FN: &str = r#"(function(annotations, scro
       mark.scrollIntoView({ block: 'center' });
     }
   });
+
+  document.querySelectorAll('img[data-pp-area]').forEach(function(img) {
+    img.style.outline = '';
+    img.style.outlineOffset = '';
+    img.removeAttribute('data-pp-area');
+  });
+  (images || []).forEach(function(a) {
+    Array.prototype.forEach.call(document.images, function(img) {
+      var src = decodeURIComponent(img.src);
+      if (src.length >= a.image.length && src.slice(src.length - a.image.length) === a.image) {
+        img.style.outline = '4px solid ' + (a.color || '#f6c344');
+        img.style.outlineOffset = '2px';
+        img.dataset.ppArea = a.id;
+        if (scrollToId && a.id === scrollToId) img.scrollIntoView({ block: 'center' });
+      }
+    });
+  });
 })"#;
 
 /// JS that reports the `WebView`'s current text selection (if any) as JSON: `{empty: true}`
@@ -158,6 +175,9 @@ pub(super) fn locate_annotations(
         .iter()
         .filter(|a| a.chapter.as_deref() == Some(chapter))
     {
+        if crate::image_of(a).is_some() {
+            continue;
+        }
         let Some(snippet) = a.snippet.as_deref() else {
             continue;
         };
@@ -235,13 +255,26 @@ pub(super) fn epub_apply_highlights(
                         })
                     })
                     .collect();
+                let images: Vec<serde_json::Value> = sidecar
+                    .annotations
+                    .iter()
+                    .filter(|a| a.chapter.as_deref() == Some(chapter.as_str()))
+                    .filter_map(|a| {
+                        let image = crate::image_of(a)?;
+                        Some(serde_json::json!({"id": a.id, "image": image, "color": a.color}))
+                    })
+                    .collect();
                 (
-                    serde_json::to_string(&items).unwrap_or_else(|_| "[]".to_string()),
+                    (
+                        serde_json::to_string(&items).unwrap_or_else(|_| "[]".to_string()),
+                        serde_json::to_string(&images).unwrap_or_else(|_| "[]".to_string()),
+                    ),
                     changed.then(|| r.on_lost_changed.clone()).flatten(),
                 )
             };
+            let (payload, images) = payload;
             let script = format!(
-                "{EPUB_APPLY_HIGHLIGHTS_FN}({payload}, {scroll_json}); if (window.__snap) window.__snap();"
+                "{EPUB_APPLY_HIGHLIGHTS_FN}({payload}, {scroll_json}, {images}); if (window.__snap) window.__snap();"
             );
             view_for_apply.evaluate_javascript(&script, None, None, gio::Cancellable::NONE, |_| {});
             if let Some(f) = lost_changed {

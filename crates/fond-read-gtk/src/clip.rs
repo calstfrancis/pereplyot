@@ -25,6 +25,23 @@ pub struct AreaClip {
     pub id: String,
     pub page: u32,
     pub rect: [f64; 4],
+    /// For a picture that is already a file (an image clipped from an EPUB): copy this instead of
+    /// drawing a part of a page.
+    pub copy_from: Option<std::path::PathBuf>,
+}
+
+impl AreaClip {
+    /// The name the picture is saved under in the export's figures folder.
+    pub fn file_name(&self) -> String {
+        let ext = self
+            .copy_from
+            .as_ref()
+            .and_then(|p| p.extension())
+            .map_or("png".to_string(), |e| {
+                e.to_string_lossy().to_ascii_lowercase()
+            });
+        format!("{}.{ext}", self.id)
+    }
 }
 
 /// Draw `rect` of page `page` (1-based) of the PDF at `path`. Blocking: call it off the main

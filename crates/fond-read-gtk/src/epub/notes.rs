@@ -11,6 +11,7 @@ pub(super) fn install_notes_sidebar(
     bookmark_button: &gtk4::Button,
     pending_scroll: &Rc<RefCell<Option<String>>>,
     notes_rows: &gtk4::Box,
+    doc: crate::notebook_ui::DocRef,
 ) -> (Rc<dyn Fn()>, Rc<Cell<bool>>) {
     let rebuild_notes_cell: RebuildCell = Rc::new(RefCell::new(None));
     let quiet_notes = Rc::new(Cell::new(false));
@@ -26,6 +27,7 @@ pub(super) fn install_notes_sidebar(
         let pending_scroll = pending_scroll.clone();
         let quiet_notes = quiet_notes.clone();
         let rebuild_notes_cell_inner = rebuild_notes_cell.clone();
+        let doc = doc.clone();
         let builder = move || {
             while let Some(child) = notes_rows.first_child() {
                 notes_rows.remove(&child);
@@ -149,6 +151,7 @@ pub(super) fn install_notes_sidebar(
                     fond_annot::AnnotationKind::Underline => "Underline",
                     fond_annot::AnnotationKind::Strikeout => "Strikeout",
                     fond_annot::AnnotationKind::Note => "Note",
+                    fond_annot::AnnotationKind::Area => "Image",
                     // AnnotationKind is non_exhaustive from fond-core's next rev
                     _ => "Annotation",
                 };
@@ -168,6 +171,30 @@ pub(super) fn install_notes_sidebar(
                 header_label.add_css_class("dim-label");
                 header_label.add_css_class("caption-heading");
                 header_box.append(&header_label);
+                let label_for_quote =
+                    crate::page_label_of(&annotation).unwrap_or_else(|| chapter_num.to_string());
+                let quote_now: Rc<dyn Fn() -> Option<crate::notebook::Quote>> = {
+                    let doc = doc.clone();
+                    let label = label_for_quote.clone();
+                    let a = annotation.clone();
+                    Rc::new(move || Some(crate::notebook_ui::quote_of(&doc, &label, &a)))
+                };
+                let to_notebook = gtk4::Button::from_icon_name("list-add-symbolic");
+                to_notebook.add_css_class("flat");
+                to_notebook.set_tooltip_text(Some("Add to the notebook (or drag it there)"));
+                to_notebook
+                    .update_property(&[gtk4::accessible::Property::Label("Add to notebook")]);
+                {
+                    let host = host.clone();
+                    let quote_now = quote_now.clone();
+                    to_notebook.connect_clicked(move |_| {
+                        if let Some(q) = quote_now() {
+                            crate::notebook_ui::add_to_notebook(q, &|m| host.notify(m));
+                        }
+                    });
+                }
+                header_box.append(&to_notebook);
+                header_box.add_controller(crate::notebook_ui::drag_source(quote_now.clone()));
                 let delete_button = gtk4::Button::from_icon_name("user-trash-symbolic");
                 delete_button.add_css_class("flat");
                 delete_button.set_tooltip_text(Some("Delete this annotation"));
@@ -208,13 +235,54 @@ pub(super) fn install_notes_sidebar(
                     warn.add_css_class("error");
                     outer.append(&warn);
                 }
+                if let Some(image) = crate::image_of(&annotation) {
+                    let file = reader.borrow().cache_dir.join(&image);
+                    let picture = gtk4::Picture::for_filename(&file);
+                    picture.set_can_shrink(true);
+                    picture.set_content_fit(gtk4::ContentFit::Contain);
+                    picture.set_size_request(-1, 110);
+                    picture.set_halign(gtk4::Align::Start);
+                    picture.set_tooltip_text(Some("The clipped image"));
+                    outer.append(&picture);
+                }
                 if let Some(snippet) = &annotation.snippet {
                     let snippet_label = gtk4::Label::new(Some(snippet));
                     snippet_label.set_xalign(0.0);
                     snippet_label.set_wrap(true);
                     snippet_label.add_css_class("dim-label");
                     snippet_label.add_css_class("caption");
+                    snippet_label
+                        .add_controller(crate::notebook_ui::drag_source(quote_now.clone()));
                     outer.append(&snippet_label);
+                }
+                outer.append(&crate::notebook_ui::connect::rows(
+                    &doc.hash,
+                    &annotation.id,
+                ));
+                outer.append(&crate::notebook_ui::connect::button(
+                    {
+                        let view = view.clone();
+                        Rc::new(move || view.root().and_downcast::<gtk4::Window>())
+                    },
+                    crate::notebook_ui::end_of(&doc, &label_for_quote, &annotation),
+                    {
+                        let host = host.clone();
+                        Rc::new(move |m| host.notify(m))
+                    },
+                ));
+                let tags = annotation.tags();
+                if !tags.is_empty() {
+                    let line = gtk4::Label::new(Some(
+                        &tags
+                            .iter()
+                            .map(|t| format!("#{t}"))
+                            .collect::<Vec<_>>()
+                            .join("  "),
+                    ));
+                    line.set_xalign(0.0);
+                    line.add_css_class("caption");
+                    line.add_css_class("accent");
+                    outer.append(&line);
                 }
 
                 let save_note = {
@@ -269,5 +337,13 @@ pub(super) fn install_notes_sidebar(
             }
         })
     };
+    {
+        let rebuild = rebuild_notes.clone();
+        let id = crate::connections::subscribe(Rc::new(move || rebuild()));
+        let view = web_view.clone();
+        // Unsubscribe once the view is gone (the reader closed), so a closed book is not
+        // rebuilt on every connection change.
+        view.connect_destroy(move |_| crate::connections::unsubscribe(id));
+    }
     (rebuild_notes, quiet_notes)
 }

@@ -64,6 +64,24 @@ pub fn set_page_label(a: &mut fond_annot::Annotation, label: Option<&str>) {
     };
 }
 
+const IMAGE_KEY: &str = "image";
+
+/// The picture an EPUB area annotation clips, as a path inside the book.
+pub fn image_of(a: &fond_annot::Annotation) -> Option<String> {
+    a.extra
+        .get(IMAGE_KEY)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+pub fn set_image(a: &mut fond_annot::Annotation, image: Option<&str>) {
+    match image.filter(|i| !i.is_empty()) {
+        Some(i) => a.extra.insert(IMAGE_KEY.into(), i.into()),
+        None => a.extra.remove(IMAGE_KEY),
+    };
+}
+
 const POSITION_KEY: &str = "pos";
 
 /// Where in its chapter's text an EPUB annotation was made (UTF-16 offsets): a hint for finding

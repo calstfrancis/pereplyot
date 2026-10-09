@@ -21,6 +21,7 @@ use crate::{color_swatch, note_edit_widget, popover_button, popover_separator, R
 mod chapter_load;
 mod chapter_nav;
 mod chrome;
+mod clip_image;
 mod footnotes;
 mod highlights;
 mod keys;
@@ -288,6 +289,10 @@ pub fn show_epub_reader(
         &bookmark_button,
         &pending_scroll,
         &notes_rows,
+        crate::notebook_ui::DocRef {
+            hash: hash.to_string(),
+            title: title.to_string(),
+        },
     );
     reader.borrow_mut().on_lost_changed = Some(rebuild_notes.clone());
     {
@@ -351,16 +356,62 @@ pub fn show_epub_reader(
         &next,
         &pending_scroll_percent,
     );
-    let LayoutParts { notes_paned, paned } = layout::build_layout(
+    let notebook_toggle = gtk4::ToggleButton::new();
+    notebook_toggle.add_css_class("flat");
+    crate::set_icon_with_fallback(
+        &notebook_toggle,
+        &["accessories-text-editor-symbolic", "document-edit-symbolic"],
+    );
+    notebook_toggle.set_tooltip_text(Some(
+        "Notebook (N) — a page of your own writing beside the book; drag highlights from the \
+         Notes list into it and they keep their source and page",
+    ));
+    let LayoutParts {
+        notes_paned,
+        paned,
+        notebook_paned,
+    } = layout::build_layout(
         &content,
         &contents_scroll,
         &notes_scroll,
         &view,
-        &[paged.toggle.clone().upcast(), paged.spread.clone().upcast()],
+        &[
+            paged.toggle.clone().upcast(),
+            paged.spread.clone().upcast(),
+            notebook_toggle.clone().upcast(),
+        ],
     );
+    crate::notebook_ui::bind_toggle(&notebook_toggle, &notebook_paned);
     let reader_tab = crate::reader_host::open_reader_tab(window, title, &view);
     let reader_window = reader_tab.host_window.clone();
     crate::register_reader(hash, &reader_tab);
+    {
+        let reader = reader.clone();
+        let view = web_view.clone();
+        let prev = prev.clone();
+        let next = next.clone();
+        let chapter_label = chapter_label.clone();
+        let bookmark_button = bookmark_button.clone();
+        let pending_scroll = pending_scroll.clone();
+        crate::register_jump(
+            hash,
+            Rc::new(move |_page, id| {
+                let Some(id) = id else { return };
+                let chapter = reader.borrow().store.get(id).and_then(|a| a.chapter);
+                let Some(chapter) = chapter else { return };
+                *pending_scroll.borrow_mut() = Some(id.to_string());
+                epub_go_to(
+                    &reader,
+                    &view,
+                    &prev,
+                    &next,
+                    &chapter_label,
+                    &bookmark_button,
+                    &chapter,
+                );
+            }),
+        );
+    }
     crate::label_icon_buttons(&header_start);
     crate::label_icon_buttons(&header_end);
     crate::label_icon_buttons(&nav);
@@ -419,8 +470,10 @@ pub fn show_epub_reader(
         epub_undo: epub_undo.clone(),
         epub_redo: epub_redo.clone(),
         page_turn: paged.turn.clone(),
+        notebook_toggle: notebook_toggle.clone(),
     };
     search_wiring::install_search(&ui);
+    clip_image::install(host, &reader, &web_view);
     {
         let reader = reader.clone();
         let view = web_view.clone();

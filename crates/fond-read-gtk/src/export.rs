@@ -30,7 +30,7 @@ fn colour_groups() -> Vec<ColourGroup> {
 
 /// What stands for the figures folder in an item's image path until the export is saved and the
 /// folder's real name is known.
-const FIGURES_DIR: &str = "pereplyot-figures-dir/";
+pub(crate) const FIGURES_DIR: &str = "pereplyot-figures-dir/";
 
 /// Export items for a PDF, with each clipped area pointing at the picture the export will write.
 pub fn items_with_figures(
@@ -65,6 +65,7 @@ pub fn clips_of(sidecar: &fond_annot::AnnotationSidecar) -> Vec<AreaClip> {
                 id: a.id.clone(),
                 page: a.page?,
                 rect: a.rect()?,
+                copy_from: None,
             })
         })
         .collect()
@@ -220,25 +221,34 @@ pub fn show_export_dialog(
                     .iter()
                     .filter(|c| {
                         items.iter().any(|i| {
-                            i.image.as_deref() == Some(&format!("{FIGURES_DIR}{}.png", c.id))
+                            i.image.as_deref() == Some(&format!("{FIGURES_DIR}{}", c.file_name()))
                         })
                     })
                     .cloned()
                     .collect();
                 let text = render(&title, &items, &bookmarks, &options)
                     .replace(FIGURES_DIR, &format!("{figures_name}/"));
-                let Some(pdf) = pdf.filter(|_| !used.is_empty()) else {
+                if used.is_empty() {
                     write_export(&host, &path, &text, 0, 0);
                     return;
-                };
+                }
                 let dir = path
                     .parent()
                     .map(|p| p.join(&figures_name))
                     .unwrap_or_else(|| figures_name.clone().into());
+                let pdf = pdf.clone();
                 glib::spawn_future_local(async move {
                     let mut written = 0usize;
                     for clip in &used {
-                        let pdf = pdf.clone();
+                        let out = dir.join(clip.file_name());
+                        if let Some(source) = &clip.copy_from {
+                            let ok = std::fs::create_dir_all(&dir)
+                                .and_then(|()| std::fs::copy(source, &out))
+                                .is_ok();
+                            written += usize::from(ok);
+                            continue;
+                        }
+                        let Some(pdf) = pdf.clone() else { continue };
                         let (page, rect) = (clip.page, clip.rect);
                         let drawn = gtk4::gio::spawn_blocking(move || {
                             crate::clip::render(&pdf, page, rect)
@@ -247,7 +257,6 @@ pub fn show_export_dialog(
                         .ok()
                         .flatten();
                         if let Some(drawn) = drawn {
-                            let out = dir.join(format!("{}.png", clip.id));
                             if crate::clip::save_png(&drawn, &out).is_ok() {
                                 written += 1;
                             }

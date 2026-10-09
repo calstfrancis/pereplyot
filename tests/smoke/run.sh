@@ -907,6 +907,71 @@ run_pages_case() {
     stop_app
 }
 
+run_epubnotes_case() {
+    start_app "$FX/scholar.epub"
+    local w
+    w="$(reader_window)" || { check "epub notebook: reader window opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
+    sleep 4
+    xdotool windowfocus "$w" 2>/dev/null
+    xdotool mousemove 286 201 mousedown 1 mousemove 600 201 mousemove 968 201 mouseup 1
+    sleep 1
+    xdotool key 1
+    sleep 1
+    xdotool mousemove 1061 28 click 1
+    sleep 1.5
+    xdotool mousemove 1181 74 click 1
+    sleep 1.5
+    xdotool mousemove 115 791 click 1
+    sleep 2
+    screenshot "$WORK/en-1.png"
+    local body
+    body="$(cat "$(notebook_file)" 2>/dev/null)"
+    check "epub notebook: + on a note adds it as a quote that cites the printed page" "$([[ "$body" == *'label: "41"'* && "$body" == *'covenant liturgy scripture'* && "$body" != *'chapter: true'* ]] && echo 1 || echo 0)" "(file: $(tail -c 250 "$(notebook_file)" 2>/dev/null))"
+    local card
+    card="$(python3 "$HERE/text_bands.py" "$WORK/en-1.png" --ink-in 960 100 1230 200)"
+    check "epub notebook: the Notebook toggle shows it beside the book, with the quote card" "$([ "${card:-0}" -gt 200 ] && echo 1 || echo 0)" "(ink where the card is: $card)"
+    stop_app
+}
+
+run_epubimage_case() {
+    start_app "$FX/scholar.epub"
+    local w
+    w="$(reader_window)" || { check "epub image: reader window opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
+    sleep 4
+    xdotool windowfocus "$w" 2>/dev/null
+    for _ in $(seq 70); do xdotool mousemove 600 400 click 5; done
+    sleep 1.5
+    xdotool mousemove 369 722 click 3
+    sleep 1.2
+    xdotool mousemove 434 873 click 1
+    sleep 1.5
+    local got
+    got="$(annotations_json | python3 -c 'import sys,json
+try:
+    a=json.load(sys.stdin)["annotations"][0]
+    print(a["kind"], a["extra"].get("image") if "extra" in a else a.get("image"), a.get("page_label"))
+except Exception as e:
+    print("")')"
+    check "epub image: Clip this image saves an area on the picture" "$([[ "$got" == "area OEBPS/fig.png "* ]] && echo 1 || echo 0)" "(got '$got')"
+    screenshot "$WORK/ei-2.png"
+    local ring
+    ring="$(python3 "$HERE/text_bands.py" "$WORK/ei-2.png" --tint-in 300 676 440 690)"
+    check "epub image: the clip knows the printed page it is on" "$([[ "$got" == "area OEBPS/fig.png 43" ]] && echo 1 || echo 0)" "(got '$got')"
+    xdotool mousemove 541 28 click 1
+    sleep 1.5
+    xdotool mousemove 383 27 click 1
+    sleep 2
+    xdotool key ctrl+a
+    xdotool type --delay 20 "$WORK/book-notes.typ"
+    xdotool key Return
+    sleep 2.5
+    local out
+    out="$(cat "$WORK/book-notes.typ" 2>/dev/null)"
+    check "epub image: the export has the picture as a Typst figure, cited by printed page" "$([[ "$out" == *'#figure(image("book-notes-figures/'*'.png")'* && "$out" == *'p. 43'* ]] && echo 1 || echo 0)" "(got: $(head -c 300 "$WORK/book-notes.typ" 2>/dev/null))"
+    check "epub image: the picture file is written beside it" "$([ -n "$(ls "$WORK"/book-notes-figures/*.png 2>/dev/null)" ] && echo 1 || echo 0)"
+    stop_app
+}
+
 # Line order in the fixtures: "Page N", fox, Pack, Sphinx.
 want() { [ -z "${SMOKE_CASES:-}" ] || [[ " $SMOKE_CASES " == *" $1 "* ]]; }
 want plain && run_pdf_case plain plain.pdf y 2 "Pack my box with five dozen liquor jugs."
@@ -928,6 +993,8 @@ want notebook && run_notebook_case
 want connect && run_connect_case
 want scholar && run_scholar_case
 want pages && run_pages_case
+want epubnotes && run_epubnotes_case
+want epubimage && run_epubimage_case
 want launcher && run_launcher_case
 
 echo

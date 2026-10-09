@@ -32,4 +32,5 @@ pub(super) struct EpubUi {
     pub(super) epub_undo: Rc<dyn Fn()>,
     pub(super) epub_redo: Rc<dyn Fn()>,
     pub(super) page_turn: Rc<dyn Fn(i32)>,
+    pub(super) notebook_toggle: gtk4::ToggleButton,
 }
