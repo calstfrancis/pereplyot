@@ -10,7 +10,7 @@ use crate::ui::Widgets;
 use std::rc::Rc;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub(crate) const RELEASE_NAME: &str = "Gilt Spine";
+pub(crate) const RELEASE_NAME: &str = "Clear Margin";
 
 /// Show the window if this version has not been seen: the welcome the first time ever, What's
 /// New after an update. Called when the launcher is actually shown.
@@ -102,24 +102,20 @@ pub fn show(parent: &impl IsA<gtk4::Window>, first_run: bool) {
 /// Updated at release time, with `RELEASE_NAME`.
 const NEW: &[(&str, &str)] = &[
     (
-        "A Notebook beside your reading",
-        "Press N, drag highlights in, click a quote to open its passage, connect annotations, and export to Typst, Markdown or LaTeX with citations.",
+        "Ctrl+K command palette",
+        "Run any command, or jump to a heading, a note, a page or a printed page label — in the readers and the launcher.",
     ),
     (
-        "Search everything you've read",
-        "The new Search tab (Ctrl+F) searches the text of every document and all your notes, with filters; the Notes tab can now select, tag and recolour many at once.",
+        "Caret browsing (F7)",
+        "Move a caret over the page's own text, select with Shift+arrows and mark with 1–4, from the keyboard alone.",
     ),
     (
-        "EPUBs for scholars",
-        "Printed page numbers, note popovers, a paginated mode and clipped images.",
+        "Textures on highlights",
+        "Turn on hatching and dots in the menu so the four colours can be told apart without colour.",
     ),
     (
-        "Reading mode in Zerkalo's LaTeX Look",
-        "A PDF re-set as clean text in New Computer Modern, with page numbers in the left margin and footnotes in the right.",
-    ),
-    (
-        "Ctrl+K and caret browsing",
-        "A command palette for everything, and F7 to select and mark on the page from the keyboard alone.",
+        "Covers, an icon, and a fix",
+        "EPUB covers on Library cards, a new app icon, and printed page numbers now work for books that list their pages only in the navigation file.",
     ),
 ];
 

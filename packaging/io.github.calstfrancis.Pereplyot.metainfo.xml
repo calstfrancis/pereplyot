@@ -59,6 +59,15 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.12.0" date="2026-10-09">
+      <description>
+        <p>0.12.0 "Clear Margin" — a Ctrl+K command palette in the readers and the launcher,
+        caret browsing (F7) to select and mark on the page from the keyboard alone, optional
+        textures on highlights so the four colours can be told apart without colour, a
+        Welcome / What's New window, EPUB covers on Library cards and a new app icon. Fixes
+        printed page numbers for EPUBs that list their pages only in the navigation file.</p>
+      </description>
+    </release>
     <release version="0.11.0" date="2026-10-09">
       <description>
         <p>0.11.0 "Gilt Spine" — a Notebook beside your reading, with quotes that open their

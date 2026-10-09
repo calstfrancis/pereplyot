@@ -1,7 +1,6 @@
 # Changelog
 
-## [Unreleased]
-
+## [0.12.0] "Clear Margin" — 2026-10-09
 - **Ctrl+K command palette**, in the PDF reader, the EPUB reader and the launcher: type to run any
   command, jump to a heading or contents entry, to a note (it flashes), or to a page — by number
   or, in a PDF or EPUB with printed pages, by its printed label — and in the launcher to any tab,

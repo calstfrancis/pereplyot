@@ -1,4 +1,4 @@
-# Pereplyot v0.11.0 "Gilt Spine"
+# Pereplyot v0.12.0 "Clear Margin"
 
 Install via Flatpak:
 
@@ -18,29 +18,18 @@ flatpak update io.github.calstfrancis.Pereplyot
 
 ### What's new
 
-**A Notebook beside your reading.** Press **N** for a page of your own writing, saved as a plain
-Typst file. Drag highlights into it from the Notes list (or press +, or right-click a mark) and
-each becomes a quote block that remembers its document and page — click it to open the passage.
-Link two annotations in any documents with **Connect…**, and export the whole notebook to Typst,
-Markdown or LaTeX with every quote cited, or open it straight in Zerkalo.
+**Ctrl+K command palette.** Type to run any command, or to jump to a heading, a note, a page or a
+printed page label — in the PDF and EPUB readers and in the launcher, where it also opens any
+recent document or notebook. Read, Study and Synthesise postures are palette commands.
 
-**Search everything you've read.** A new Search tab looks through the text of every document in
-your History and Library and all your notes at once, ranked, with filters for shelf, colour,
-tag and date. The Notes tab becomes a browser: group, select several, recolour, tag, export or
-delete together.
+**Caret browsing (F7).** Arrow keys move a caret over a PDF page's own text, Shift extends a
+selection and 1–4 mark it, so you can read and mark from the keyboard alone.
 
-**EPUBs for scholars.** Printed page numbers from the book's page list are shown and cited in
-exports, notes appear in a popover beside the text, a Pages mode turns pages in columns, and
-marks find their place again if the book has changed. Clip a picture to keep it as a figure.
+**Textures on highlights.** An optional hatching or dotted texture for each of the four reading
+colours, in PDFs and EPUBs, so they can be told apart without relying on colour.
 
-**Reading mode, in Zerkalo's LaTeX Look.** A PDF re-set as clean text, in New Computer Modern with
-printed page numbers in the left margin and footnotes in the right, figures and tables kept as
-pictures, and Tesseract OCR for scans.
-
-**More.** Area capture of figures, sticky notes and tags; marks from other readers brought in and
-a copy saved with annotations anywhere; `pereplyot://` links that open a passage; a much faster
-renderer that is sharp on high-DPI screens; Back/Forward through every jump, link previews,
-pinned figures and a split view.
+**Polish.** A Welcome / What's New window, EPUB covers on Library cards, a new app icon, and a fix:
+printed page numbers now work for EPUBs that list their pages only in the navigation file.
 
 ---
 
