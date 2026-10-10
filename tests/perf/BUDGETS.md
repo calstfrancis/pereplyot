@@ -94,3 +94,16 @@ first page's geometry on the window thread (23 ms, mostly PDFium loading the pag
 render thread loads it too) and GTK's first frame under the Cairo renderer in Xvfb (~30 ms).
 Both happen before the window can be shown, so getting under 16 ms would mean showing a blank
 window first and reading the geometry afterwards.
+
+## Reading mode: the first interaction on a long book — 2026-10-10 (not fixed)
+
+On `book-600`, the first click in the Reading text, and a far jump (Ctrl+End, or a page number
+typed in the entry), each freeze the window for 0.8–1.5 s (`PEREPLYOT_PERF=1` stalls of 785 and
+1500 ms); later clicks cost nothing. A debug-build backtrace taken during the stall is entirely
+inside GTK's size allocation of the text view, in HarfBuzz shaping: GTK lays out the whole 600-page
+buffer on first need. These did **not** help, and were backed out: scrolling from a line's
+position instead of `scroll_to_mark`, finding the visible page and the margin items by position
+instead of `iter_at_location`, removing the text view's tick callback (a candidate for starving
+GTK's low-priority background layout), and disabling the margin columns entirely. A real fix means
+windowing the text (only the pages near the view in the buffer), which touches every
+offset-keyed feature (marks, notes, margins, search).
