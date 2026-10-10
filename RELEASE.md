@@ -1,4 +1,4 @@
-# Pereplyot v0.13.0 "Loose Leaf"
+# Pereplyot v0.14.0 "Quiet Page"
 
 Install via Flatpak:
 
@@ -18,20 +18,23 @@ flatpak update io.github.calstfrancis.Pereplyot
 
 ### What's new
 
-**Notes that leave the app.** Choose a folder (an Obsidian or Logseq vault, say) from the menu and
-Pereplyot keeps one Markdown file per document there. Each highlight is a quote ending in a stable
-`^annot-…` block id, with a link that opens the passage in Pereplyot. Off until you choose a folder.
+**Reading mode copes with scanned books.** Scans turn small raised note numbers into stray symbols
+(`novel,*?`); Pereplyot now matches those to their notes by count and order, so footnotes land
+beside the right line instead of reading "unmatched note". Notes gathered at the back of a book,
+a list per chapter, are placed beside the text that cites them and left out of the reading text.
+Running heads in capitals, or carrying a page number, no longer turn up in the text, and small
+body lines above the notes are no longer mistaken for notes.
 
-**Add to Kartoteka.** From Ctrl+K, hand the open file to Kartoteka so its citation key comes from
-your library. Needs Kartoteka 0.22.
+**Cover and title pages stay as pictures.** The sparse pages at the front of a book are shown
+whole instead of as garbled text, and Select All (Ctrl+A) skips them. A scanned first page is no
+longer sent to OCR.
 
-**Search that lands on the word.** A result in the Search tab or the Notes browser opens the
-document with the hit marked, and pages you have recognised from scans are searched too. OCR
-languages are ones you add yourself from the menu; English is built in and nothing is downloaded.
+**Page colours that work in Reading mode.** The moon button sets normal, dark or sepia for the
+whole Reading view, margins included, and the same setting for EPUBs, which now have the button in
+their status bar.
 
-**Smaller things.** Resize an area by its corners and see it on its Notes card; a ✎ beside noted
-passages in Reading mode; paginated EPUBs turn with a click at either edge; notebook export includes
-clipped EPUB pictures; merging marks undoes in one step.
+**Single line spacing.** The spacing slider is now measured against the font's own line height, so
+1.0 is single spacing, and the default is tighter.
 
 ---
 

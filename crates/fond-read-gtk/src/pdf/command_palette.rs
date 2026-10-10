@@ -87,7 +87,7 @@ pub(super) fn open(ui: &PdfUi) {
     add(
         "Change page colours (dark, sepia, normal)",
         "View",
-        Rc::new(toggled(&ui.invert_button)),
+        Rc::new(clicked(&ui.invert_button)),
     );
     add("Fit width", "Zoom", Rc::new(clicked(&ui.zoom_fit_width)));
     add("Fit page", "Zoom", Rc::new(clicked(&ui.zoom_fit_page)));

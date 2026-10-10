@@ -59,6 +59,16 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.14.0" date="2026-10-10">
+      <description>
+        <p>0.14.0 "Quiet Page" — Reading mode copes with scanned books: footnote markers the scan
+        mangled are matched to their notes, endnotes gathered at the back are placed beside the
+        text that cites them, running heads stay out of the text, and the cover and title pages are
+        kept as pictures that Select All leaves out. The page-colours button now works in Reading
+        mode and sets one theme for PDFs and EPUBs, EPUBs gain the button, and the line-spacing
+        slider reaches single spacing.</p>
+      </description>
+    </release>
     <release version="0.13.0" date="2026-10-10">
       <description>
         <p>0.13.0 "Loose Leaf" — notes can leave the app: an optional Markdown notes folder keeps

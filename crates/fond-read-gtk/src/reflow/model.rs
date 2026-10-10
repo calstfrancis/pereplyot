@@ -89,5 +89,11 @@ pub enum Item {
         page: u16,
         bbox: [f32; 4],
     },
+    /// A page at the front of the book (cover, title page) kept whole, as a picture, because
+    /// its lettering reads badly as text. Selecting everything leaves it out.
+    TitlePage {
+        page: u16,
+        bbox: [f32; 4],
+    },
     Paragraph(Paragraph),
 }

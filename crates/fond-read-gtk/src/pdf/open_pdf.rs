@@ -95,7 +95,7 @@ pub(super) fn open_pdf(
         figure_waiters: Vec::new(),
         page_labels,
         rotation: 0,
-        tone: Tone::Normal,
+        tone: Tone::of(crate::typography::shared().get().theme),
         tick_layer: None,
         defer_renders: false,
         mark_edit: Default::default(),

@@ -198,18 +198,37 @@ pub fn is_page_number(text: &str) -> bool {
 }
 
 fn normalise(text: &str) -> String {
-    text.chars()
-        .map(|c| {
-            if c.is_ascii_digit() {
-                '#'
-            } else {
-                c.to_ascii_lowercase()
+    let mut out = String::new();
+    for c in text.chars() {
+        if c.is_ascii_digit() {
+            if !out.ends_with('#') {
+                out.push('#');
             }
-        })
-        .collect::<String>()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
+        } else {
+            out.push(c.to_ascii_lowercase());
+        }
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// A short line of capitals, or one that carries a page number, in the top or bottom margin and
+/// no bigger than the body: a running head even when it is not the same on enough pages to be
+/// found by repetition (a chapter title that changes every few pages).
+fn looks_like_running_head(line: &Line, page_height: f32, body: f32) -> bool {
+    let band = line.y1 < 0.1 * page_height || line.y0 > 0.9 * page_height;
+    if !band || line.size > 1.15 * body || line.words.len() > 10 {
+        return false;
+    }
+    let text = line.text();
+    let letters: Vec<char> = text.chars().filter(|c| c.is_alphabetic()).collect();
+    if letters.len() < 3 {
+        return false;
+    }
+    let upper = letters.iter().filter(|c| c.is_uppercase()).count();
+    let top = line.y1 < 0.1 * page_height;
+    let numbered = top && line.words.first().is_some_and(|w| is_page_number(&w.text))
+        || top && line.words.last().is_some_and(|w| is_page_number(&w.text));
+    upper as f32 >= 0.85 * letters.len() as f32 || (numbered && line.words.len() >= 2)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -293,13 +312,14 @@ pub fn detect_furniture(sample: &[RawPage]) -> Furniture {
 
 impl Furniture {
     /// `page`'s words with its running headers, footers and page number removed.
-    pub fn strip(&self, page: &RawPage) -> Vec<Word> {
+    pub fn strip(&self, page: &RawPage, body: f32) -> Vec<Word> {
         let odd = page.page % 2 == 1;
         let mut dropped: Vec<Line> = Vec::new();
         for (band, line) in margin_candidates(page) {
             let text = line.text();
             let key = normalise(&text);
             if is_page_number(&text)
+                || looks_like_running_head(&line, page.height, body)
                 || self.repeated.contains(&(band, odd, key.clone()))
                 || self.repeated_any.contains(&(band, key))
             {
@@ -489,9 +509,37 @@ fn append_word(p: &mut Paragraph, w: &Word, page: u16, joining_line: bool) {
     });
 }
 
-fn append_lines(p: &mut Paragraph, lines: &[Line], page: u16, continuing: bool) {
+/// Words found to be note markers by what they look like and which notes the page has, rather
+/// than by being small and raised: keyed by the word's position, giving its label, how many of
+/// its characters are the real word, and whether the whole token is the marker.
+type MarkerKey = (u32, u32, usize);
+type MarkerMap = HashMap<MarkerKey, (String, usize, bool)>;
+
+/// A guessed marker: score, reading order, the word's key, characters to keep, whole token.
+type Guess = (u8, usize, MarkerKey, usize, bool);
+
+fn marker_key(w: &Word) -> MarkerKey {
+    (w.x0.to_bits(), w.y0.to_bits(), w.text.chars().count())
+}
+
+fn append_lines(p: &mut Paragraph, lines: &[Line], page: u16, continuing: bool, marks: &MarkerMap) {
     for (li, line) in lines.iter().enumerate() {
         for (wi, w) in line.words.iter().enumerate() {
+            let joining = (li > 0 || continuing) && wi == 0;
+            if let Some((label, keep, whole)) = marks.get(&marker_key(w)) {
+                if continuing || !p.text.is_empty() || !*whole {
+                    if !*whole {
+                        let mut word = w.clone();
+                        word.text = w.text.chars().take(*keep).collect();
+                        append_word(p, &word, page, joining);
+                    }
+                    p.markers.push(Marker {
+                        at: p.text.chars().count(),
+                        label: label.clone(),
+                    });
+                    continue;
+                }
+            }
             if let Some(label) = is_marker(w, line.size) {
                 if continuing || !p.text.is_empty() {
                     p.markers.push(Marker {
@@ -501,10 +549,187 @@ fn append_lines(p: &mut Paragraph, lines: &[Line], page: u16, continuing: bool) 
                     continue;
                 }
             }
-            append_word(p, w, page, (li > 0 || continuing) && wi == 0);
+            append_word(p, w, page, joining);
         }
     }
 }
+
+/// How much a word looks like a note marker the OCR has run into the text, with how many of its
+/// characters are the word itself: strongest for stray symbols after punctuation (`novel,*?`),
+/// then a number after punctuation, then a lone number, weakest a closing quote.
+fn marker_guess(text: &str, after_punctuation: bool) -> Option<(u8, usize, bool)> {
+    const JUNK: &str = "*°¢®©º§†‡•";
+    const PUNCT: &str = ".,;)”’\"'";
+    let chars: Vec<char> = text.chars().collect();
+    if chars.is_empty() {
+        return None;
+    }
+    if let Some(k) = chars
+        .iter()
+        .position(|c| JUNK.contains(*c))
+        .filter(|&k| k >= 1)
+    {
+        let rest = &chars[k..];
+        if rest.len() <= 4
+            && rest
+                .iter()
+                .all(|c| JUNK.contains(*c) || c.is_ascii_digit() || "?!”’\"".contains(*c))
+        {
+            return Some((3, k, false));
+        }
+    }
+    let digits = chars
+        .iter()
+        .rev()
+        .take_while(|c| c.is_ascii_digit())
+        .count();
+    if (1..=3).contains(&digits) && digits < chars.len() {
+        let at = chars.len() - digits - 1;
+        let before = chars.get(at.wrapping_sub(1)).copied();
+        if PUNCT.contains(chars[at]) && before.is_some_and(|c| c.is_alphabetic() || c == ')') {
+            return Some((2, chars.len() - digits, false));
+        }
+    }
+    if chars.len() <= 3
+        && chars
+            .iter()
+            .all(|c| c.is_ascii_digit() || JUNK.contains(*c))
+        && after_punctuation
+    {
+        return Some((2, 0, true));
+    }
+    if chars.len() >= 2 {
+        let last = chars[chars.len() - 1];
+        if "”’".contains(last) && ".,".contains(chars[chars.len() - 2]) {
+            return Some((1, chars.len(), false));
+        }
+    }
+    None
+}
+
+/// Which words of the page's body lines are the markers of its notes, when the type does not say
+/// so: as many as there are notes still without one, the likeliest by `marker_guess`, in order.
+fn guess_markers(body: &[&Line], labels: &[String]) -> MarkerMap {
+    let mut map = MarkerMap::new();
+    let sure: Vec<String> = body
+        .iter()
+        .flat_map(|l| l.words.iter().filter_map(|w| is_marker(w, l.size)))
+        .collect();
+    let mut wanted: Vec<String> = labels.to_vec();
+    for s in &sure {
+        if let Some(i) = wanted.iter().position(|l| l == s) {
+            wanted.remove(i);
+        }
+    }
+    if wanted.is_empty() {
+        return map;
+    }
+    let mut found: Vec<Guess> = Vec::new();
+    let mut order = 0usize;
+    for line in body {
+        let mut previous_ends_punct = false;
+        for (wi, w) in line.words.iter().enumerate() {
+            if is_marker(w, line.size).is_none() {
+                if let Some((score, keep, whole)) =
+                    marker_guess(&w.text, wi > 0 && previous_ends_punct)
+                {
+                    found.push((score, order, marker_key(w), keep, whole));
+                }
+            }
+            previous_ends_punct = w.text.ends_with(['.', ',', ';', ')', '”', '’', '"']);
+            order += 1;
+        }
+    }
+    found.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    found.truncate(wanted.len());
+    found.sort_by_key(|f| f.1);
+    for (f, label) in found.into_iter().zip(wanted) {
+        map.insert(f.2, (label, f.3, f.4));
+    }
+    map
+}
+
+/// Split one column's lines into the notes at its foot and the body above them. Notes are small,
+/// low on the page, and begin with labels that count up (32, 33, 34…); small lines above the
+/// first of those are body text the scan happened to set a little smaller.
+fn split_notes(
+    leaf: Vec<Line>,
+    page_height: f32,
+    body: f32,
+    captions: &[[f32; 4]],
+) -> (Vec<Line>, Vec<Line>) {
+    let small = |l: &Line, ratio: f32| {
+        l.size <= ratio * body
+            && l.y0 > 0.45 * page_height
+            && !captions
+                .iter()
+                .any(|c| l.y0 >= c[1] - 1.0 && l.y1 <= c[3] + 1.0)
+    };
+    let candidates: Vec<usize> = (0..leaf.len()).filter(|&i| small(&leaf[i], 0.9)).collect();
+    let value = |l: &Line| note_label(l).map(|(label, _)| label);
+    let numeric = |label: &str| label.parse::<u32>().ok();
+    let mut best: Option<(usize, usize)> = None;
+    let mut c = 0;
+    while c < candidates.len() {
+        if let Some(first) = value(&leaf[candidates[c]]) {
+            let mut len = 1;
+            let mut last = first;
+            for &next in &candidates[c + 1..] {
+                let Some(label) = value(&leaf[next]) else {
+                    continue;
+                };
+                let continues = match (numeric(&last), numeric(&label)) {
+                    (Some(a), Some(b)) => b == a + 1,
+                    (None, None) => true,
+                    _ => false,
+                };
+                if continues {
+                    len += 1;
+                    last = label;
+                }
+            }
+            if best.map_or(true, |(_, l)| len >= l) {
+                best = Some((c, len));
+            }
+        }
+        c += 1;
+    }
+    let start = match best {
+        Some((c, len)) if len >= 2 => Some(c),
+        Some((c, _)) if small(&leaf[candidates[c]], 0.85) => Some(c),
+        Some(_) => None,
+        None => candidates.iter().position(|&i| small(&leaf[i], 0.85)),
+    };
+    let Some(mut start) = start else {
+        return (Vec::new(), leaf);
+    };
+    while start > 0
+        && value(&leaf[candidates[start - 1]]).is_none()
+        && candidates[start - 1] + 1 == candidates[start]
+        && small(&leaf[candidates[start - 1]], 0.85)
+    {
+        start -= 1;
+    }
+    let from = candidates[start];
+    let mut notes = Vec::new();
+    let mut body_lines = Vec::new();
+    for (i, line) in leaf.into_iter().enumerate() {
+        if i >= from && candidates.contains(&i) {
+            notes.push(line);
+        } else {
+            body_lines.push(line);
+        }
+    }
+    (notes, body_lines)
+}
+
+/// Whether a page at the front of the book is a cover or title page: not much on it, and in short
+/// lines.
+fn is_title_page(page: &RawPage) -> bool {
+    page.words.len() <= 120 && lines_of(&page.words).iter().all(|l| l.words.len() <= 8)
+}
+
+const TITLE_PAGES_MAX: u16 = 8;
 
 struct NoteDraft {
     label: String,
@@ -540,6 +765,17 @@ pub struct Assembler {
     /// an index equal to `items.len()` is the pending paragraph. A note that runs over to the next
     /// page carries on from here.
     last_note: Option<(usize, usize)>,
+    /// Markers found on the page being laid out (see `MarkerMap`).
+    marks: MarkerMap,
+    /// Still in the run of cover and title pages at the front.
+    leading: bool,
+    /// Notes gathered at the back of the book, and where the body has got to in them: the
+    /// chapter's list, and the label the next marker takes.
+    endnotes: Option<super::endnotes::EndNotes>,
+    end_group: Option<usize>,
+    end_counter: u32,
+    /// Notes taken from the back list for the markers of the page being laid out.
+    page_end_notes: Vec<NoteDraft>,
 }
 
 impl Assembler {
@@ -551,7 +787,77 @@ impl Assembler {
             waiting: Vec::new(),
             pending: None,
             last_note: None,
+            marks: MarkerMap::new(),
+            leading: true,
+            endnotes: None,
+            end_group: None,
+            end_counter: 1,
+            page_end_notes: Vec::new(),
         }
+    }
+
+    pub fn with_endnotes(mut self, endnotes: Option<super::endnotes::EndNotes>) -> Assembler {
+        self.endnotes = endnotes;
+        self
+    }
+
+    /// Give each marker in `lines` its label from the count of markers so far in the chapter, and
+    /// take its note from the list at the back.
+    fn assign_endnotes(&mut self, lines: &[Line], page: u16) {
+        self.marks.clear();
+        let Some(group) = self.end_group else { return };
+        let mut order: Vec<(String, Option<MarkerKey>)> = Vec::new();
+        for line in lines {
+            let mut previous_ends_punct = false;
+            for (wi, w) in line.words.iter().enumerate() {
+                if let Some(label) = is_marker(w, line.size) {
+                    order.push((label, None));
+                } else if let Some((score, keep, whole)) =
+                    marker_guess(&w.text, wi > 0 && previous_ends_punct)
+                {
+                    if score >= 2 {
+                        let key = marker_key(w);
+                        self.marks.insert(key, (String::new(), keep, whole));
+                        order.push((String::new(), Some(key)));
+                    }
+                }
+                previous_ends_punct = w.text.ends_with(['.', ',', ';', ')', '”', '’', '"']);
+            }
+        }
+        for (label, key) in order {
+            let label = if label.is_empty() {
+                let l = self.end_counter.to_string();
+                self.end_counter += 1;
+                l
+            } else {
+                if let Ok(n) = label.parse::<u32>() {
+                    self.end_counter = n + 1;
+                }
+                label
+            };
+            if let Some(key) = key {
+                if let Some(m) = self.marks.get_mut(&key) {
+                    m.0 = label.clone();
+                }
+            }
+            let text = self
+                .endnotes
+                .as_ref()
+                .and_then(|e| e.groups.get(group))
+                .and_then(|g| g.entries.get(&label))
+                .cloned();
+            if let Some(text) = text {
+                self.page_end_notes.push(NoteDraft { label, text, page });
+            }
+        }
+    }
+
+    /// Keep page `page` whole, as a picture, at the front of the flow.
+    pub fn push_title_page(&mut self, page: u16, width: f32, height: f32) {
+        self.items.push(Item::TitlePage {
+            page,
+            bbox: [0.0, 0.0, width, height],
+        });
     }
 
     fn flush(&mut self) {
@@ -565,7 +871,7 @@ impl Assembler {
         if i < self.items.len() {
             match &mut self.items[i] {
                 Item::Paragraph(p) => Some(p),
-                Item::Heading { .. } | Item::Figure { .. } => None,
+                Item::Heading { .. } | Item::Figure { .. } | Item::TitlePage { .. } => None,
             }
         } else if i == self.items.len() {
             self.pending.as_mut().map(|p| &mut p.paragraph)
@@ -575,7 +881,14 @@ impl Assembler {
     }
 
     pub fn push_page(&mut self, page: &RawPage) {
-        let mut words = self.furniture.strip(page);
+        if self.leading {
+            if page.page < TITLE_PAGES_MAX && is_title_page(page) {
+                self.push_title_page(page.page, page.width, page.height);
+                return;
+            }
+            self.leading = false;
+        }
+        let mut words = self.furniture.strip(page, self.body);
         let found = super::figures::find_figures(page, &words);
         let captions = found.captions;
         let mut figures = found.regions;
@@ -585,19 +898,29 @@ impl Assembler {
                 .iter()
                 .any(|f| cx >= f[0] && cx <= f[2] && cy >= f[1] && cy <= f[3])
         });
+        let leaves: Vec<(Vec<Line>, Vec<Line>)> = reading_order(&words)
+            .into_iter()
+            .map(|leaf| split_notes(leaf, page.height, self.body, &captions))
+            .collect();
+        let labels: Vec<String> = leaves
+            .iter()
+            .flat_map(|(notes, _)| {
+                notes
+                    .iter()
+                    .filter_map(|l| note_label(l).map(|(label, _)| label))
+            })
+            .collect();
+        let body_refs: Vec<&Line> = leaves.iter().flat_map(|(_, body)| body.iter()).collect();
+        self.marks = if self.endnotes.is_some() {
+            MarkerMap::new()
+        } else {
+            guess_markers(&body_refs, &labels)
+        };
         let first_item = self.items.len();
         let mut notes: Vec<NoteDraft> = Vec::new();
         let mut previous_leaf: Option<(f32, f32)> = None;
         let mut carried: Option<(usize, usize)> = self.last_note;
-        for leaf in reading_order(&words) {
-            let (note_lines, body_lines): (Vec<Line>, Vec<Line>) =
-                leaf.into_iter().partition(|l| {
-                    l.size <= 0.9 * self.body
-                        && l.y0 > 0.45 * page.height
-                        && !captions
-                            .iter()
-                            .any(|c| l.y0 >= c[1] - 1.0 && l.y1 <= c[3] + 1.0)
-                });
+        for (note_lines, body_lines) in leaves {
             for line in &note_lines {
                 if let Some((label, skip)) = note_label(line) {
                     let words: Vec<String> = line
@@ -661,6 +984,7 @@ impl Assembler {
                 bbox,
             });
         }
+        notes.append(&mut self.page_end_notes);
         self.flush_page_notes(notes, first_item, page.page);
     }
 
@@ -675,8 +999,26 @@ impl Assembler {
                 .map(|l| l.text())
                 .collect::<Vec<_>>()
                 .join(" ");
+            if let Some(en) = &self.endnotes {
+                let titled = en.group_for(&text);
+                let next = self.end_group.map_or(0, |g| g + 1);
+                let untitled_next = level == 1
+                    && self.end_group.is_some()
+                    && text.chars().filter(|c| c.is_alphabetic()).count() >= 3
+                    && en.groups.get(next).is_some_and(|g| g.title.is_empty());
+                if let Some(g) = titled {
+                    self.end_group = Some(g);
+                    self.end_counter = 1;
+                } else if untitled_next {
+                    self.end_group = Some(next);
+                    self.end_counter = 1;
+                }
+            }
             self.items.push(Item::Heading { level, text, page });
             return;
+        }
+        if self.endnotes.is_some() {
+            self.assign_endnotes(&draft.lines, page);
         }
         let first_in_region = previous_leaf.is_some();
         let continues = self.pending.as_ref().is_some_and(|p| {
@@ -694,7 +1036,13 @@ impl Assembler {
                     page,
                 });
             }
-            append_lines(&mut pending.paragraph, &draft.lines, page, true);
+            append_lines(
+                &mut pending.paragraph,
+                &draft.lines,
+                page,
+                true,
+                &self.marks,
+            );
             pending.open = draft.open;
             pending.last_page = page;
             return;
@@ -702,7 +1050,7 @@ impl Assembler {
         self.flush();
         let mut paragraph = Paragraph::default();
         paragraph.breaks.push(PageBreak { at: 0, page });
-        append_lines(&mut paragraph, &draft.lines, page, false);
+        append_lines(&mut paragraph, &draft.lines, page, false, &self.marks);
         self.pending = Some(Pending {
             paragraph,
             open: draft.open,
@@ -768,7 +1116,9 @@ impl Assembler {
     /// Items complete before `page` starts, leaving the later ones for notes and joins to reach.
     pub fn take_ready(&mut self, page: u16) -> Vec<Item> {
         let last_page = |item: &Item| match item {
-            Item::Heading { page, .. } | Item::Figure { page, .. } => *page,
+            Item::Heading { page, .. }
+            | Item::Figure { page, .. }
+            | Item::TitlePage { page, .. } => *page,
             Item::Paragraph(p) => p
                 .notes
                 .iter()
@@ -821,10 +1171,19 @@ fn join_text(into: &mut String, more: &str) {
 /// Lay out a whole document in memory: the pages set the furniture and body size, then every
 /// page goes through the assembler.
 pub fn flow_of(pages: &[RawPage]) -> Vec<Item> {
+    flow_with(pages, None)
+}
+
+/// As [`flow_of`], for a book whose notes are gathered at the back.
+pub fn flow_with(pages: &[RawPage], endnotes: Option<super::endnotes::EndNotes>) -> Vec<Item> {
     let furniture = detect_furniture(pages);
     let body = body_size(pages);
-    let mut asm = Assembler::new(furniture, body);
+    let skip = endnotes.as_ref().map(|e| e.pages.clone());
+    let mut asm = Assembler::new(furniture, body).with_endnotes(endnotes);
     for page in pages {
+        if skip.as_ref().is_some_and(|r| r.contains(&page.page)) {
+            continue;
+        }
         asm.push_page(page);
     }
     asm.finish()

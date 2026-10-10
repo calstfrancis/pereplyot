@@ -89,6 +89,7 @@ fn run(id: u64, path: PathBuf, recognise: bool, cancel: Arc<AtomicBool>) {
     let read_page = |index: u16| -> Option<RawPage> {
         let page = extract_page(&doc, index).filter(|p| p.words.len() >= MIN_WORDS);
         match (&page, &recogniser) {
+            (None, Some(_)) if index == 0 => None,
             (None, Some(program)) => ocr::ocr_page(&doc, index, program, &language, &cache_dir),
             (None, None) => ocr::cached_page(&doc, index, &language, &cache_dir),
             _ => page,
@@ -111,15 +112,26 @@ fn run(id: u64, path: PathBuf, recognise: bool, cancel: Arc<AtomicBool>) {
             cache.insert(index, page);
         }
     }
-    let mut asm = Assembler::new(detect_furniture(&sample), body_size(&sample));
+    let endnotes = super::endnotes::find(total, &|i| extract_page(&doc, i));
+    let notes_pages = endnotes.as_ref().map(|e| e.pages.clone());
+    let mut asm =
+        Assembler::new(detect_furniture(&sample), body_size(&sample)).with_endnotes(endnotes);
     drop(sample);
     for index in 0..total {
         if cancel.load(Ordering::Relaxed) {
             return;
         }
+        if notes_pages.as_ref().is_some_and(|r| r.contains(&index)) {
+            continue;
+        }
         let page = cache.remove(&index).or_else(|| extract_page(&doc, index));
         if let Some(page) = page {
             asm.push_page(&page);
+        } else if index == 0 {
+            if let Some(geom) = crate::page_geom::PageGeom::read_doc(&doc, 0) {
+                let (w, h) = geom.display_size();
+                asm.push_title_page(0, w, h);
+            }
         }
         let ready = asm.take_ready(index);
         if !ready.is_empty() {

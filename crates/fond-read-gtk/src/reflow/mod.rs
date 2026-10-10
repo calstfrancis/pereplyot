@@ -1,6 +1,7 @@
 //! Reading mode's text: a PDF's words laid out as a flow of headings, paragraphs and notes.
 
 pub mod citations;
+pub mod endnotes;
 pub mod extract;
 pub mod figures;
 pub mod layout;
@@ -50,6 +51,7 @@ mod tests {
             match item {
                 Item::Heading { level, text, page } => eprintln!("H{level} p{page}: {text}"),
                 Item::Figure { page, bbox } => eprintln!("figure p{page}: {bbox:?}"),
+                Item::TitlePage { page, .. } => eprintln!("title page p{page}"),
                 Item::Paragraph(p) => eprintln!(
                     "P {}.. ({} chars, markers {:?}, notes {:?}, breaks {:?})",
                     p.text.chars().take(40).collect::<String>(),
@@ -151,8 +153,9 @@ printf '5\\t1\\t1\\t1\\t1\\t3\\t1000\\t600\\t300\\t60\\t95\\tagain.\\n'\n",
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/blank.pdf");
         let doc = pdfium.load_pdf_from_file(&path, None).unwrap();
         let cache = dir.join("cache");
-        let page = super::ocr::ocr_page(&doc, 0, &program, "eng", &cache).expect("recognised");
+        let mut page = super::ocr::ocr_page(&doc, 0, &program, "eng", &cache).expect("recognised");
         assert_eq!(page.words.len(), 3);
+        page.page = 20;
         let items = flow_of(&[page]);
         assert_eq!(paragraphs(&items)[0].text, "Hello world again.");
         assert!(cache.join("eng-0.tsv").is_file());
@@ -209,7 +212,7 @@ printf '5\\t1\\t1\\t1\\t1\\t3\\t1000\\t600\\t300\\t60\\t95\\tagain.\\n'\n",
         let kinds: Vec<String> = items
             .iter()
             .map(|i| match i {
-                Item::Figure { .. } => "figure".to_string(),
+                Item::Figure { .. } | Item::TitlePage { .. } => "figure".to_string(),
                 Item::Heading { text, .. } => format!("heading {text}"),
                 Item::Paragraph(p) => p.text.chars().take(12).collect(),
             })
@@ -303,6 +306,93 @@ printf '5\\t1\\t1\\t1\\t1\\t3\\t1000\\t600\\t300\\t60\\t95\\tagain.\\n'\n",
                 return;
             };
             assert!(entry.contains(expect), "{file} {word}: got {entry:?}");
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn dump_sample() {
+        let Ok(path) = std::env::var("PP_SAMPLE") else {
+            return;
+        };
+        let (from, to): (u16, u16) = (
+            std::env::var("PP_FROM")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0),
+            std::env::var("PP_TO")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(10),
+        );
+        let pdfium = crate::pdfium::get().expect("pdfium");
+        let doc = pdfium
+            .load_pdf_from_file(std::path::Path::new(&path), None)
+            .expect("open");
+        let pages: Vec<_> = (0..doc.pages().len())
+            .filter_map(|i| extract_page(&doc, i))
+            .collect();
+        if let Ok(p) = std::env::var("PP_WORDS") {
+            let p: usize = p.parse().unwrap();
+            if let Some(page) = pages.iter().find(|x| x.page as usize == p) {
+                eprintln!("page {p}: {}x{}", page.width, page.height);
+                for w in &page.words {
+                    eprintln!(
+                        "{:7.1} {:7.1} {:7.1} {:7.1} s{:5.1} {}",
+                        w.x0, w.y0, w.x1, w.y1, w.size, w.text
+                    );
+                }
+            }
+        }
+        let by_page: std::collections::HashMap<u16, super::model::RawPage> =
+            pages.iter().map(|p| (p.page, p.clone())).collect();
+        let endnotes = super::endnotes::find(doc.pages().len(), &|i| by_page.get(&i).cloned());
+        if let Some(e) = &endnotes {
+            eprintln!(
+                "endnotes: pages {:?}, {} groups: {:?}",
+                e.pages,
+                e.groups.len(),
+                e.groups
+                    .iter()
+                    .map(|g| (&g.title, g.entries.len()))
+                    .collect::<Vec<_>>()
+            );
+        }
+        let items = super::layout::flow_with(&pages, endnotes);
+        for item in &items {
+            match item {
+                Item::Heading { level, text, page } if *page >= from && *page <= to => {
+                    eprintln!("H{level} p{page}: {text}")
+                }
+                Item::Figure { page, bbox } if *page >= from && *page <= to => {
+                    eprintln!("figure p{page}: {bbox:?}")
+                }
+                Item::TitlePage { page, .. } if *page >= from && *page <= to => {
+                    eprintln!("title page p{page}")
+                }
+                Item::Paragraph(p)
+                    if p.breaks
+                        .first()
+                        .is_some_and(|b| b.page >= from && b.page <= to) =>
+                {
+                    eprintln!(
+                        "P p{} {}.. ({} chars, markers {:?}, notes {:?})",
+                        p.breaks[0].page,
+                        p.text.chars().take(60).collect::<String>(),
+                        p.text.chars().count(),
+                        p.markers.iter().map(|m| &m.label).collect::<Vec<_>>(),
+                        p.notes
+                            .iter()
+                            .map(|n| (
+                                &n.label,
+                                n.anchor.is_some(),
+                                n.text.chars().take(30).collect::<String>()
+                            ))
+                            .collect::<Vec<_>>()
+                    )
+                }
+                _ => {}
+            }
         }
     }
 }

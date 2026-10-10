@@ -380,6 +380,7 @@ pub fn show_epub_reader(
             paged.toggle.clone().upcast(),
             paged.spread.clone().upcast(),
             notebook_toggle.clone().upcast(),
+            crate::typography::tone_button().upcast(),
         ],
     );
     crate::notebook_ui::bind_toggle(&notebook_toggle, &notebook_paned);

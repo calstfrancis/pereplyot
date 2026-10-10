@@ -32,7 +32,7 @@ screenshot automation, and EPUB cover art yet (all three have since been added �
 
 **Since then (unreleased, see `CHANGELOG.md`):** a much faster reader (page rendering and search on
 background threads, sharp on HiDPI, tiles at high zoom, smooth zoom, a virtual scroll view);
-**Reading mode** — a PDF re-set as restylable text with printed page numbers in a left margin and
+**Reading mode** — a PDF re-set as restylable text (cover and title pages kept as pictures and left out of Select All; note markers the scan mangled are matched to their notes, endnotes gathered at the back of the book included; single line spacing available) with printed page numbers in a left margin and
 footnotes beside the lines that cite them, figures and tables as pictures, search hits marked in
 the text, one typography panel shared with the EPUB reader, and Tesseract OCR for scans (English
 bundled in the Flatpak; other languages are `.traineddata` files you add yourself, never downloaded); area capture of figures and equations that export as Typst figures, sticky

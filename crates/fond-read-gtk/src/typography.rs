@@ -39,7 +39,7 @@ pub enum ReadingTheme {
 }
 
 pub const SIZE_RANGE: (f64, f64) = (0.6, 3.0);
-pub const LINE_RANGE: (f64, f64) = (1.1, 2.4);
+pub const LINE_RANGE: (f64, f64) = (1.0, 2.4);
 pub const WIDTH_RANGE: (u32, u32) = (420, 1100);
 pub const MARGIN_RANGE: (u32, u32) = (0, 120);
 
@@ -49,7 +49,7 @@ pub struct Typography {
     pub family: Family,
     /// 1.0 is the base size.
     pub size: f64,
-    /// Line height as a multiple of the size.
+    /// Line height as a multiple of the font's own natural line height: 1.0 is single spacing.
     pub line_height: f64,
     /// Width of the text column in pixels.
     pub width: u32,
@@ -65,7 +65,7 @@ impl Default for Typography {
         Typography {
             family: Family::Latex,
             size: 1.0,
-            line_height: 1.3,
+            line_height: 1.1,
             width: 680,
             margin: 24,
             justify: true,
@@ -81,7 +81,49 @@ fn path() -> PathBuf {
         .join("reading.json")
 }
 
+impl ReadingTheme {
+    pub fn next(self) -> ReadingTheme {
+        match self {
+            ReadingTheme::Light => ReadingTheme::Dark,
+            ReadingTheme::Dark => ReadingTheme::Sepia,
+            ReadingTheme::Sepia => ReadingTheme::Light,
+        }
+    }
+
+    pub fn tooltip(self) -> &'static str {
+        match self {
+            ReadingTheme::Light => "Page colours: normal (click for dark)",
+            ReadingTheme::Dark => "Page colours: dark (click for sepia)",
+            ReadingTheme::Sepia => "Page colours: sepia (click for normal)",
+        }
+    }
+}
+
+/// The status-bar button that cycles the reading theme (normal, dark, sepia) for the readers
+/// that have no page image of their own to recolour.
+pub fn tone_button() -> gtk4::ToggleButton {
+    let button = gtk4::ToggleButton::new();
+    button.set_icon_name("weather-clear-night-symbolic");
+    button.add_css_class("flat");
+    button.connect_clicked(|_| {
+        shared().update(|t| t.theme = t.theme.next());
+    });
+    let weak = button.downgrade();
+    shared().watch(move |t| {
+        if let Some(button) = weak.upgrade() {
+            button.set_active(t.theme != ReadingTheme::Light);
+            button.set_tooltip_text(Some(t.theme.tooltip()));
+        }
+    });
+    button
+}
+
 impl Typography {
+    /// Web pages measure line height from the font size; a font's natural line is about 1.2 of it.
+    fn css_line_height(&self) -> f64 {
+        self.line_height * 1.2
+    }
+
     pub fn load() -> Typography {
         std::fs::read_to_string(path())
             .ok()
@@ -156,14 +198,18 @@ impl Typography {
             css.push_str(&format!(
                 "body {{ line-height: {:.2} !important; }}\n\
                  p {{ {indent} text-align: {align} !important; line-height: {:.2} !important; }}\n",
-                self.line_height, self.line_height
+                self.css_line_height(),
+                self.css_line_height()
             ));
         } else {
             css.push_str(&format!(
                 "body {{ max-width: {}px !important; margin: 0 auto !important; \
                  padding: 0 {}px !important; line-height: {:.2} !important; }}\n\
                  p {{ {indent} text-align: {align} !important; line-height: {:.2} !important; }}\n",
-                self.width, self.margin, self.line_height, self.line_height
+                self.width,
+                self.margin,
+                self.css_line_height(),
+                self.css_line_height()
             ));
         }
         css
@@ -183,7 +229,8 @@ impl Typography {
         css.push('}');
         if let Some((bg, fg, _)) = self.colours() {
             css.push_str(&format!(
-                " textview, textview text {{ background-color: {bg}; color: {fg}; }}"
+                " textview, textview text, #fond-reflow-scroll, #fond-reflow-clamp, \
+                 #fond-reflow-margin {{ background-color: {bg}; color: {fg}; }}"
             ));
         }
         css
@@ -433,5 +480,17 @@ mod tests {
         assert!(css.contains("#f4ecd8"));
         assert!(css.contains("text-indent: 0"));
         assert!(!Typography::default().epub_css().contains("background"));
+    }
+
+    #[test]
+    fn single_spacing_is_the_bottom_of_the_range() {
+        let t = Typography {
+            line_height: 0.5,
+            ..Typography::default()
+        }
+        .clamped();
+        assert_eq!(t.line_height, 1.0);
+        assert!(t.text_view_css().contains("line-height: 1.00"));
+        assert!(t.epub_css_for(false).contains("line-height: 1.20"));
     }
 }

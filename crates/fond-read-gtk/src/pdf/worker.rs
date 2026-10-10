@@ -16,11 +16,12 @@ pub(super) enum Tone {
 }
 
 impl Tone {
-    pub fn next(self) -> Tone {
-        match self {
-            Tone::Normal => Tone::Dark,
-            Tone::Dark => Tone::Sepia,
-            Tone::Sepia => Tone::Normal,
+    pub fn of(theme: crate::typography::ReadingTheme) -> Tone {
+        use crate::typography::ReadingTheme as T;
+        match theme {
+            T::Light => Tone::Normal,
+            T::Dark => Tone::Dark,
+            T::Sepia => Tone::Sepia,
         }
     }
 

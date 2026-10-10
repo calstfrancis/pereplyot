@@ -268,7 +268,7 @@ run_reading_case() {
     xdotool key Escape
     xdotool windowfocus "$w" 2>/dev/null
     sleep 0.3
-    xdotool mousemove 110 205 mousedown 1 mousemove 400 205 mousemove 650 205 mouseup 1
+    xdotool mousemove 110 191 mousedown 1 mousemove 400 191 mousemove 650 191 mouseup 1
     sleep 1
     xdotool key 1
     sleep 1
@@ -1219,7 +1219,7 @@ run_bubble_case() {
     xdotool windowfocus "$w" 2>/dev/null
     xdotool key t
     sleep 3
-    xdotool mousemove 110 205 mousedown 1 mousemove 400 205 mousemove 650 205 mouseup 1
+    xdotool mousemove 110 191 mousedown 1 mousemove 400 191 mousemove 650 191 mouseup 1
     sleep 1
     xdotool key 1
     sleep 1

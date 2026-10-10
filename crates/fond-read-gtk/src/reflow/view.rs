@@ -122,6 +122,8 @@ pub struct ReadingView {
     bubbles: RefCell<Vec<(gtk4::TextMark, gtk4::Widget)>>,
     /// Where pictures of figures and tables come from.
     pub figure_source: RefCell<Option<FigureSource>>,
+    /// Where the cover and title pages end, in characters: Select All starts after them.
+    title_end: Cell<i32>,
 }
 
 fn escape(s: &str) -> String {
@@ -156,11 +158,24 @@ impl ReadingView {
         scroll.set_hexpand(true);
         scroll.set_child(Some(&clamp));
 
+        scroll.set_widget_name("fond-reflow-scroll");
+        clamp.set_widget_name("fond-reflow-clamp");
+        left.fixed.set_widget_name("fond-reflow-margin");
+        right.fixed.set_widget_name("fond-reflow-margin");
+
         let css = gtk4::CssProvider::new();
         #[allow(deprecated)]
-        text_view
-            .style_context()
-            .add_provider(&css, gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION);
+        for widget in [
+            text_view.upcast_ref::<gtk4::Widget>(),
+            scroll.upcast_ref(),
+            clamp.upcast_ref(),
+            left.fixed.upcast_ref(),
+            right.fixed.upcast_ref(),
+        ] {
+            widget
+                .style_context()
+                .add_provider(&css, gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION);
+        }
 
         let buffer = text_view.buffer();
         let accent = {
@@ -240,6 +255,7 @@ impl ReadingView {
             headings: RefCell::new(Vec::new()),
             bubbles: RefCell::new(Vec::new()),
             figure_source: RefCell::new(None),
+            title_end: Cell::new(0),
         });
         view.install_signals();
         let weak: Weak<ReadingView> = Rc::downgrade(&view);
@@ -253,6 +269,23 @@ impl ReadingView {
 
     fn install_signals(self: &Rc<Self>) {
         let this = Rc::downgrade(self);
+        {
+            let keys = gtk4::EventControllerKey::new();
+            keys.set_propagation_phase(gtk4::PropagationPhase::Capture);
+            let this = this.clone();
+            keys.connect_key_pressed(move |_, key, _, modifiers| {
+                let select_all = matches!(key, gtk4::gdk::Key::a | gtk4::gdk::Key::A)
+                    && modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK);
+                let Some(v) = this.upgrade().filter(|_| select_all) else {
+                    return glib::Propagation::Proceed;
+                };
+                let buffer = v.text_view.buffer();
+                let from = v.title_end.get().min(buffer.char_count());
+                buffer.select_range(&buffer.iter_at_offset(from), &buffer.end_iter());
+                glib::Propagation::Stop
+            });
+            self.text_view.add_controller(keys);
+        }
         self.scroll.vadjustment().connect_value_changed({
             let this = this.clone();
             move |_| {
@@ -590,6 +623,10 @@ impl ReadingView {
             }
             Item::Paragraph(p) => self.append_paragraph(p),
             Item::Figure { page, bbox } => self.append_figure(*page, *bbox),
+            Item::TitlePage { page, bbox } => {
+                self.append_figure(*page, *bbox);
+                self.title_end.set(self.text_view.buffer().char_count());
+            }
         }
     }
 

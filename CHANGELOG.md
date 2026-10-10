@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.14.0] "Quiet Page" — 2026-10-10
+- **Reading mode on scanned books.** Footnote markers that the scan turned into stray symbols
+  (`novel,*?`, `tales.**`) are matched to their notes by count and order, so notes land beside the
+  right line instead of reading "unmatched note"; small body lines above the notes are no longer
+  taken for notes; running heads in capitals (or carrying a page number) are dropped even when
+  they change every few pages.
+- **Endnotes.** A book whose notes are gathered at the back (a section headed "Notes", a list per
+  chapter) now gets them beside the markers that cite them: the notes pages are read, matched to
+  the body by chapter and order, and left out of the reading text.
+- **Cover and title pages stay as pictures.** The sparse pages at the front of a book (and an
+  unrecognised cover) are shown whole instead of as garbled text, and Select All (Ctrl+A) leaves
+  them out. A scanned first page is no longer sent to OCR.
+- **The page-colours button works in Reading mode** and now sets one shared reading theme (normal,
+  dark, sepia) for PDFs and EPUBs; the whole Reading surface, margins included, takes the colours.
+  EPUBs get the same button in their status bar.
+- **Single line spacing.** The spacing slider is now a multiple of the font's own line height, so
+  1.0 is single spacing (it used to bottom out near 1.3×); the default is 1.1.
+
 ## [0.13.0] "Loose Leaf" — 2026-10-10
 - **Markdown notes folder** (menu): keep one Markdown file per document in a folder you choose —
   an Obsidian or Logseq vault, say. Each highlight is a quote ending in a stable block id

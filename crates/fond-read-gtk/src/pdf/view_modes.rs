@@ -32,21 +32,30 @@ pub(super) fn install_view_modes(ui: &PdfUi) {
         });
     }
     {
-        let reader = reader.clone();
-        let render = render.clone();
-        invert_button.connect_clicked(move |btn| {
-            let tone = {
-                let mut r = reader.borrow_mut();
-                r.tone = r.tone.next();
-                r.tone
+        invert_button.connect_clicked(|_| {
+            crate::typography::shared().update(|t| t.theme = t.theme.next());
+        });
+        let reader = Rc::downgrade(&reader);
+        let render = Rc::downgrade(&render);
+        let button = invert_button.downgrade();
+        crate::typography::shared().watch(move |t| {
+            let (Some(reader), Some(render), Some(btn)) =
+                (reader.upgrade(), render.upgrade(), button.upgrade())
+            else {
+                return;
             };
+            let tone = Tone::of(t.theme);
             btn.set_active(tone != Tone::Normal);
             btn.set_tooltip_text(Some(tone.tooltip()));
+            if reader.borrow().tone == tone {
+                return;
+            }
+            reader.borrow_mut().tone = tone;
             render();
             // `render()` alone only updates the paged view's (possibly hidden) Picture —
             // Continuous mode has its own per-page Pictures with their own last-rendered
-            // textures, so they need their own refresh or an inverted toggle would silently
-            // do nothing while Continuous (the default mode) is what's actually on screen.
+            // textures, so they need their own refresh or the toggle would silently do
+            // nothing while Continuous (the default mode) is what's actually on screen.
             rerender_loaded_continuous_pages(&reader);
         });
     }
