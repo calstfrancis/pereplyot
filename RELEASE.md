@@ -1,4 +1,4 @@
-# Pereplyot v0.12.0 "Clear Margin"
+# Pereplyot v0.13.0 "Loose Leaf"
 
 Install via Flatpak:
 
@@ -18,18 +18,20 @@ flatpak update io.github.calstfrancis.Pereplyot
 
 ### What's new
 
-**Ctrl+K command palette.** Type to run any command, or to jump to a heading, a note, a page or a
-printed page label — in the PDF and EPUB readers and in the launcher, where it also opens any
-recent document or notebook. Read, Study and Synthesise postures are palette commands.
+**Notes that leave the app.** Choose a folder (an Obsidian or Logseq vault, say) from the menu and
+Pereplyot keeps one Markdown file per document there. Each highlight is a quote ending in a stable
+`^annot-…` block id, with a link that opens the passage in Pereplyot. Off until you choose a folder.
 
-**Caret browsing (F7).** Arrow keys move a caret over a PDF page's own text, Shift extends a
-selection and 1–4 mark it, so you can read and mark from the keyboard alone.
+**Add to Kartoteka.** From Ctrl+K, hand the open file to Kartoteka so its citation key comes from
+your library. Needs Kartoteka 0.22.
 
-**Textures on highlights.** An optional hatching or dotted texture for each of the four reading
-colours, in PDFs and EPUBs, so they can be told apart without relying on colour.
+**Search that lands on the word.** A result in the Search tab or the Notes browser opens the
+document with the hit marked, and pages you have recognised from scans are searched too. OCR
+languages are ones you add yourself from the menu; English is built in and nothing is downloaded.
 
-**Polish.** A Welcome / What's New window, EPUB covers on Library cards, a new app icon, and a fix:
-printed page numbers now work for EPUBs that list their pages only in the navigation file.
+**Smaller things.** Resize an area by its corners and see it on its Notes card; a ✎ beside noted
+passages in Reading mode; paginated EPUBs turn with a click at either edge; notebook export includes
+clipped EPUB pictures; merging marks undoes in one step.
 
 ---
 

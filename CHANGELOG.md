@@ -1,13 +1,13 @@
 # Changelog
 
-## [Unreleased]
+## [0.13.0] "Loose Leaf" — 2026-10-10
 - **Markdown notes folder** (menu): keep one Markdown file per document in a folder you choose —
   an Obsidian or Logseq vault, say. Each highlight is a quote ending in a stable block id
   (`^annot-…`) with a link that opens the passage in Pereplyot; the file is rewritten whenever the
   notes change. Off until you choose a folder.
 - **Add to Kartoteka** (Ctrl+K, in a PDF or EPUB that is not yet in a library): asks the installed
   Kartoteka to add the open file to its library, so the citation key can come from there. Needs a
-  Kartoteka that accepts files on its command line (the release after 0.21.0).
+  Kartoteka that accepts files on its command line (0.22.0 or later).
 - **Search opens on the hit.** Clicking a result in the Search tab or the Notes browser opens the
   document with that word highlighted (`--search=`), and recognised (OCR) text is indexed too.
 - **OCR languages you add yourself** (menu → *OCR languages…*): English stays bundled; other

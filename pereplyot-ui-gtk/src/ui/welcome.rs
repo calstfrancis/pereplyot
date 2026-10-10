@@ -10,7 +10,7 @@ use crate::ui::Widgets;
 use std::rc::Rc;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub(crate) const RELEASE_NAME: &str = "Clear Margin";
+pub(crate) const RELEASE_NAME: &str = "Loose Leaf";
 
 /// Show the window if this version has not been seen: the welcome the first time ever, What's
 /// New after an update. Called when the launcher is actually shown.
@@ -102,20 +102,20 @@ pub fn show(parent: &impl IsA<gtk4::Window>, first_run: bool) {
 /// Updated at release time, with `RELEASE_NAME`.
 const NEW: &[(&str, &str)] = &[
     (
-        "Ctrl+K command palette",
-        "Run any command, or jump to a heading, a note, a page or a printed page label — in the readers and the launcher.",
+        "Markdown notes folder",
+        "Keep one Markdown file per document in an Obsidian or Logseq vault, each highlight ending in a stable ^annot- block id with a link back here.",
     ),
     (
-        "Caret browsing (F7)",
-        "Move a caret over the page's own text, select with Shift+arrows and mark with 1–4, from the keyboard alone.",
+        "Add to Kartoteka",
+        "From Ctrl+K, hand the open file to Kartoteka so its citation key comes from your library (needs Kartoteka 0.22).",
     ),
     (
-        "Textures on highlights",
-        "Turn on hatching and dots in the menu so the four colours can be told apart without colour.",
+        "Search that lands on the word",
+        "A result opens the document with the hit marked, and scanned pages you have recognised are searched too. Add OCR languages from the menu; nothing is downloaded for you.",
     ),
     (
-        "Covers, an icon, and a fix",
-        "EPUB covers on Library cards, a new app icon, and printed page numbers now work for books that list their pages only in the navigation file.",
+        "Areas, bubbles and undo",
+        "Resize an area by its corners and see it on its Notes card, spot notes in Reading mode, turn EPUB pages with a click at the edges, and undo a merge in one step.",
     ),
 ];
 

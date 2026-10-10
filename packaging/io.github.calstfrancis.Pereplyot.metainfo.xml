@@ -59,6 +59,17 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.13.0" date="2026-10-10">
+      <description>
+        <p>0.13.0 "Loose Leaf" — notes can leave the app: an optional Markdown notes folder keeps
+        one file per document, with a stable block id on each highlight, for Obsidian or Logseq,
+        and "Add to Kartoteka" hands the open file to Kartoteka 0.22. Search results open with the
+        hit marked and recognised scans are searched; OCR languages are ones you add yourself.
+        Areas resize by their corners, notes show in Reading mode, paginated EPUBs turn with a
+        click at the edges, notebook export includes clipped EPUB pictures, and merging marks
+        undoes in one step.</p>
+      </description>
+    </release>
     <release version="0.12.0" date="2026-10-09">
       <description>
         <p>0.12.0 "Clear Margin" — a Ctrl+K command palette in the readers and the launcher,
