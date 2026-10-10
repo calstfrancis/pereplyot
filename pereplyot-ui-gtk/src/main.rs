@@ -57,6 +57,7 @@ fn parse_args(args: &[std::ffi::OsString]) -> Result<ParsedArgs, String> {
     let mut annotations_only = false;
     let mut start_annotation: Option<String> = None;
     let mut start_page: Option<u32> = None;
+    let mut search: Option<String> = None;
     let mut file: Option<PathBuf> = None;
 
     for arg in args {
@@ -73,6 +74,8 @@ fn parse_args(args: &[std::ffi::OsString]) -> Result<ParsedArgs, String> {
             title = Some(v.to_string());
         } else if s == "--annotations" {
             annotations_only = true;
+        } else if let Some(v) = s.strip_prefix("--search=") {
+            search = Some(v.to_string());
         } else if let Some(v) = s.strip_prefix("--annotation=") {
             start_annotation = Some(v.to_string());
         } else if let Some(link) = fond_read_gtk::deeplink::parse(&s) {
@@ -142,6 +145,7 @@ fn parse_args(args: &[std::ffi::OsString]) -> Result<ParsedArgs, String> {
             annotations_only,
             start_annotation,
             start_page,
+            search,
         },
     })
 }

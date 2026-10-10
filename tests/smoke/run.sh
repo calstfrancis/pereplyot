@@ -1001,6 +1001,22 @@ run_search_case() {
     screenshot "$WORK/se-1.png"
     ink="$(python3 "$HERE/text_bands.py" "$WORK/se-1.png" --ink-in 20 140 700 340)"
     check "search: an EPUB's chapters and a quoted phrase work too" "$([ "${ink:-0}" -gt 800 ] && echo 1 || echo 0)" "(ink in the results: $ink)"
+    xdotool key ctrl+a
+    xdotool type --delay 40 "sphinx"
+    sleep 2.5
+    xdotool mousemove 360 200
+    sleep 0.4
+    xdotool mousedown 1
+    sleep 0.15
+    xdotool mouseup 1
+    sleep 3
+    local rw
+    rw="$(reader_window)" || { check "search: a hit opens its document" 0; stop_app; return; }
+    sleep 3.5
+    screenshot "$WORK/se-2.png"
+    local blue
+    blue="$(python3 "$HERE/text_bands.py" "$WORK/se-2.png" --has-search-match)"
+    check "search: opening a hit marks the words it was found by" "$([ "${blue:-0}" -gt 100 ] && echo 1 || echo 0)" "(blue pixels: $blue)"
     stop_app
 }
 

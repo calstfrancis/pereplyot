@@ -479,6 +479,23 @@ pub fn show_epub_reader(
     search_wiring::install_search(&ui);
     clip_image::install(host, &reader, &web_view);
     {
+        let view = web_view.clone();
+        crate::register_search(
+            hash,
+            Rc::new(move |query: &str| {
+                if let Some(fc) = webkit6::prelude::WebViewExt::find_controller(&view) {
+                    let options = (webkit6::FindOptions::CASE_INSENSITIVE
+                        | webkit6::FindOptions::WRAP_AROUND)
+                        .bits();
+                    fc.search(query, options, 1000);
+                }
+            }),
+        );
+        if let Some(q) = crate::take_search(hash) {
+            *pending_search.borrow_mut() = Some(q);
+        }
+    }
+    {
         let reader = reader.clone();
         let view = web_view.clone();
         let prev = prev.clone();

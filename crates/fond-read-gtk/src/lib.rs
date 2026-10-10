@@ -229,6 +229,8 @@ thread_local! {
         RefCell::new(HashMap::new());
 
     static JUMPS: RefCell<HashMap<String, Rc<JumpFn>>> = RefCell::new(HashMap::new());
+    static SEARCHES: RefCell<HashMap<String, Rc<dyn Fn(&str)>>> = RefCell::new(HashMap::new());
+    static WANTED_SEARCH: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
 
     /// Callbacks registered via [`on_all_readers_closed`].
     static ON_ALL_CLOSED: RefCell<Vec<Rc<dyn Fn()>>> = RefCell::new(Vec::new());
@@ -288,8 +290,37 @@ pub fn jump_in_open_reader(hash: &str, page: u32, annotation: Option<&str>) -> b
     true
 }
 
+/// How to run a search in the reader open on `hash`.
+pub fn register_search(hash: &str, search: Rc<dyn Fn(&str)>) {
+    SEARCHES.with(|s| s.borrow_mut().insert(hash.to_string(), search));
+}
+
+/// Search for `query` in the reader already open on `hash`; false if none is open.
+pub fn search_in_open_reader(hash: &str, query: &str) -> bool {
+    let search = SEARCHES.with(|s| s.borrow().get(hash).cloned());
+    match search {
+        Some(search) => {
+            search(query);
+            true
+        }
+        None => false,
+    }
+}
+
+/// Ask for `query` to be searched for as soon as the reader for `hash` is open, so the words a
+/// hit was found by are marked on arrival.
+pub fn request_search(hash: &str, query: &str) {
+    WANTED_SEARCH.with(|w| w.borrow_mut().insert(hash.to_string(), query.to_string()));
+}
+
+/// The search asked for with [`request_search`], once.
+pub(crate) fn take_search(hash: &str) -> Option<String> {
+    WANTED_SEARCH.with(|w| w.borrow_mut().remove(hash))
+}
+
 pub fn unregister_window(hash: &str) {
     JUMPS.with(|j| j.borrow_mut().remove(hash));
+    SEARCHES.with(|s| s.borrow_mut().remove(hash));
     let now_empty = OPEN_READERS.with(|r| {
         let mut r = r.borrow_mut();
         r.remove(hash);

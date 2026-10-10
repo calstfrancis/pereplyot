@@ -804,6 +804,18 @@ fn build_reader(
     export::install_export(&ui);
     interop_ui::install(&ui);
     search::install_search(&ui);
+    if !is_pane {
+        let entry = ui.search_entry.clone();
+        let run: Rc<dyn Fn(&str)> = Rc::new(move |q: &str| {
+            entry.set_text(q);
+            entry.emit_activate();
+        });
+        crate::register_search(pdf_hash, run.clone());
+        if let Some(q) = crate::take_search(pdf_hash) {
+            let run = run.clone();
+            glib::idle_add_local_once(move || run(&q));
+        }
+    }
     scan::install_scan(&ui);
     split::install_split(&ui);
     notebook_toggle::install_notebook_toggle(&ui);

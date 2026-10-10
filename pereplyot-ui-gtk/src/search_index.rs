@@ -72,6 +72,10 @@ pub fn refresh(
             let dir = dir.clone();
             let _ = gio::spawn_blocking(move || {
                 let (units, labels, chapters) = index::extract(&path, kind).unwrap_or_default();
+                let ocr_pages = match kind {
+                    DocKind::Pdf => fond_read_gtk::reflow::ocr::cached_pages(&path),
+                    DocKind::Epub => 0,
+                };
                 let entry = DocEntry {
                     hash,
                     title,
@@ -79,6 +83,7 @@ pub fn refresh(
                     kind,
                     labels,
                     chapters,
+                    ocr_pages,
                 };
                 let _ = index::store(&dir, entry, &units);
             })

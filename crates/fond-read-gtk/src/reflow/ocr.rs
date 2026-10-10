@@ -144,6 +144,33 @@ pub fn cached_page(doc: &PdfDocument<'_>, index: u16, lang: &str, cache: &Path) 
     })
 }
 
+/// The text of page `index` as recognised earlier in any language, for the search index.
+pub fn cached_text(path: &Path, index: u16) -> Option<String> {
+    let dir = cache_dir(path);
+    let suffix = format!("-{index}.tsv");
+    let file = std::fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .find(|e| e.file_name().to_string_lossy().ends_with(&suffix))?
+        .path();
+    let words = parse_tsv(&std::fs::read_to_string(file).ok()?, DPI);
+    let text = words
+        .iter()
+        .map(|w| w.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    (!text.trim().is_empty()).then_some(text)
+}
+
+/// How many pages of the document at `path` have been recognised.
+pub fn cached_pages(path: &Path) -> usize {
+    std::fs::read_dir(cache_dir(path)).map_or(0, |d| {
+        d.flatten()
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".tsv"))
+            .count()
+    })
+}
+
 /// The words on page `index`, recognised from a 300 dpi render of it. `None` if Tesseract could
 /// not be run or found nothing.
 pub fn ocr_page(
@@ -307,5 +334,21 @@ mod tests {
     fn a_header_only_or_empty_result_is_no_words() {
         assert!(parse_tsv("", 300.0).is_empty());
         assert!(parse_tsv("level\tpage_num\n", 300.0).is_empty());
+    }
+
+    #[test]
+    fn recognised_pages_are_found_by_page_number_in_any_language() {
+        let doc = std::env::temp_dir().join(format!("pereplyot-ocr-doc-{}.pdf", std::process::id()));
+        std::fs::write(&doc, b"%PDF-").unwrap();
+        let dir = cache_dir(&doc);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("fra-3.tsv"), TSV).unwrap();
+        assert_eq!(cached_pages(&doc), 1);
+        let text = cached_text(&doc, 3).unwrap();
+        assert!(!text.is_empty());
+        assert_eq!(cached_text(&doc, 4), None);
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_file(&doc);
     }
 }

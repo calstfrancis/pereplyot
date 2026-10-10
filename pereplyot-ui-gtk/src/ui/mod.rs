@@ -41,3 +41,38 @@ pub struct Widgets {
 pub fn toast(widgets: &Rc<Widgets>, message: &str) {
     widgets.toasts.add_toast(adw::Toast::new(message));
 }
+
+/// Make a list row do `action` when it is clicked or activated from the keyboard. A row's own
+/// `activate` signal is only raised by the keyboard, so a click needs a gesture of its own; the
+/// pause stops a GTK that raises both from doing it twice.
+pub fn on_open(row: &gtk4::ListBoxRow, action: impl Fn() + 'static) {
+    use gtk4::prelude::*;
+    let action = Rc::new(action);
+    let last = Rc::new(std::cell::Cell::new(None::<std::time::Instant>));
+    let run = {
+        let action = action.clone();
+        move || {
+            let now = std::time::Instant::now();
+            if last
+                .get()
+                .is_some_and(|t| now.duration_since(t) < std::time::Duration::from_millis(400))
+            {
+                return;
+            }
+            last.set(Some(now));
+            action();
+        }
+    };
+    let run = Rc::new(run);
+    {
+        let run = run.clone();
+        row.connect_activate(move |_| run());
+    }
+    let click = gtk4::GestureClick::new();
+    click.set_button(gtk4::gdk::BUTTON_PRIMARY);
+    click.connect_released(move |gesture, _, _, _| {
+        gesture.set_state(gtk4::EventSequenceState::Claimed);
+        run();
+    });
+    row.add_controller(click);
+}

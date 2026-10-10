@@ -705,6 +705,8 @@ pub struct LaunchOptions {
     pub start_page: Option<u32>,
     /// Open an EPUB on this annotation's chapter.
     pub start_annotation: Option<String>,
+    /// Mark this text in the document on arrival (the words a search hit was found by).
+    pub search: Option<String>,
 }
 
 /// [`open_path`], but for a document Pereplyot was launched to open on another app's
@@ -724,6 +726,7 @@ pub fn open_path_with_host(
         annotations_only,
         start_page,
         start_annotation,
+        search,
     } = options;
     if !path.is_file() {
         toast(widgets, "Not a file");
@@ -839,6 +842,11 @@ pub fn open_path_with_host(
             epub,
             &title,
         );
+    }
+    if let Some(query) = search.as_deref() {
+        if !fond_read_gtk::search_in_open_reader(&hash, query) {
+            fond_read_gtk::request_search(&hash, query);
+        }
     }
     match kind {
         DocKind::Pdf => {

@@ -23,6 +23,10 @@ pub struct DocEntry {
     pub labels: Vec<String>,
     /// Whether `labels` are chapters rather than pages.
     pub chapters: bool,
+    /// How many pages of a scan had been recognised when this was indexed, so more recognition
+    /// later makes the document worth indexing again.
+    #[serde(default)]
+    pub ocr_pages: usize,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -355,8 +359,16 @@ pub fn extract(path: &Path, kind: DocKind) -> Option<(Vec<String>, Vec<String>, 
             let pdfium = crate::pdfium::get().ok()?;
             let bytes = std::fs::read(path).ok()?;
             let text = fond_doc::extract_text(pdfium, &bytes).ok()?;
+            let mut pages = text.pages;
+            for (i, page) in pages.iter_mut().enumerate() {
+                if page.trim().is_empty() {
+                    if let Some(recognised) = crate::reflow::ocr::cached_text(path, i as u16) {
+                        *page = recognised;
+                    }
+                }
+            }
             let labels = fond_doc::page_labels(pdfium, &bytes).unwrap_or_default();
-            let labels = (0..text.pages.len())
+            let labels = (0..pages.len())
                 .map(|i| {
                     labels
                         .get(i)
@@ -364,7 +376,7 @@ pub fn extract(path: &Path, kind: DocKind) -> Option<(Vec<String>, Vec<String>, 
                         .unwrap_or_else(|| (i + 1).to_string())
                 })
                 .collect();
-            Some((text.pages, labels, false))
+            Some((pages, labels, false))
         }
         DocKind::Epub => {
             let book = fond_doc::epub::open_book(path).ok()?;
@@ -399,26 +411,25 @@ pub fn missing<'a>(
     dir: &Path,
     wanted: &'a [(String, PathBuf, DocKind, String)],
 ) -> Vec<&'a (String, PathBuf, DocKind, String)> {
-    let have: HashMap<String, PathBuf> = load_catalogue(dir)
+    let have: HashMap<String, (PathBuf, usize)> = load_catalogue(dir)
         .into_iter()
-        .map(|d| (d.hash, d.path))
+        .map(|d| (d.hash, (d.path, d.ocr_pages)))
         .collect();
     wanted
         .iter()
-        .filter(|(hash, path, _, _)| {
-            have.get(hash).differs_or_missing(path) || !text_path(dir, hash).exists()
+        .filter(|(hash, path, kind, _)| {
+            let recognised = match kind {
+                DocKind::Pdf => crate::reflow::ocr::cached_pages(path),
+                DocKind::Epub => 0,
+            };
+            match have.get(hash) {
+                None => true,
+                Some((old_path, old_ocr)) => {
+                    old_path != path || *old_ocr != recognised || !text_path(dir, hash).exists()
+                }
+            }
         })
         .collect()
-}
-
-trait DiffersFrom {
-    fn differs_or_missing(self, path: &Path) -> bool;
-}
-
-impl DiffersFrom for Option<&PathBuf> {
-    fn differs_or_missing(self, path: &Path) -> bool {
-        self.map_or(true, |p| p != path)
-    }
 }
 
 #[cfg(test)]
@@ -434,6 +445,7 @@ mod tests {
                 kind: DocKind::Pdf,
                 labels: (1..=pages.len()).map(|i| i.to_string()).collect(),
                 chapters: false,
+                ocr_pages: 0,
             },
             pages.iter().map(|s| s.to_string()).collect(),
         )

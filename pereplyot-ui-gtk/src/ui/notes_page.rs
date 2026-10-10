@@ -147,7 +147,7 @@ pub fn hit_row(widgets: &Rc<Widgets>, hit: NoteHit) -> gtk4::ListBoxRow {
     ))]);
 
     let widgets = widgets.clone();
-    row.connect_activate(move |_| match &hit.path {
+    crate::ui::on_open(&row, move || match &hit.path {
         Some(path) if path.is_file() => {
             open_path_with_host(
                 &widgets,

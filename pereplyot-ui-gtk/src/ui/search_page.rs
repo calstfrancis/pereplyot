@@ -57,7 +57,13 @@ fn markup_with_marks(text: &str, marks: &[(usize, usize)]) -> String {
     out
 }
 
-fn text_row(widgets: &Rc<Widgets>, entry: &DocEntry, unit: usize, hit: &Hit) -> gtk4::ListBoxRow {
+fn text_row(
+    widgets: &Rc<Widgets>,
+    entry: &DocEntry,
+    unit: usize,
+    hit: &Hit,
+    query: &str,
+) -> gtk4::ListBoxRow {
     let row = gtk4::ListBoxRow::new();
     let outer = gtk4::Box::new(gtk4::Orientation::Vertical, 3);
     outer.set_margin_top(8);
@@ -94,17 +100,19 @@ fn text_row(widgets: &Rc<Widgets>, entry: &DocEntry, unit: usize, hit: &Hit) -> 
     ))]);
     let widgets = widgets.clone();
     let path = entry.path.clone();
+    let query = query.to_string();
     let start = match entry.kind {
         DocKind::Pdf => (unit + 1) as u32,
         DocKind::Epub => label.parse().unwrap_or(1),
     };
-    row.connect_activate(move |_| {
+    crate::ui::on_open(&row, move || {
         if path.is_file() {
             open_path_with_host(
                 &widgets,
                 path.clone(),
                 LaunchOptions {
                     start_page: Some(start),
+                    search: Some(query.clone()),
                     ..LaunchOptions::default()
                 },
             );
@@ -228,6 +236,12 @@ pub fn build(widgets: &Rc<Widgets>) -> SearchPage {
             (notes_heading.clone(), text_heading.clone(), empty.clone());
         Rc::new(move || {
             let query = Query::parse(&entry.text());
+            let typed = query
+                .phrases
+                .first()
+                .cloned()
+                .or_else(|| query.words.first().cloned())
+                .unwrap_or_default();
             let gen = generation.get() + 1;
             generation.set(gen);
             clear(&notes_list);
@@ -378,7 +392,7 @@ pub fn build(widgets: &Rc<Widgets>) -> SearchPage {
                     }
                 ));
                 for (di, h) in &text_hits {
-                    text_list.append(&text_row(&widgets, &loaded[*di].entry, h.unit, h));
+                    text_list.append(&text_row(&widgets, &loaded[*di].entry, h.unit, h, &typed));
                 }
                 text_box.set_visible(!text_hits.is_empty());
                 let any = notes_box.is_visible() || text_box.is_visible();
