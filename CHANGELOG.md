@@ -10,6 +10,8 @@
 - **Note bubbles in Reading mode:** a marked passage with a note gets a small ✎ after it (the note
   is its tooltip).
 - **Merging marks is one undo step.**
+- **Paginated EPUBs turn pages with a click** in the outer tenth of either side.
+- **Notebook export includes clipped EPUB pictures** (copied from the book, keeping their format).
 
 ## [0.12.0] "Clear Margin" — 2026-10-09
 - **Ctrl+K command palette**, in the PDF reader, the EPUB reader and the launcher: type to run any

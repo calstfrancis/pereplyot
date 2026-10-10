@@ -105,6 +105,29 @@ struct Figure {
     pdf: PathBuf,
     page: u32,
     rect: [f64; 4],
+    copy_from: Option<PathBuf>,
+}
+
+impl Figure {
+    fn file_name(&self) -> String {
+        crate::clip::AreaClip {
+            id: self.id.clone(),
+            page: self.page,
+            rect: self.rect,
+            copy_from: self.copy_from.clone(),
+        }
+        .file_name()
+    }
+}
+
+fn epub_picture(hash: &str, image: &str) -> Option<PathBuf> {
+    let hex = hash.split_once(':').map_or(hash, |(_, h)| h);
+    let file = glib::user_cache_dir()
+        .join("pereplyot")
+        .join("epub")
+        .join(hex)
+        .join(image);
+    file.is_file().then_some(file)
 }
 
 fn save(
@@ -131,25 +154,37 @@ fn save(
             let figures_name = format!("{}-figures", safe_stem(&path));
             let mut figures: HashMap<String, Figure> = HashMap::new();
             for q in nb.quotes().filter(|q| q.area) {
-                let rect = live_annotation(&q.hash, &q.id).and_then(|a| a.rect());
-                let pdf = document_path(&q.hash);
-                if let (Some(rect), Some(pdf)) = (rect, pdf) {
-                    figures.insert(
-                        q.id.clone(),
-                        Figure {
+                let Some(a) = live_annotation(&q.hash, &q.id) else {
+                    continue;
+                };
+                let figure = match crate::image_of(&a) {
+                    Some(image) => epub_picture(&q.hash, &image).map(|file| Figure {
+                        id: q.id.clone(),
+                        pdf: file.clone(),
+                        page: q.page,
+                        rect: [0.0; 4],
+                        copy_from: Some(file),
+                    }),
+                    None => a
+                        .rect()
+                        .zip(document_path(&q.hash))
+                        .map(|(rect, pdf)| Figure {
                             id: q.id.clone(),
                             pdf,
                             page: q.page,
                             rect,
-                        },
-                    );
+                            copy_from: None,
+                        }),
+                };
+                if let Some(figure) = figure {
+                    figures.insert(q.id.clone(), figure);
                 }
             }
             let connections = crate::connections::read(|c| c.clone());
             let image_for = |q: &Quote| {
                 figures
-                    .contains_key(&q.id)
-                    .then(|| format!("{FIGURES_DIR}{}.png", q.id))
+                    .get(&q.id)
+                    .map(|f| format!("{FIGURES_DIR}{}", f.file_name()))
             };
             let connections_of = |q: &Quote| -> Vec<Linked> {
                 connections
@@ -175,7 +210,7 @@ fn save(
                 notebook::export(&nb, &options).replace(FIGURES_DIR, &format!("{figures_name}/"));
             let used: Vec<Figure> = figures
                 .into_values()
-                .filter(|f| text.contains(&format!("{figures_name}/{}.png", f.id)))
+                .filter(|f| text.contains(&format!("{figures_name}/{}", f.file_name())))
                 .collect();
             let dir = path
                 .parent()
@@ -185,6 +220,14 @@ fn save(
             glib::spawn_future_local(async move {
                 let mut written = 0usize;
                 for f in &used {
+                    if let Some(source) = &f.copy_from {
+                        let out = dir.join(f.file_name());
+                        let ok = std::fs::create_dir_all(&dir)
+                            .and_then(|()| std::fs::copy(source, &out))
+                            .is_ok();
+                        written += usize::from(ok);
+                        continue;
+                    }
                     let (pdf, page, rect) = (f.pdf.clone(), f.page, f.rect);
                     let drawn =
                         gtk4::gio::spawn_blocking(move || crate::clip::render(&pdf, page, rect))

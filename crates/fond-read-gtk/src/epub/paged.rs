@@ -81,6 +81,14 @@ pub(super) const RUNTIME_JS: &str = r#"(function() {
     var st = document.getElementById('__pp_paged');
     if (st) st.remove();
   };
+  document.addEventListener('click', function(e) {
+    if (!window.__paged || e.button !== 0 || e.target.closest('a[href],button,input,select,textarea')) return;
+    var sel = window.getSelection && window.getSelection();
+    if (sel && !sel.isCollapsed) return;
+    var w = document.documentElement.clientWidth;
+    if (e.clientX < w * 0.1) window.webkit.messageHandlers['pereplyot-turn'].postMessage('-1');
+    else if (e.clientX > w * 0.9) window.webkit.messageHandlers['pereplyot-turn'].postMessage('1');
+  });
 })();"#;
 
 const FLAG: &str = "pereplyot-paginated";
@@ -148,7 +156,8 @@ pub(super) fn build(
     toggle.add_css_class("flat");
     toggle.set_label("Pages");
     toggle.set_tooltip_text(Some(
-        "Paginated — turn pages instead of scrolling (arrow keys, Space, the wheel); two columns \
+        "Paginated — turn pages instead of scrolling (arrow keys, Space, the wheel, a click in the \
+         outer tenth of either side); two columns \
          on a wide window",
     ));
     let spread = gtk4::Label::new(None);
@@ -224,6 +233,17 @@ pub(super) fn build(
             glib::Propagation::Stop
         });
         web_view.add_controller(wheel);
+    }
+    if let Some(ucm) = webkit6::prelude::WebViewExt::user_content_manager(web_view) {
+        ucm.register_script_message_handler("pereplyot-turn", None);
+        let turn = turn.clone();
+        ucm.connect_script_message_received(Some("pereplyot-turn"), move |_, value| {
+            match value.to_str().as_str() {
+                "-1" => turn(-1),
+                "1" => turn(1),
+                _ => {}
+            }
+        });
     }
     {
         let reader = Rc::downgrade(reader);

@@ -908,6 +908,17 @@ run_pages_case() {
     local spread
     spread="$(python3 "$HERE/text_bands.py" "$WORK/pg-1.png" --ink-in 90 780 140 802)"
     check "pages: the Pages toggle shows where you are (1 / 2)" "$([ "${spread:-0}" -gt 40 ] && echo 1 || echo 0)" "(ink in the spread label: $spread)"
+    local geo wx wy ww
+    geo="$(xdotool getwindowgeometry --shell "$w")"
+    wx="$(echo "$geo" | sed -n 's/^X=//p')"; wy="$(echo "$geo" | sed -n 's/^Y=//p')"; ww="$(echo "$geo" | sed -n 's/^WIDTH=//p')"
+    xdotool mousemove $((wx + ww - 12)) $((wy + 400)) click 1
+    sleep 1.5
+    screenshot "$WORK/pg-z.png"
+    check "pages: a click in the right edge zone turns the page" "$([ "$(same_region "$WORK/pg-1.png" "$WORK/pg-z.png" 0 90 1240 660)" = 0 ] && echo 1 || echo 0)"
+    xdotool mousemove $((wx + 12)) $((wy + 400)) click 1
+    sleep 1.5
+    screenshot "$WORK/pg-y.png"
+    check "pages: a click in the left edge zone turns it back" "$([ "$(same_region "$WORK/pg-1.png" "$WORK/pg-y.png" 0 90 1240 660)" = 1 ] && echo 1 || echo 0)"
     xdotool mousemove 600 400
     xdotool key space
     sleep 1.5
