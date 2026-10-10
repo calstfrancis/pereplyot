@@ -6,7 +6,7 @@ pub(super) fn export_notes(
     host: &Rc<dyn ReaderHost>,
     reader: &Rc<RefCell<ReaderState>>,
     title: &str,
-    reader_window: &adw::Window,
+    reader_window: &gtk4::Window,
     hash: &str,
 ) {
     let (items, bookmarks, clips, path) = {
@@ -55,7 +55,7 @@ pub(super) fn show_page_number_dialog(
     prev: &gtk4::Button,
     next: &gtk4::Button,
     bookmark_button: &gtk4::Button,
-    reader_window: &adw::Window,
+    reader_window: &gtk4::Window,
 ) {
     let (page, count) = {
         let r = reader.borrow();
@@ -172,7 +172,7 @@ pub(super) fn show_page_number_dialog(
 pub(super) fn show_pdf_note_dialog(
     host: &Rc<dyn ReaderHost>,
     reader: &Rc<RefCell<ReaderState>>,
-    reader_window: &adw::Window,
+    reader_window: &gtk4::Window,
     at: Option<[f64; 2]>,
 ) {
     let current_page = reader.borrow().page as u32 + 1;

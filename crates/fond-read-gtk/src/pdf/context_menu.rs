@@ -22,7 +22,7 @@ pub(super) fn show_pdf_context_menu(
     parent: &gtk4::Picture,
     page: u16,
     geom: ClickGeometry,
-    reader_window: &adw::Window,
+    reader_window: &gtk4::Window,
 ) {
     let ClickGeometry {
         render_w,

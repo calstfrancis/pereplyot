@@ -1,6 +1,12 @@
 # Changelog
 
-## [Unreleased]
+## [0.15.0] "Common Room" — 2026-10-10
+- **One window.** The library is no longer a window of its own that gets lost behind the reader:
+  it is the first tab of the reader window, pinned and always visible, holding Library, History,
+  Notes, Notebooks and Search. Opening a book adds a tab beside it; click Library to go back, and
+  closing the last book lands you there. A book can still be popped out into a window of its own.
+  Opening a file from another app (or "Open With") goes straight to the book, as before.
+- A book's scroll position is kept when you switch to another tab and back.
 - **Fixed a crash** when adding a document to the Library with the + button in History: the
   library was borrowed twice while the new entry was built.
 

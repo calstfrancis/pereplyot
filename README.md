@@ -47,7 +47,7 @@ numbers, note popovers, a paginated mode and clipped images; all set by default 
 "LaTeX Look". The plan is in
 `ACADEMIC-READER-PLAN.md`.
 
-**Also since 0.11.0:** a Welcome / What's New window, a real app icon, EPUB covers on Library cards,
+**Also since 0.11.0:** the library as a pinned first tab of the one reader window, a Welcome / What's New window, a real app icon, EPUB covers on Library cards,
 a Ctrl+K command palette, caret browsing (F7) and optional textures on highlights. The screenshots
 here come from `capture-screenshots.sh` (a fictional document in a throwaway profile; light and
 dark variants live in `screenshots/`), and `release-preflight.sh` checks that a release's version,

@@ -14,7 +14,7 @@ pub(super) fn export_notes(
     reader: &Rc<RefCell<EpubReaderState>>,
     title: &str,
     hash: &str,
-    reader_window: &adw::Window,
+    reader_window: &gtk4::Window,
 ) {
     let (items, bookmarks, clips) = {
         let r = reader.borrow();

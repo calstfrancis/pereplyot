@@ -96,7 +96,7 @@ thread_local! {
     // opened and cleared here as soon as it closes (its last tab closed, or the user closed
     // the window directly) — so the *next* "Read" after every reader was closed starts a
     // fresh window rather than trying to resurrect a dead one.
-    static MAIN_HOST: RefCell<Option<(adw::Window, adw::TabView)>> = const { RefCell::new(None) };
+    static MAIN_HOST: RefCell<Option<(gtk4::Window, adw::TabView)>> = const { RefCell::new(None) };
     // Optional bottom-right status-bar widget an embedding app can ask every reader host
     // window (the shared one and any popped-out ones) to carry — see `set_host_footer`.
     static HOST_MENU: RefCell<Option<Rc<dyn Fn() -> gtk4::Widget>>> = const { RefCell::new(None) };
@@ -138,7 +138,7 @@ pub fn host_footer_widget() -> Option<gtk4::Widget> {
 /// shared host window or one popped out on its own.
 #[derive(Clone)]
 pub struct ReaderTab {
-    pub host_window: adw::Window,
+    pub host_window: gtk4::Window,
     tab_view: adw::TabView,
     page: adw::TabPage,
 }
@@ -162,6 +162,7 @@ impl ReaderTab {
     pub fn pop_out(&self, parent: &adw::ApplicationWindow) -> ReaderTab {
         let (new_host, new_view) = new_tab_view(parent);
         self.tab_view.transfer_page(&self.page, &new_view, 0);
+        let new_host: gtk4::Window = new_host.upcast();
         new_host.present();
         ReaderTab {
             host_window: new_host,
@@ -174,7 +175,7 @@ impl ReaderTab {
 /// Flip the host window between fullscreen and normal, swapping the header button's icon
 /// and tooltip to match — `adw::Window` (like `gtk4::Window`) tracks fullscreen state itself
 /// via `is_fullscreen`, so this just reads it back rather than keeping a separate bool.
-fn toggle_fullscreen(host: &adw::Window, button: &gtk4::Button) {
+fn toggle_fullscreen(host: &gtk4::Window, button: &gtk4::Button) {
     if host.is_fullscreen() {
         host.unfullscreen();
         button.set_icon_name("view-fullscreen-symbolic");
@@ -194,10 +195,24 @@ fn new_tab_view(parent: &adw::ApplicationWindow) -> (adw::Window, adw::TabView) 
     host.set_title(Some("Reader"));
     host.set_transient_for(Some(parent));
     host.set_default_size(1000, 820);
+    let target = host.clone();
+    let tab_view = wire_host(host.upcast_ref(), move |content| {
+        target.set_content(Some(content))
+    });
+    (host, tab_view)
+}
 
+/// Fill `host` — any top-level window — with the header, tab bar and tab view every reader host
+/// has, and wire its handlers. `set_content` puts the finished toolbar view into the window,
+/// which `adw::Window` and `adw::ApplicationWindow` each do with a method of their own.
+fn wire_host(host: &gtk4::Window, set_content: impl FnOnce(&adw::ToolbarView)) -> adw::TabView {
+    let host = host.clone();
     let tab_view = adw::TabView::new();
     let tab_bar = adw::TabBar::new();
     tab_bar.set_view(Some(&tab_view));
+    if std::env::var_os("PEREPLYOT_NO_TABBAR").is_some() {
+        tab_bar.set_visible(false);
+    }
 
     let toolbar = adw::ToolbarView::new();
     let header = adw::HeaderBar::new();
@@ -312,7 +327,7 @@ fn new_tab_view(parent: &adw::ApplicationWindow) -> (adw::Window, adw::TabView) 
         host.set_data(TOAST_DATA_KEY, toasts.clone());
     }
     toolbar.set_content(Some(&toasts));
-    host.set_content(Some(&toolbar));
+    set_content(&toolbar);
 
     // No `create-window` handler: dragging a tab out of the bar is left as GTK's default
     // (refused, snaps back) rather than spawning a window — see the module doc for why.
@@ -385,7 +400,33 @@ fn new_tab_view(parent: &adw::ApplicationWindow) -> (adw::Window, adw::TabView) 
         });
     }
 
-    (host, tab_view)
+    tab_view
+}
+
+/// Make `window` itself the shared reader host, with `home` as its first tab: pinned, always
+/// there, and taking the header controls `start`, `title` and `end` while it is selected. Readers
+/// opened afterwards become tabs beside it.
+pub fn install_home(
+    window: &adw::ApplicationWindow,
+    home: &impl IsA<gtk4::Widget>,
+    start: impl IsA<gtk4::Widget>,
+    title: impl IsA<gtk4::Widget>,
+    end: impl IsA<gtk4::Widget>,
+) {
+    let host: gtk4::Window = window.clone().upcast();
+    let target = window.clone();
+    let tab_view = wire_host(&host, move |content| target.set_content(Some(content)));
+    MAIN_HOST.with(|cell| *cell.borrow_mut() = Some((host.clone(), tab_view.clone())));
+    let page = tab_view.append(home);
+    page.set_title("Library");
+    page.set_icon(Some(&gtk4::gio::ThemedIcon::new("view-grid-symbolic")));
+    tab_view.set_page_pinned(&page, true);
+    let tab = ReaderTab {
+        host_window: host,
+        tab_view,
+        page,
+    };
+    set_tab_header(&tab, start, title, end);
 }
 
 /// Open `content` as a new tab in the shared reader window — creating it if this is the
@@ -404,7 +445,8 @@ pub fn open_reader_tab(
         if let Some(existing) = slot.clone() {
             return existing;
         }
-        let created = new_tab_view(parent);
+        let (host, view) = new_tab_view(parent);
+        let created = (host.upcast::<gtk4::Window>(), view);
         *slot = Some(created.clone());
         created
     });
@@ -494,7 +536,7 @@ pub fn toast_in_readers_with(message: &str, action: Option<ToastAction<'_>>) -> 
     let mut fallback: Option<adw::ToastOverlay> = None;
     let mut target: Option<adw::ToastOverlay> = None;
     for toplevel in gtk4::Window::list_toplevels() {
-        let Some(window) = toplevel.downcast_ref::<adw::Window>() else {
+        let Some(window) = toplevel.downcast_ref::<gtk4::Window>() else {
             continue;
         };
         let overlay = unsafe {

@@ -1,4 +1,4 @@
-# Pereplyot v0.14.0 "Quiet Page"
+# Pereplyot v0.15.0 "Common Room"
 
 Install via Flatpak:
 
@@ -18,23 +18,16 @@ flatpak update io.github.calstfrancis.Pereplyot
 
 ### What's new
 
-**Reading mode copes with scanned books.** Scans turn small raised note numbers into stray symbols
-(`novel,*?`); Pereplyot now matches those to their notes by count and order, so footnotes land
-beside the right line instead of reading "unmatched note". Notes gathered at the back of a book,
-a list per chapter, are placed beside the text that cites them and left out of the reading text.
-Running heads in capitals, or carrying a page number, no longer turn up in the text, and small
-body lines above the notes are no longer mistaken for notes.
+**One window.** The library used to be a window of its own that disappeared behind the reader. It
+is now the first tab of the reader window — pinned, always visible — with Library, History, Notes,
+Notebooks and Search inside it. Opening a book adds a tab beside it, a click on Library takes you
+home, and closing the last book lands you there. A book can still be popped out into a window of
+its own, and opening a file from another app goes straight to the book.
 
-**Cover and title pages stay as pictures.** The sparse pages at the front of a book are shown
-whole instead of as garbled text, and Select All (Ctrl+A) skips them. A scanned first page is no
-longer sent to OCR.
+**Fixed: a crash.** Adding a document to the Library with the + button in History closed
+Pereplyot every time.
 
-**Page colours that work in Reading mode.** The moon button sets normal, dark or sepia for the
-whole Reading view, margins included, and the same setting for EPUBs, which now have the button in
-their status bar.
-
-**Single line spacing.** The spacing slider is now measured against the font's own line height, so
-1.0 is single spacing, and the default is tighter.
+**Your place is kept.** Switching to another tab and back leaves a book where you left it.
 
 ---
 

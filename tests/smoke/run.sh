@@ -45,9 +45,11 @@ start_app() {
     [ "${2:-}" = keep ] || rm -rf "$WORK/h"
     mkdir -p "$WORK/h"/{home,data,config,cache} "$WORK/h/data/fonts"
     cp "$ROOT"/packaging/fonts/*.otf "$WORK/h/data/fonts/" 2>/dev/null
+    mkdir -p "$WORK/h/config/gtk-4.0"
+    printf '[Settings]\ngtk-decoration-layout=:close\n' >"$WORK/h/config/gtk-4.0/settings.ini"
     # setsid gives the app its own process group so stop_app can take down dbus-run-session
     # and its children together; dbus-run-session does not forward SIGTERM reliably.
-    env -u WAYLAND_DISPLAY ${WELCOME_OK:-PEREPLYOT_NO_WELCOME=1} GDK_BACKEND=x11 GTK_A11Y=none GSETTINGS_BACKEND=memory \
+    env -u WAYLAND_DISPLAY ${WELCOME_OK:-PEREPLYOT_NO_WELCOME=1} ${TABBAR_OK:-PEREPLYOT_NO_TABBAR=1} GDK_BACKEND=x11 GTK_A11Y=none GSETTINGS_BACKEND=memory \
         WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 \
         HOME="$WORK/h/home" XDG_DATA_HOME="$WORK/h/data" XDG_CONFIG_HOME="$WORK/h/config" \
         XDG_CACHE_HOME="$WORK/h/cache" \
@@ -70,7 +72,7 @@ reader_window() {
             local g
             g="$(xdotool getwindowgeometry "$w" 2>/dev/null | tail -1)"
             case "$(xdotool getwindowname "$w" 2>/dev/null)" in
-                Reader*) echo "$w"; return 0 ;;
+                Reader*|Pereplyot*) echo "$w"; return 0 ;;
             esac
             : "$g"
         done
@@ -710,12 +712,12 @@ run_notebook_case() {
         check "notebook: the exported Typst compiles" "$(typst compile "$WORK/essay.typ" "$WORK/essay.pdf" >/dev/null 2>&1 && echo 1 || echo 0)"
     fi
     stop_app
-    start_app "$FX/mixed.pdf" keep
+    TABBAR_OK=PEREPLYOT_TABBAR_SHOWN=1 start_app "$FX/mixed.pdf" keep
     reader_window >/dev/null
     sleep 2.5
     xdotool key n
     sleep 1.5
-    xdotool mousemove 690 140 click 1
+    xdotool mousemove 690 178 click 1
     sleep 3
     screenshot "$WORK/nb-other-after.png"
     local after_geom ax0 ay0
@@ -790,10 +792,10 @@ run_launcher_case() {
     w="$(launcher_window)" || { check "launcher: window opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
     sleep 1.5
     xdotool windowfocus "$w" 2>/dev/null
-    xdotool mousemove 348 28 click 1
+    xdotool mousemove 602 28 click 1
     sleep 1
     screenshot "$WORK/ln-1.png"
-    xdotool mousemove 640 75 click 1
+    xdotool mousemove 917 79 click 1
     sleep 1
     screenshot "$WORK/ln-2.png"
     xdotool type --delay 40 "Chapter three"
@@ -817,16 +819,37 @@ run_history_add_case() {
     w="$(launcher_window)" || { check "history: launcher opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
     sleep 2
     xdotool windowfocus "$w" 2>/dev/null
-    xdotool mousemove 178 28 click 1
+    xdotool mousemove 396 28 click 1
     sleep 1
     screenshot "$WORK/hist-1.png"
-    xdotool mousemove 680 85 click 1
+    xdotool mousemove 953 94 click 1
     sleep 1.5
     screenshot "$WORK/hist-2.png"
     local alive=0
     kill -0 "${APP_PGID:-0}" 2>/dev/null && [ -n "$(launcher_window 2>/dev/null)" ] && alive=1
     check "history: adding a document to the Library from History does not crash" "$alive" "(log: $(tail -c 300 "$WORK/app.log"))"
     check "history: the document is in the Library afterwards" "$(grep -c plain "$WORK/h/data/pereplyot/library.json" 2>/dev/null | grep -q '^[1-9]' && echo 1 || echo 0)"
+    stop_app
+}
+
+run_home_case() {
+    TABBAR_OK=PEREPLYOT_TABBAR_SHOWN=1 start_app "$FX/plain.pdf"
+    local w
+    w="$(reader_window)" || { check "home: window opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
+    sleep 3
+    xdotool windowfocus "$w" 2>/dev/null
+    screenshot "$WORK/home-1.png"
+    check "home: the book opens as a tab beside a pinned Library tab" "$([ "$(python3 "$HERE/text_bands.py" "$WORK/home-1.png" --ink-in 15 55 995 85)" -gt 150 ] && echo 1 || echo 0)"
+    xdotool mousemove 28 67 click 1
+    sleep 1.5
+    screenshot "$WORK/home-2.png"
+    check "home: the Library tab shows the library with its sections" "$([ "$(python3 "$HERE/text_bands.py" "$WORK/home-2.png" --ink-in 250 10 760 46)" -gt 200 ] && echo 1 || echo 0)"
+    xdotool mousemove 500 67 click 1
+    sleep 1.5
+    screenshot "$WORK/home-3a.png"
+    sleep 4
+    screenshot "$WORK/home-3.png"
+    check "home: the book's tab goes back to the book" "$([ "$(python3 "$HERE/text_bands.py" "$WORK/home-3.png" --ink-in 180 225 580 335)" -gt 300 ] && echo 1 || echo 0)"
     stop_app
 }
 
@@ -1101,13 +1124,13 @@ run_browser_case() {
     w="$(launcher_window)" || { check "browser: launcher opens" 0; stop_app; return; }
     sleep 1.5
     xdotool windowfocus "$w" 2>/dev/null
-    xdotool mousemove 264 28 click 1
+    xdotool mousemove 500 28 click 1
     sleep 2
     screenshot "$WORK/br-1.png"
     xdotool mousemove 41 172 click 1
     sleep 1
     screenshot "$WORK/br-2.png"
-    xdotool mousemove 267 115 click 1
+    xdotool mousemove 547 115 click 1
     sleep 1
     xdotool type --delay 40 "method"
     xdotool key Return
@@ -1295,6 +1318,7 @@ want welcome && run_welcome_case
 want caret && run_caret_case
 want bubble && run_bubble_case
 want histadd && run_history_add_case
+want home && run_home_case
 want patterns && run_patterns_case
 
 echo

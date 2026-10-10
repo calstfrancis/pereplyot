@@ -202,4 +202,29 @@ pub(super) fn install_view_modes(ui: &PdfUi) {
             render();
         });
     }
+
+    // A tab that is switched away from is unmapped, and its scroll position and the pages built
+    // around it drift while it is hidden: remember the page on the way out, put it back (and
+    // rebuild the pages near it) on the way in.
+    {
+        let seen: Rc<Cell<Option<u16>>> = Rc::new(Cell::new(None));
+        {
+            let seen = seen.clone();
+            let reader = reader.clone();
+            continuous_scroll.connect_unmap(move |_| {
+                seen.set(Some(reader.borrow().page));
+            });
+        }
+        let reader = reader.clone();
+        let scroll = continuous_scroll.clone();
+        continuous_scroll.connect_map(move |_| {
+            let Some(page) = seen.take() else { return };
+            let reader = reader.clone();
+            let scroll = scroll.clone();
+            glib::idle_add_local_once(move || {
+                scroll_continuous_to_page(&reader, &scroll, page);
+                refresh_continuous_window(&reader, &scroll, None);
+            });
+        });
+    }
 }

@@ -59,6 +59,15 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.15.0" date="2026-10-10">
+      <description>
+        <p>0.15.0 "Common Room" — the library is now the first tab of the reader window, pinned and
+        always visible, instead of a separate window that gets lost behind the reader. Opening a
+        book adds a tab beside it, and closing the last one returns you to the library. Also
+        fixes a crash when adding a document to the Library from History, and keeps a book's
+        place when you switch tabs and back.</p>
+      </description>
+    </release>
     <release version="0.14.0" date="2026-10-10">
       <description>
         <p>0.14.0 "Quiet Page" — Reading mode copes with scanned books: footnote markers the scan

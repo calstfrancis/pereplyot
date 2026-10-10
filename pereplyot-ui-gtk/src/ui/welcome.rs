@@ -10,7 +10,7 @@ use crate::ui::Widgets;
 use std::rc::Rc;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub(crate) const RELEASE_NAME: &str = "Quiet Page";
+pub(crate) const RELEASE_NAME: &str = "Common Room";
 
 /// Show the window if this version has not been seen: the welcome the first time ever, What's
 /// New after an update. Called when the launcher is actually shown.
@@ -102,20 +102,16 @@ pub fn show(parent: &impl IsA<gtk4::Window>, first_run: bool) {
 /// Updated at release time, with `RELEASE_NAME`.
 const NEW: &[(&str, &str)] = &[
     (
-        "Reading mode on scanned books",
-        "Footnote markers the scan mangled are matched to their notes, endnotes at the back of the book are placed beside the text that cites them, and running heads no longer leak into the text.",
+        "One window",
+        "The library is now the first tab of the reader window — pinned and always there — so it can't get lost behind a book. Opening a book adds a tab beside it.",
     ),
     (
-        "Cover and title pages stay pictures",
-        "The front pages of a book are shown whole instead of as garbled text, and Select All (Ctrl+A) leaves them out.",
+        "Fixed: a crash",
+        "Adding a document to the Library with the + button in History no longer closes Pereplyot.",
     ),
     (
-        "Page colours that work in Reading mode",
-        "The moon button now sets normal, dark or sepia for the whole Reading view and for EPUBs too, which gain the button in their status bar.",
-    ),
-    (
-        "Single line spacing",
-        "The spacing slider now starts at single spacing, and the default is tighter.",
+        "Your place is kept",
+        "Switching to another tab and back leaves a book where you left it.",
     ),
 ];
 

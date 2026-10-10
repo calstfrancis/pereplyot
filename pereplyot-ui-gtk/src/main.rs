@@ -252,7 +252,11 @@ fn main() -> glib::ExitCode {
                     if launcher_shown.get() {
                         widgets.window.present();
                     }
-                    if let Some(dialog) = ui::window::open_path_with_host(&widgets, file, options) {
+                    let dialog = ui::window::open_path_with_host(&widgets, file, options);
+                    if dialog.is_none() {
+                        widgets.window.present();
+                    }
+                    if let Some(dialog) = dialog {
                         dialogs_open.set(dialogs_open.get() + 1);
                         let dialogs_open = dialogs_open.clone();
                         let close_if_unused = close_if_unused.clone();

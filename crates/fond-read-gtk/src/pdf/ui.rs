@@ -8,7 +8,7 @@ pub(super) struct PdfUi {
     pub(super) host: Rc<dyn ReaderHost>,
     pub(super) reader: Rc<RefCell<ReaderState>>,
     pub(super) reader_tab: crate::reader_host::ReaderTab,
-    pub(super) reader_window: adw::Window,
+    pub(super) reader_window: gtk4::Window,
     pub(super) render: Rc<dyn Fn()>,
     pub(super) undo: Rc<dyn Fn()>,
     pub(super) redo: Rc<dyn Fn()>,

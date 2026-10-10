@@ -9,7 +9,7 @@ pub(super) fn install_notes_sidebar(
     notes_scroll: &gtk4::ScrolledWindow,
     page_entry: &gtk4::Entry,
     doc: crate::notebook_ui::DocRef,
-    window: &adw::Window,
+    window: &gtk4::Window,
 ) -> (Rc<dyn Fn()>, Rc<Cell<bool>>) {
     let rebuild_notes_cell: RebuildNotesCell = Rc::new(RefCell::new(None));
     let quiet_notes = Rc::new(Cell::new(false));

@@ -18,7 +18,7 @@ fn make_page(
     host: &Rc<dyn ReaderHost>,
     reader: &Rc<RefCell<ReaderState>>,
     continuous_scroll: &gtk4::ScrolledWindow,
-    reader_window: &adw::Window,
+    reader_window: &gtk4::Window,
     page: u16,
 ) -> (gtk4::Overlay, gtk4::Picture) {
     let (count, select_mode) = {
@@ -223,7 +223,7 @@ pub(super) fn build_continuous_view(
     reader: &Rc<RefCell<ReaderState>>,
     continuous_box: &gtk4::Box,
     continuous_scroll: &gtk4::ScrolledWindow,
-    reader_window: &adw::Window,
+    reader_window: &gtk4::Window,
 ) {
     if !reader.borrow().continuous_offsets.is_empty() {
         return;
@@ -495,7 +495,7 @@ pub(super) fn rebuild_continuous_view_for_zoom(
     reader: &Rc<RefCell<ReaderState>>,
     continuous_box: &gtk4::Box,
     continuous_scroll: &gtk4::ScrolledWindow,
-    reader_window: &adw::Window,
+    reader_window: &gtk4::Window,
 ) {
     if reader.borrow().continuous_offsets.is_empty() {
         return;

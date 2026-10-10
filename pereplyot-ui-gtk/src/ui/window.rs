@@ -23,8 +23,8 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
     let window = adw::ApplicationWindow::builder()
         .application(app)
         .title("Pereplyot")
-        .default_width(720)
-        .default_height(680)
+        .default_width(1000)
+        .default_height(820)
         .build();
 
     app.style_manager().set_color_scheme(config.color_scheme());
@@ -49,47 +49,9 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
         button.upcast()
     });
 
-    let header = adw::HeaderBar::new();
     let open_button = gtk4::Button::from_icon_name("document-open-symbolic");
     open_button.set_tooltip_text(Some("Open a PDF or EPUB"));
     open_button.set_action_name(Some("win.open"));
-    header.pack_start(&open_button);
-
-    let menu_button = gtk4::MenuButton::new();
-    menu_button.set_icon_name("open-menu-symbolic");
-    menu_button.set_tooltip_text(Some("Main Menu"));
-    header.pack_end(&menu_button);
-
-    let maximize_button = gtk4::Button::from_icon_name("window-maximize-symbolic");
-    maximize_button.set_tooltip_text(Some("Maximize window"));
-    {
-        let window = window.clone();
-        maximize_button.connect_clicked(move |_| window.maximize());
-    }
-    header.pack_end(&maximize_button);
-
-    let fullscreen_button = gtk4::Button::from_icon_name("view-fullscreen-symbolic");
-    fullscreen_button.set_tooltip_text(Some("Fullscreen (F11)"));
-    {
-        let window = window.clone();
-        let button = fullscreen_button.clone();
-        fullscreen_button.connect_clicked(move |_| toggle_fullscreen(&window, &button));
-    }
-    header.pack_end(&fullscreen_button);
-
-    {
-        let window_for_key = window.clone();
-        let button = fullscreen_button.clone();
-        let key_controller = gtk4::EventControllerKey::new();
-        key_controller.connect_key_pressed(move |_, keyval, _keycode, _modifiers| {
-            if keyval == gtk4::gdk::Key::F11 {
-                toggle_fullscreen(&window_for_key, &button);
-                return glib::Propagation::Stop;
-            }
-            glib::Propagation::Proceed
-        });
-        window.add_controller(key_controller);
-    }
 
     // Library: intentionally-added documents, cards in a plain FlowBox. Nothing lands here
     // except via History's "Add to Library" action.
@@ -196,7 +158,6 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
 
     let switcher = adw::ViewSwitcher::new();
     switcher.set_stack(Some(&view_stack));
-    header.set_title_widget(Some(&switcher));
 
     // Status bar (house style): blank on the left — Pereplyot has no per-window status
     // message the way Kartoteka's "No library open"/entry count does — a version →
@@ -215,12 +176,10 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
     statusbar.append(&version_button);
 
     let toolbar = adw::ToolbarView::new();
-    toolbar.add_top_bar(&header);
     toolbar.add_bottom_bar(&statusbar);
     let toasts = adw::ToastOverlay::new();
     toasts.set_child(Some(&view_stack));
     toolbar.set_content(Some(&toasts));
-    window.set_content(Some(&toolbar));
 
     let widgets = Rc::new(Widgets {
         window,
@@ -238,7 +197,6 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
         let widgets = widgets.clone();
         version_button.connect_clicked(move |_| show_changelog(&widgets.window));
     }
-    menu_button.set_popover(Some(&menu::build(&widgets)));
     {
         let widgets = widgets.clone();
         fond_read_gtk::reader_host::set_host_menu(move || {
@@ -250,6 +208,13 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
             button.upcast()
         });
     }
+    fond_read_gtk::reader_host::install_home(
+        &widgets.window,
+        &toolbar,
+        open_button,
+        switcher.clone(),
+        gtk4::Box::new(gtk4::Orientation::Horizontal, 0),
+    );
 
     {
         let widgets = widgets.clone();
@@ -512,21 +477,6 @@ fn install_notebook_hooks(widgets: &Rc<Widgets>) {
             shelf_widgets.library.borrow().shelves().to_vec()
         })),
     });
-}
-
-/// Flip the window between fullscreen and normal, swapping the header button's icon and
-/// tooltip to match — `adw::ApplicationWindow` tracks fullscreen state itself via
-/// `is_fullscreen`, so this just reads it back rather than keeping a separate bool.
-fn toggle_fullscreen(window: &adw::ApplicationWindow, button: &gtk4::Button) {
-    if window.is_fullscreen() {
-        window.unfullscreen();
-        button.set_icon_name("view-fullscreen-symbolic");
-        button.set_tooltip_text(Some("Fullscreen (F11)"));
-    } else {
-        window.fullscreen();
-        button.set_icon_name("view-restore-symbolic");
-        button.set_tooltip_text(Some("Leave fullscreen (F11)"));
-    }
 }
 
 fn install_actions(app: &adw::Application, widgets: &Rc<Widgets>) {

@@ -317,7 +317,7 @@ pub(super) fn show_epub_selection_popover(
     selection: EpubSelection,
     host: &Rc<dyn ReaderHost>,
     apply_mark: &EpubMarkFn,
-    reader_window: &adw::Window,
+    reader_window: &gtk4::Window,
 ) {
     let popover = gtk4::Popover::new();
     popover.set_parent(view);
@@ -527,7 +527,7 @@ pub(super) fn install_selection_popover(
     reader: &Rc<RefCell<EpubReaderState>>,
     web_view: &webkit6::WebView,
     apply_mark: &EpubMarkFn,
-    reader_window: &adw::Window,
+    reader_window: &gtk4::Window,
 ) {
     {
         let click = gtk4::GestureDrag::new();
