@@ -4,6 +4,7 @@ use super::*;
 /// cheap reference-counted handle, so a function destructures what it needs and clones from it.
 #[derive(Clone)]
 pub(super) struct EpubUi {
+    pub(super) host: Rc<dyn ReaderHost>,
     pub(super) reader: Rc<RefCell<EpubReaderState>>,
     pub(super) web_view: webkit6::WebView,
     pub(super) prev: gtk4::Button,

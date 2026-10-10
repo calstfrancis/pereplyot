@@ -12,6 +12,8 @@ finish-args:
   - --socket=wayland
   - --device=dri
   - --talk-name=org.freedesktop.portal.Desktop
+  # "Add to Kartoteka" asks the installed Kartoteka (starting it if needed) to add the open file.
+  - --talk-name=io.github.calstfrancis.Kartoteka
   # Broadened from a scoped ~/.local/share/pereplyot:create grant (2026-09-22): Kartoteka
   # and Sputnik now launch this binary directly to open a document on their own behalf
   # (--vault=<root> --key=<key>, or --annotations-file=<path>), writing straight into

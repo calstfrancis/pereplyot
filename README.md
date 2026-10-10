@@ -38,7 +38,7 @@ the text, one typography panel shared with the EPUB reader, and Tesseract OCR fo
 bundled in the Flatpak; other languages are `.traineddata` files you add yourself, never downloaded); area capture of figures and equations that export as Typst figures, sticky
 notes (a ✎ beside them in Reading mode), tags and a richer Notes list; vector highlights you can select, resize and delete, dark and sepia page
 tones, scrollbar ticks; and navigation that keeps your place — Back/Forward through every jump,
-hover previews of links and (unlinked) citations, pinned figures, split view of one document, the
+*Add to Kartoteka* from the palette (needs a newer Kartoteka), hover previews of links and (unlinked) citations, pinned figures, split view of one document, the
 Contents following you with a breadcrumb, and a "Continue here" marker on reopening; marks from
 other readers brought in and a copy saved with annotations; and a **Notebook** — a Typst page you
 write in beside the document, with annotations from any document dragged in as cited quote blocks,

@@ -6,6 +6,7 @@
 mod about;
 mod changelog;
 mod config;
+mod kartoteka;
 mod library;
 mod notes_edit;
 mod notes_export;

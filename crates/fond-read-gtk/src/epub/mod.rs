@@ -442,6 +442,7 @@ pub fn show_epub_reader(
         undo_redo::build_undo_redo(host, &reader, &undo_button, &redo_button);
 
     let ui = ui::EpubUi {
+        host: host.clone(),
         reader: reader.clone(),
         web_view: web_view.clone(),
         prev: prev.clone(),

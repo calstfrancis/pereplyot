@@ -1,6 +1,9 @@
 # Changelog
 
 ## [Unreleased]
+- **Add to Kartoteka** (Ctrl+K, in a PDF or EPUB that is not yet in a library): asks the installed
+  Kartoteka to add the open file to its library, so the citation key can come from there. Needs a
+  Kartoteka that accepts files on its command line (the release after 0.21.0).
 - **Search opens on the hit.** Clicking a result in the Search tab or the Notes browser opens the
   document with that word highlighted (`--search=`), and recognised (OCR) text is indexed too.
 - **OCR languages you add yourself** (menu → *OCR languages…*): English stays bundled; other

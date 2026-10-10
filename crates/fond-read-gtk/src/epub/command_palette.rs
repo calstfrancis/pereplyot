@@ -45,6 +45,9 @@ pub(super) fn open(ui: &EpubUi) {
             }),
         );
     }
+    if let Some(run) = ui.host.kartoteka_handoff() {
+        add("Add to Kartoteka", "", run);
+    }
     add("Contents", "", toggle(&ui.sidebar_toggle));
     add("Notes sidebar", "", toggle(&ui.notes_toggle));
     add("Notebook", "N", toggle(&ui.notebook_toggle));

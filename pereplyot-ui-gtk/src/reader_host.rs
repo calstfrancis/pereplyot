@@ -203,6 +203,17 @@ impl ReaderHost for LocalReaderHost {
         LocalMeta::load(&self.hash).pins
     }
 
+    fn kartoteka_handoff(&self) -> Option<Rc<dyn Fn()>> {
+        if LocalMeta::load(&self.hash).citation_key.is_some() {
+            return None;
+        }
+        let path = fond_read_gtk::history::load()
+            .into_iter()
+            .find(|e| e.hash == self.hash)?
+            .path;
+        Some(Rc::new(move || crate::kartoteka::hand_off(&path)))
+    }
+
     fn import_offered(&self) -> bool {
         LocalMeta::load(&self.hash).import_offered
     }

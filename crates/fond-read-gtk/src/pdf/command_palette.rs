@@ -120,6 +120,9 @@ pub(super) fn open(ui: &PdfUi) {
         Rc::new(clicked(&ui.link_back)),
     );
     add("Forward again", "Alt+→", Rc::new(clicked(&ui.link_forward)));
+    if let Some(run) = ui.host.kartoteka_handoff() {
+        add("Add to Kartoteka", "", run);
+    }
     add("Export notes…", "", Rc::new(clicked(&ui.export_button)));
     add(
         "Save a copy with annotations…",

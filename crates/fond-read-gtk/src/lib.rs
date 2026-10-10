@@ -189,6 +189,12 @@ pub trait ReaderHost {
 
     /// Whether the offer to bring in annotations made in another app has been made for this
     /// document, so it is made once.
+    /// What "Add to Kartoteka" does for this document, or `None` when the document is already in
+    /// a library or the host has no such hand-off.
+    fn kartoteka_handoff(&self) -> Option<Rc<dyn Fn()>> {
+        None
+    }
+
     fn import_offered(&self) -> bool {
         true
     }
