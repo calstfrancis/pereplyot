@@ -807,6 +807,29 @@ run_launcher_case() {
     stop_app
 }
 
+run_history_add_case() {
+    start_app "$FX/plain.pdf"
+    reader_window >/dev/null || { check "history: reader opens" 0; stop_app; return; }
+    sleep 3
+    stop_app
+    start_app - keep
+    local w
+    w="$(launcher_window)" || { check "history: launcher opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
+    sleep 2
+    xdotool windowfocus "$w" 2>/dev/null
+    xdotool mousemove 178 28 click 1
+    sleep 1
+    screenshot "$WORK/hist-1.png"
+    xdotool mousemove 680 85 click 1
+    sleep 1.5
+    screenshot "$WORK/hist-2.png"
+    local alive=0
+    kill -0 "${APP_PGID:-0}" 2>/dev/null && [ -n "$(launcher_window 2>/dev/null)" ] && alive=1
+    check "history: adding a document to the Library from History does not crash" "$alive" "(log: $(tail -c 300 "$WORK/app.log"))"
+    check "history: the document is in the Library afterwards" "$(grep -c plain "$WORK/h/data/pereplyot/library.json" 2>/dev/null | grep -q '^[1-9]' && echo 1 || echo 0)"
+    stop_app
+}
+
 run_scholar_case() {
     start_app "$FX/scholar.epub"
     local w
@@ -1271,6 +1294,7 @@ want palette && run_palette_case
 want welcome && run_welcome_case
 want caret && run_caret_case
 want bubble && run_bubble_case
+want histadd && run_history_add_case
 want patterns && run_patterns_case
 
 echo

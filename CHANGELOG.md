@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+- **Fixed a crash** when adding a document to the Library with the + button in History: the
+  library was borrowed twice while the new entry was built.
+
 ## [0.14.0] "Quiet Page" — 2026-10-10
 - **Reading mode on scanned books.** Footnote markers that the scan turned into stray symbols
   (`novel,*?`, `tales.**`) are matched to their notes by count and order, so notes land beside the

@@ -999,13 +999,14 @@ fn rebuild_history(widgets: &Rc<Widgets>) {
 }
 
 fn add_to_library(widgets: &Rc<Widgets>, entry: &HistoryEntry) {
+    let shelf = current_shelf(widgets);
     widgets.library.borrow_mut().add(LibraryEntry {
         hash: entry.hash.clone(),
         path: entry.path.clone(),
         title: entry.title.clone(),
         kind: entry.kind,
         added_at: chrono::Utc::now(),
-        shelf: current_shelf(widgets),
+        shelf,
     });
     toast(
         widgets,
