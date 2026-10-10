@@ -138,6 +138,13 @@ pub fn build(widgets: &Rc<Widgets>) -> gtk4::Popover {
         "OCR languages…",
         "win.ocr-languages",
     );
+    activate_row(
+        widgets,
+        &rows,
+        &popover,
+        "Markdown notes folder…",
+        "win.markdown-notes",
+    );
     activate_row(widgets, &rows, &popover, "What's new…", "win.whats-new");
     activate_row(widgets, &rows, &popover, "About Pereplyot", "win.about");
 

@@ -8,6 +8,7 @@ mod changelog;
 mod config;
 mod kartoteka;
 mod library;
+mod markdown_sync;
 mod notes_edit;
 mod notes_export;
 mod notes_index;

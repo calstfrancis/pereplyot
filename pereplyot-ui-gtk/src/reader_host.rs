@@ -128,6 +128,9 @@ impl ReaderHost for LocalReaderHost {
         if extra > 0 {
             self.notify(&merged_notice(extra));
         }
+        if let Err(e) = write_markdown(&self.hash, sidecar) {
+            self.notify(&format!("Couldn't update the Markdown notes: {e}"));
+        }
         Ok(())
     }
 
@@ -687,4 +690,52 @@ impl ReaderHost for ExternalPathReaderHost {
         meta.citation_key = key;
         meta.save(&self.hash);
     }
+}
+
+/// Bring the document's Markdown notes file up to date, if a folder for them is set.
+pub fn write_markdown(hash: &str, sidecar: &fond_annot::AnnotationSidecar) -> Result<(), String> {
+    let folder = crate::config::Config::load().markdown_folder;
+    if folder.is_empty() {
+        return Ok(());
+    }
+    let Some(entry) = fond_read_gtk::history::load()
+        .into_iter()
+        .find(|e| e.hash == hash)
+    else {
+        return Ok(());
+    };
+    let key = LocalMeta::load(hash).citation_key;
+    crate::markdown_sync::write(
+        std::path::Path::new(&folder),
+        &crate::markdown_sync::Document {
+            title: &entry.title,
+            hash,
+            citation_key: key.as_deref(),
+            source: &entry.path,
+        },
+        sidecar,
+    )
+}
+
+/// Write the Markdown notes of every document that has notes; how many were written.
+pub fn write_all_markdown() -> usize {
+    let mut written = 0;
+    for entry in fond_read_gtk::history::load() {
+        let path = data_dir()
+            .join("annotations")
+            .join(format!("{}.json", entry.hash));
+        let Some(sidecar) = fs::read_to_string(&path)
+            .ok()
+            .and_then(|t| fond_annot::AnnotationSidecar::parse(&t, &path).ok())
+        else {
+            continue;
+        };
+        if sidecar.annotations.is_empty() {
+            continue;
+        }
+        if write_markdown(&entry.hash, &sidecar).is_ok() {
+            written += 1;
+        }
+    }
+    written
 }

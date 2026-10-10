@@ -1,6 +1,10 @@
 # Changelog
 
 ## [Unreleased]
+- **Markdown notes folder** (menu): keep one Markdown file per document in a folder you choose —
+  an Obsidian or Logseq vault, say. Each highlight is a quote ending in a stable block id
+  (`^annot-…`) with a link that opens the passage in Pereplyot; the file is rewritten whenever the
+  notes change. Off until you choose a folder.
 - **Add to Kartoteka** (Ctrl+K, in a PDF or EPUB that is not yet in a library): asks the installed
   Kartoteka to add the open file to its library, so the citation key can come from there. Needs a
   Kartoteka that accepts files on its command line (the release after 0.21.0).
