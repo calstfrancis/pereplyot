@@ -402,6 +402,7 @@ fn show_palette(widgets: &Rc<Widgets>, stack: &adw::ViewStack) {
     list.push(action("Highlight labels…", "", "highlight-labels"));
     list.push(action("Resurface highlights (on/off)", "", "resurface"));
     list.push(action("Textures on highlights (on/off)", "", "patterns"));
+    list.push(action("OCR languages…", "", "ocr-languages"));
     list.push(action("What's new…", "", "whats-new"));
     list.push(action("About Pereplyot", "", "about"));
     for (label, name) in [("System", "system"), ("Light", "light"), ("Dark", "dark")] {
@@ -567,6 +568,13 @@ fn install_actions(app: &adw::Application, widgets: &Rc<Widgets>) {
         });
     }
     window.add_action(&labels_action);
+
+    let ocr_action = gio::SimpleAction::new("ocr-languages", None);
+    {
+        let widgets = widgets.clone();
+        ocr_action.connect_activate(move |_, _| crate::ui::ocr_languages::show(&widgets.window));
+    }
+    window.add_action(&ocr_action);
 
     let whats_new_action = gio::SimpleAction::new("whats-new", None);
     {

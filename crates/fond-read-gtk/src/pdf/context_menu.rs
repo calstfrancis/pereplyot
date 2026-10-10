@@ -457,22 +457,24 @@ fn merge_marks(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     let snippet = selection_text(&reader.borrow(), page, &quads);
-    let result = store.update(id, |a| {
-        a.quadpoints = quads.clone();
-        if snippet.is_some() {
-            a.snippet = snippet.clone();
+    let merged = store.group(|| {
+        store.update(id, |a| {
+            a.quadpoints = quads.clone();
+            if snippet.is_some() {
+                a.snippet = snippet.clone();
+            }
+            a.note = (!notes.is_empty()).then(|| notes.join("\n\n"));
+            a.set_explicit_tags(&tags);
+        })?;
+        for other in others {
+            let _ = store.remove(other);
         }
-        a.note = (!notes.is_empty()).then(|| notes.join("\n\n"));
-        a.set_explicit_tags(&tags);
+        Ok::<(), String>(())
     });
-    if let Err(e) = result {
-        host.notify(&e);
-        return;
+    match merged {
+        Ok(()) => host.notify("Marks merged (Ctrl+Z undoes it in one step)"),
+        Err(e) => host.notify(&e),
     }
-    for other in others {
-        let _ = store.remove(other);
-    }
-    host.notify("Marks merged");
 }
 
 /// The tags already in use, to put on this mark with one click (a new tag is typed as #tag in

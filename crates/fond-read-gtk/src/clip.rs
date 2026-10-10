@@ -47,6 +47,11 @@ impl AreaClip {
 /// Draw `rect` of page `page` (1-based) of the PDF at `path`. Blocking: call it off the main
 /// thread.
 pub fn render(path: &Path, page: u32, rect: [f64; 4]) -> Option<Clip> {
+    render_at(path, page, rect, SCALE)
+}
+
+/// As [`render`], at `per_pt` pixels per point (a small one for a thumbnail).
+pub fn render_at(path: &Path, page: u32, rect: [f64; 4], per_pt: f64) -> Option<Clip> {
     let pdfium = crate::pdfium::get().ok()?;
     let doc = pdfium.load_pdf_from_file(path, None).ok()?;
     let index = page.checked_sub(1)? as u16;
@@ -57,7 +62,7 @@ pub fn render(path: &Path, page: u32, rect: [f64; 4]) -> Option<Clip> {
     let (bx, by) = geom.pdf_to_px(rect[2], rect[3], dw, dh);
     let (x0, x1) = (ax.min(bx), ax.max(bx));
     let (y0, y1) = (ay.min(by), ay.max(by));
-    let scale = SCALE.min(MAX_SIDE_PX / (x1 - x0).max(1.0).max(y1 - y0));
+    let scale = per_pt.min(MAX_SIDE_PX / (x1 - x0).max(1.0).max(y1 - y0));
     let (w, h) = (
         ((x1 - x0) * scale).round().max(1.0) as u32,
         ((y1 - y0) * scale).round().max(1.0) as u32,
@@ -76,6 +81,18 @@ pub fn render(path: &Path, page: u32, rect: [f64; 4]) -> Option<Clip> {
         width: bitmap.width() as u32,
         height: bitmap.height() as u32,
     })
+}
+
+/// The clip as a texture to show. On the main thread.
+pub fn texture(clip: &Clip) -> gdk::Texture {
+    gdk::MemoryTexture::new(
+        clip.width as i32,
+        clip.height as i32,
+        gdk::MemoryFormat::R8g8b8a8,
+        &glib::Bytes::from(&clip.rgba[..]),
+        clip.width as usize * 4,
+    )
+    .upcast()
 }
 
 /// Write the clip as a PNG. On the main thread.

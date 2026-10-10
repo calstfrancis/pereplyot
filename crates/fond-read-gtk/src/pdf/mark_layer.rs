@@ -158,6 +158,22 @@ fn draw_edit_chrome(
         }
         let _ = cr.stroke();
     }
+    if let Some((_, colour, corners)) = mark_edit::area_corners(r, page, w, h) {
+        let [red, green, blue, _] = annotation_rgba(colour.as_deref());
+        for (x, y) in corners {
+            cr.arc(x, y, mark_edit::HANDLE_RADIUS, 0.0, std::f64::consts::TAU);
+            cr.set_source_rgba(
+                red as f64 / 255.0,
+                green as f64 / 255.0,
+                blue as f64 / 255.0,
+                1.0,
+            );
+            let _ = cr.fill_preserve();
+            cr.set_source_rgba(1.0, 1.0, 1.0, 1.0);
+            cr.set_line_width(1.5);
+            let _ = cr.stroke();
+        }
+    }
     if let Some(handles) = mark_edit::handles_of(r, page, w, h) {
         let [red, green, blue, _] = annotation_rgba(handles.color.as_deref());
         for (x, y) in [handles.start, handles.end] {

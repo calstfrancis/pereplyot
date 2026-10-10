@@ -32,6 +32,76 @@ pub fn tessdata_dir() -> PathBuf {
     glib::home_dir().join(".local/share/pereplyot/tessdata")
 }
 
+/// Languages whose data the user has added themselves, by Tesseract's code ("fra", "deu"), sorted.
+/// English is bundled and always available; nothing is added automatically.
+pub fn added_languages() -> Vec<String> {
+    let mut found: Vec<String> = std::fs::read_dir(tessdata_dir())
+        .map(|d| {
+            d.flatten()
+                .filter_map(|e| {
+                    let name = e.file_name().to_string_lossy().into_owned();
+                    let code = name.strip_suffix(".traineddata")?.to_string();
+                    (code != "eng" && code != "osd").then_some(code)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    found.sort();
+    found
+}
+
+fn settings_path() -> PathBuf {
+    glib::user_config_dir().join("pereplyot").join("ocr.json")
+}
+
+/// The added languages the user has chosen to read with as well as English.
+pub fn chosen_languages() -> Vec<String> {
+    std::fs::read_to_string(settings_path())
+        .ok()
+        .and_then(|t| serde_json::from_str::<Vec<String>>(&t).ok())
+        .unwrap_or_default()
+}
+
+pub fn choose_languages(codes: &[String]) {
+    if let Ok(json) = serde_json::to_string(codes) {
+        let _ = crate::fsutil::write_atomic(&settings_path(), json.as_bytes());
+    }
+}
+
+/// Tesseract's `-l` value: English, then each chosen language that is actually installed.
+pub fn compose_language(chosen: &[String], installed: &[String]) -> String {
+    let mut parts = vec!["eng".to_string()];
+    for code in chosen {
+        if installed.contains(code) && !parts.contains(code) {
+            parts.push(code.clone());
+        }
+    }
+    parts.join("+")
+}
+
+/// What to recognise scanned pages in.
+pub fn language() -> String {
+    compose_language(&chosen_languages(), &added_languages())
+}
+
+/// Copy a `.traineddata` file the user has chosen into our own language folder. Returns the
+/// language's code.
+pub fn add_language_file(file: &Path) -> Result<String, String> {
+    let name = file
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let code = name
+        .strip_suffix(".traineddata")
+        .filter(|c| !c.is_empty() && c.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_'))
+        .ok_or("That is not a Tesseract language file (it should be named like fra.traineddata)")?
+        .to_string();
+    let dir = tessdata_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::copy(file, dir.join(&name)).map_err(|e| e.to_string())?;
+    Ok(code)
+}
+
 /// Turn Tesseract's TSV output for a page rendered at `dpi` into words in page points.
 ///
 /// A word's box is only as tall as its own letters, so "a" is shorter than "liturgy"; sizes and
@@ -338,7 +408,8 @@ mod tests {
 
     #[test]
     fn recognised_pages_are_found_by_page_number_in_any_language() {
-        let doc = std::env::temp_dir().join(format!("pereplyot-ocr-doc-{}.pdf", std::process::id()));
+        let doc =
+            std::env::temp_dir().join(format!("pereplyot-ocr-doc-{}.pdf", std::process::id()));
         std::fs::write(&doc, b"%PDF-").unwrap();
         let dir = cache_dir(&doc);
         let _ = std::fs::remove_dir_all(&dir);
@@ -350,5 +421,26 @@ mod tests {
         assert_eq!(cached_text(&doc, 4), None);
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_file(&doc);
+    }
+
+    #[test]
+    fn english_always_comes_first_and_only_installed_choices_count() {
+        let installed = vec!["fra".to_string(), "deu".to_string()];
+        assert_eq!(compose_language(&[], &installed), "eng");
+        assert_eq!(
+            compose_language(
+                &["deu".into(), "fra".into(), "xxx".into(), "deu".into()],
+                &installed
+            ),
+            "eng+deu+fra"
+        );
+        assert_eq!(compose_language(&["fra".into()], &[]), "eng");
+    }
+
+    #[test]
+    fn only_properly_named_language_files_are_accepted() {
+        assert!(add_language_file(Path::new("/tmp/notes.txt")).is_err());
+        assert!(add_language_file(Path::new("/tmp/.traineddata")).is_err());
+        assert!(add_language_file(Path::new("/tmp/fr a.traineddata")).is_err());
     }
 }

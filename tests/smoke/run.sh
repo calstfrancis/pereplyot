@@ -516,9 +516,32 @@ try:
 except Exception:
     print("")')"
     check "area: the Area tool (A) saves a page rectangle" "$([[ "$saved" == "area 4 ok" ]] && echo 1 || echo 0)" "(got '$saved')"
+    xdotool key Escape
+    xdotool mousemove 812 28 click 1
+    sleep 2.5
+    screenshot "$WORK/area-card.png"
+    xdotool mousemove 812 28 click 1
+    sleep 0.5
+    xdotool mousemove 400 375 click 1
+    sleep 1
+    local before after
+    rect_of() { annotations_json | python3 -c 'import sys,json
+try:
+    print(" ".join(str(round(v)) for v in json.load(sys.stdin)["annotations"][0]["rect"]))
+except Exception:
+    print("")'; }
+    before="$(rect_of)"
+    xdotool mousemove 600 450 mousedown 1 mousemove 650 480 mousemove 720 520 mouseup 1
+    sleep 1.5
+    after="$(rect_of)"
+    read -r bl bb br bt <<<"$before"
+    read -r al ab ar at <<<"$after"
+    check "area: dragging a corner handle resizes the clip" "$([ -n "$ar" ] && [ "$ar" -gt "$br" ] && [ "$ab" -lt "$bb" ] && [ "$al" = "$bl" ] && echo 1 || echo 0)" "(rect $before -> $after)"
     xdotool key ctrl+z
     sleep 1
-    check "area: Ctrl+Z removes the clip" "$([ -z "$(annotations_json | python3 -c 'import sys,json
+    xdotool key ctrl+z
+    sleep 1
+    check "area: Ctrl+Z (twice, after the resize) removes the clip" "$([ -z "$(annotations_json | python3 -c 'import sys,json
 try:
     print(len(json.load(sys.stdin)["annotations"]))
 except Exception:
@@ -1177,6 +1200,36 @@ run_welcome_case() {
     stop_app
 }
 
+run_bubble_case() {
+    start_app "$FX/monograph.pdf"
+    local w
+    w="$(reader_window)" || { check "bubble: reader opens" 0; stop_app; return; }
+    sleep 2
+    xdotool windowfocus "$w" 2>/dev/null
+    xdotool key t
+    sleep 3
+    xdotool mousemove 110 205 mousedown 1 mousemove 400 205 mousemove 650 205 mouseup 1
+    sleep 1
+    xdotool key 1
+    sleep 1
+    screenshot "$WORK/bb-before.png"
+    stop_app
+    local side
+    side="$(find "$WORK/h/data" -path '*annotations*' -name '*.json' | head -1)"
+    python3 - "$side" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+d["annotations"][0]["note"] = "Check this against Jones"
+json.dump(d, open(sys.argv[1], "w"))
+PY
+    start_app "$FX/monograph.pdf" keep
+    reader_window >/dev/null
+    sleep 4
+    screenshot "$WORK/bb-after.png"
+    check "bubble: a marked passage with a note has a bubble beside it in Reading mode" "$([ "$(same_region "$WORK/bb-before.png" "$WORK/bb-after.png" 90 190 760 40)" = 0 ] && echo 1 || echo 0)"
+    stop_app
+}
+
 # Line order in the fixtures: "Page N", fox, Pack, Sphinx.
 want() { [ -z "${SMOKE_CASES:-}" ] || [[ " $SMOKE_CASES " == *" $1 "* ]]; }
 want plain && run_pdf_case plain plain.pdf y 2 "Pack my box with five dozen liquor jugs."
@@ -1206,6 +1259,7 @@ want browser && run_browser_case
 want palette && run_palette_case
 want welcome && run_welcome_case
 want caret && run_caret_case
+want bubble && run_bubble_case
 want patterns && run_patterns_case
 
 echo

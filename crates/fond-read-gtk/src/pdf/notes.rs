@@ -206,6 +206,26 @@ pub(super) fn install_notes_sidebar(
                     });
                 }
 
+                if annotation.kind == fond_annot::AnnotationKind::Area {
+                    if let Some(rect) = annotation.rect() {
+                        let picture = gtk4::Picture::new();
+                        picture.set_can_shrink(true);
+                        picture.set_content_fit(gtk4::ContentFit::Contain);
+                        picture.set_size_request(-1, 96);
+                        picture.set_halign(gtk4::Align::Start);
+                        picture.set_tooltip_text(Some("The clipped area"));
+                        picture.update_property(&[gtk4::accessible::Property::Label(
+                            "Picture of the clipped area",
+                        )]);
+                        outer.append(&picture);
+                        area_thumbnail(
+                            &reader.borrow().path.clone(),
+                            annotation.page.unwrap_or(1),
+                            rect,
+                            picture,
+                        );
+                    }
+                }
                 if let Some(snippet) = &annotation.snippet {
                     let snippet_label = gtk4::Label::new(Some(snippet));
                     snippet_label.set_xalign(0.0);
@@ -485,4 +505,32 @@ fn filter_bar(
         bar.append(&menu);
     }
     bar.upcast()
+}
+
+thread_local! {
+    static THUMBS: RefCell<std::collections::HashMap<String, gdk::Texture>> =
+        RefCell::new(std::collections::HashMap::new());
+}
+
+/// Draw `rect` of `page` small, off the main thread, into `picture` (kept for the next time the
+/// Notes list is rebuilt).
+fn area_thumbnail(path: &std::path::Path, page: u32, rect: [f64; 4], picture: gtk4::Picture) {
+    let key = format!("{}:{page}:{rect:?}", path.display());
+    if let Some(texture) = THUMBS.with(|t| t.borrow().get(&key).cloned()) {
+        picture.set_paintable(Some(&texture));
+        return;
+    }
+    let path = path.to_path_buf();
+    glib::spawn_future_local(async move {
+        let clip =
+            gtk4::gio::spawn_blocking(move || crate::clip::render_at(&path, page, rect, 1.6))
+                .await
+                .ok()
+                .flatten();
+        if let Some(clip) = clip {
+            let texture = crate::clip::texture(&clip);
+            THUMBS.with(|t| t.borrow_mut().insert(key, texture.clone()));
+            picture.set_paintable(Some(&texture));
+        }
+    });
 }

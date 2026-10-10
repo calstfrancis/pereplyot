@@ -2,6 +2,7 @@ pub mod highlight_labels;
 pub mod menu;
 pub mod notebooks_page;
 pub mod notes_page;
+pub mod ocr_languages;
 pub mod resurface;
 pub mod search_page;
 pub mod styles;

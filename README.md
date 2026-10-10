@@ -34,9 +34,9 @@ screenshot automation, and EPUB cover art yet (all three have since been added �
 background threads, sharp on HiDPI, tiles at high zoom, smooth zoom, a virtual scroll view);
 **Reading mode** — a PDF re-set as restylable text with printed page numbers in a left margin and
 footnotes beside the lines that cite them, figures and tables as pictures, search hits marked in
-the text, one typography panel shared with the EPUB reader, and Tesseract OCR for scans (bundled
-in the Flatpak); area capture of figures and equations that export as Typst figures, sticky
-notes, tags and a richer Notes list; vector highlights you can select, resize and delete, dark and sepia page
+the text, one typography panel shared with the EPUB reader, and Tesseract OCR for scans (English
+bundled in the Flatpak; other languages are `.traineddata` files you add yourself, never downloaded); area capture of figures and equations that export as Typst figures, sticky
+notes (a ✎ beside them in Reading mode), tags and a richer Notes list; vector highlights you can select, resize and delete, dark and sepia page
 tones, scrollbar ticks; and navigation that keeps your place — Back/Forward through every jump,
 hover previews of links and (unlinked) citations, pinned figures, split view of one document, the
 Contents following you with a breadcrumb, and a "Continue here" marker on reopening; marks from

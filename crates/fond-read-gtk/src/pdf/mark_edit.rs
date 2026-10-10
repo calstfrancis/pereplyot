@@ -1,5 +1,7 @@
 use super::*;
 
+type AreaCorners = (String, Option<String>, [(f64, f64); 4]);
+
 pub(super) const HANDLE_RADIUS: f64 = 5.5;
 const HANDLE_HIT_PX: f64 = 11.0;
 const RESIZE_MIN_INTERVAL: std::time::Duration = std::time::Duration::from_millis(60);
@@ -54,6 +56,32 @@ pub(super) fn handles_of(r: &ReaderState, page: u16, w: f64, h: f64) -> Option<H
         start_anchor: geom.px_to_pdf(fx0 + 1.0, (fy0 + fy1) / 2.0, w, h),
         end_anchor: geom.px_to_pdf(lx1 - 1.0, (ly0 + ly1) / 2.0, w, h),
     })
+}
+
+/// The selected area's four corners on screen, clockwise from the top left, and its id.
+pub(super) fn area_corners(r: &ReaderState, page: u16, w: f64, h: f64) -> Option<AreaCorners> {
+    if r.rotation != 0 {
+        return None;
+    }
+    let id = r.mark_edit.selected.as_ref()?;
+    let annotation = r.store.get(id)?;
+    if shapes::shape_of(&annotation) != shapes::Shape::Area
+        || annotation.page != Some(page as u32 + 1)
+    {
+        return None;
+    }
+    let quads = match &r.mark_edit.preview {
+        Some((preview_id, quads)) if preview_id == id => quads.clone(),
+        _ => shapes::anchor_quads(&annotation),
+    };
+    let geom = r.geom(page)?;
+    let quad = geom.quads_to_display(quads.get(..1)?).pop()?;
+    let (x0, y0, x1, y1) = mark_layer::quad_rect(&quad, geom, w, h);
+    Some((
+        id.clone(),
+        annotation.color.clone(),
+        [(x0, y0), (x1, y0), (x1, y1), (x0, y1)],
+    ))
 }
 
 fn mark_at(r: &ReaderState, page: u16, x: f64, y: f64, w: f64, h: f64) -> Option<String> {
@@ -125,6 +153,13 @@ struct Resizing {
     id: String,
     anchor: (f64, f64),
     last: Option<std::time::Instant>,
+    /// For an area: the corner that stays put, in PDF space.
+    area_fixed: Option<(f64, f64)>,
+}
+
+/// An area's rectangle `[left, bottom, right, top]` from two opposite corners in PDF space.
+fn area_rect(a: (f64, f64), b: (f64, f64)) -> [f64; 4] {
+    [a.0.min(b.0), a.1.min(b.1), a.0.max(b.0), a.1.max(b.1)]
 }
 
 fn extent(
@@ -213,6 +248,25 @@ pub(super) fn install(
         let resizing = resizing.clone();
         drag.connect_drag_begin(move |gesture, x, y| {
             let (w, h) = size_of();
+            let page = page_of();
+            let corner = area_corners(&reader.borrow(), page, w, h).and_then(|(id, _, corners)| {
+                let at = corners
+                    .iter()
+                    .position(|p| (p.0 - x).hypot(p.1 - y) <= HANDLE_HIT_PX)?;
+                let opposite = corners[(at + 2) % 4];
+                let geom = reader.borrow().geom(page)?;
+                Some((id, geom.px_to_pdf(opposite.0, opposite.1, w, h)))
+            });
+            if let Some((id, fixed)) = corner {
+                gesture.set_state(gtk4::EventSequenceState::Claimed);
+                *resizing.borrow_mut() = Some(Resizing {
+                    id,
+                    anchor: (0.0, 0.0),
+                    last: None,
+                    area_fixed: Some(fixed),
+                });
+                return;
+            }
             let grabbed = handles_of(&reader.borrow(), page_of(), w, h).and_then(|hs| {
                 let near = |p: (f64, f64)| (p.0 - x).hypot(p.1 - y) <= HANDLE_HIT_PX;
                 if near(hs.end) {
@@ -230,6 +284,7 @@ pub(super) fn install(
                         id,
                         anchor,
                         last: None,
+                        area_fixed: None,
                     });
                 }
                 None => {
@@ -264,6 +319,13 @@ pub(super) fn install(
                 return;
             };
             let to = geom.px_to_pdf(sx + dx, sy + dy, w, h);
+            if let Some(fixed) = state.area_fixed {
+                let [l, b, r, t] = area_rect(fixed, to);
+                reader.borrow_mut().mark_edit.preview =
+                    Some((state.id.clone(), vec![shapes::quad_of(l, b, r, t)]));
+                mark_layer::redraw_all(&reader);
+                return;
+            }
             if let Some(sel) = extent(&reader, page, state.anchor, to) {
                 reader.borrow_mut().mark_edit.preview = Some((state.id.clone(), sel.quads));
                 mark_layer::redraw_all(&reader);
@@ -285,6 +347,34 @@ pub(super) fn install(
                 Some(geom.px_to_pdf(sx + dx, sy + dy, w, h))
             });
             reader.borrow_mut().mark_edit.preview = None;
+            if let (Some(fixed), Some(to)) = (state.area_fixed, target) {
+                let rect = area_rect(fixed, to);
+                if rect[2] - rect[0] > 4.0 && rect[3] - rect[1] > 4.0 {
+                    let text = {
+                        let r = reader.borrow();
+                        fond_doc::select_text_in_rect(
+                            r.pdfium,
+                            r.bytes(),
+                            page,
+                            rect[0] as f32,
+                            rect[1] as f32,
+                            rect[2] as f32,
+                            rect[3] as f32,
+                        )
+                        .ok()
+                        .flatten()
+                        .map(|s| s.text)
+                        .filter(|t| !t.trim().is_empty())
+                    };
+                    let store = reader.borrow().store.clone();
+                    let _ = store.update(&state.id, |a| {
+                        a.set_rect(Some(rect));
+                        a.snippet = text;
+                    });
+                }
+                mark_layer::redraw_all(&reader);
+                return;
+            }
             if let Some(to) = target {
                 if let Some(sel) = extent(&reader, page, state.anchor, to) {
                     let text = selection_text(&reader.borrow(), page, &sel.quads)

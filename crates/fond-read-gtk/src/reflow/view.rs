@@ -30,6 +30,8 @@ pub struct TextMark {
     pub rects: Vec<[f32; 4]>,
     pub rgba: [u8; 4],
     pub style: MarkStyle,
+    /// The note the mark carries, shown as a small bubble beside it.
+    pub note: Option<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -116,6 +118,8 @@ pub struct ReadingView {
     content_pending: Cell<bool>,
     active_marker: Cell<Option<(i32, i32)>>,
     headings: RefCell<Vec<fond_doc::PdfOutlineEntry>>,
+    /// A small bubble beside each mark that has a note, placed at the mark's end.
+    bubbles: RefCell<Vec<(gtk4::TextMark, gtk4::Widget)>>,
     /// Where pictures of figures and tables come from.
     pub figure_source: RefCell<Option<FigureSource>>,
 }
@@ -234,6 +238,7 @@ impl ReadingView {
             content_pending: Cell::new(false),
             active_marker: Cell::new(None),
             headings: RefCell::new(Vec::new()),
+            bubbles: RefCell::new(Vec::new()),
             figure_source: RefCell::new(None),
         });
         view.install_signals();
@@ -318,6 +323,17 @@ impl ReadingView {
     fn relayout_margins(&self) {
         self.left.relayout();
         self.right.relayout();
+        self.place_bubbles();
+    }
+
+    /// Put each note bubble at the end of its mark, as the text's layout settles and scrolls.
+    fn place_bubbles(&self) {
+        let buffer = self.text_view.buffer();
+        for (mark, widget) in self.bubbles.borrow().iter() {
+            let rect = self.text_view.iter_location(&buffer.iter_at_mark(mark));
+            self.text_view
+                .move_overlay(widget, rect.x() + 3, rect.y() - 2);
+        }
     }
 
     fn marker_at_offset(&self, offset: i32) -> Option<(i32, i32, Option<usize>)> {
@@ -899,6 +915,10 @@ impl ReadingView {
     /// by its quoted text.
     pub fn apply_marks(&self, marks: &[TextMark]) {
         let buffer = self.text_view.buffer();
+        for (anchor, widget) in self.bubbles.borrow_mut().drain(..) {
+            self.text_view.remove(&widget);
+            buffer.delete_mark(&anchor);
+        }
         for name in self.applied_tags.borrow_mut().drain(..) {
             if let Some(tag) = buffer.tag_table().lookup(&name) {
                 buffer.remove_tag(&tag, &buffer.start_iter(), &buffer.end_iter());
@@ -916,6 +936,15 @@ impl ReadingView {
             if ranges.is_empty() {
                 ranges = self.find_quote(mark).into_iter().collect();
             }
+            if let (Some(note), Some(&(_, end))) = (mark.note.as_deref(), ranges.last()) {
+                let image = gtk4::Label::new(Some("\u{270E}"));
+                image.add_css_class("caption");
+                image.set_opacity(0.9);
+                image.set_tooltip_text(Some(note));
+                let anchor = buffer.create_mark(None, &buffer.iter_at_offset(end), false);
+                self.text_view.add_overlay(&image, 0, 0);
+                self.bubbles.borrow_mut().push((anchor, image.upcast()));
+            }
             for (a, b) in ranges {
                 buffer.apply_tag_by_name(
                     &name,
@@ -928,6 +957,7 @@ impl ReadingView {
                 applied.push(name);
             }
         }
+        self.place_bubbles();
     }
 
     /// Show search hits in the text: every hit lightly, `current` strongly. Returns where the

@@ -212,6 +212,8 @@ pub trait ReaderHost {
     fn open_document(&self, _path: &std::path::Path) {}
 }
 
+type SearchFn = Rc<dyn Fn(&str)>;
+
 thread_local! {
     /// Reader tabs currently open, keyed by the document's content hash — so this is really
     /// "the same file", not "the same entry".
@@ -229,7 +231,7 @@ thread_local! {
         RefCell::new(HashMap::new());
 
     static JUMPS: RefCell<HashMap<String, Rc<JumpFn>>> = RefCell::new(HashMap::new());
-    static SEARCHES: RefCell<HashMap<String, Rc<dyn Fn(&str)>>> = RefCell::new(HashMap::new());
+    static SEARCHES: RefCell<HashMap<String, SearchFn>> = RefCell::new(HashMap::new());
     static WANTED_SEARCH: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
 
     /// Callbacks registered via [`on_all_readers_closed`].

@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+- **Search opens on the hit.** Clicking a result in the Search tab or the Notes browser opens the
+  document with that word highlighted (`--search=`), and recognised (OCR) text is indexed too.
+- **OCR languages you add yourself** (menu → *OCR languages…*): English stays bundled; other
+  languages are `.traineddata` files you pick, never downloaded.
+- **Resize an area** by dragging its corner handles; the quoted text follows. Areas show a
+  **thumbnail on the Notes card**.
+- **Note bubbles in Reading mode:** a marked passage with a note gets a small ✎ after it (the note
+  is its tooltip).
+- **Merging marks is one undo step.**
+
 ## [0.12.0] "Clear Margin" — 2026-10-09
 - **Ctrl+K command palette**, in the PDF reader, the EPUB reader and the launcher: type to run any
   command, jump to a heading or contents entry, to a note (it flashes), or to a page — by number

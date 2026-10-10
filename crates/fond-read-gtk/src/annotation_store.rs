@@ -49,6 +49,8 @@ enum Op {
         before: Box<Annotation>,
         after: Box<Annotation>,
     },
+    /// Several changes made together, undone and redone as one.
+    Many(Vec<Op>),
 }
 
 struct State {
@@ -70,6 +72,8 @@ pub struct AnnotationStore {
     state: RefCell<State>,
     listeners: RefCell<Vec<(u64, Listener)>>,
     next_listener: Cell<u64>,
+    /// While a [`AnnotationStore::group`] is open: the changes made in it so far.
+    group: RefCell<Option<Vec<Op>>>,
 }
 
 impl AnnotationStore {
@@ -86,6 +90,7 @@ impl AnnotationStore {
             }),
             listeners: RefCell::new(Vec::new()),
             next_listener: Cell::new(1),
+            group: RefCell::new(None),
         })
     }
 
@@ -175,16 +180,43 @@ impl AnnotationStore {
         Ok(true)
     }
 
+    /// Make several changes that undo and redo as one step (a merge of marks, say).
+    pub fn group<R>(&self, changes: impl FnOnce() -> R) -> R {
+        let outer = self.group.borrow_mut().replace(Vec::new());
+        let result = changes();
+        let ops = std::mem::replace(&mut *self.group.borrow_mut(), outer).unwrap_or_default();
+        let op = match ops.len() {
+            0 => return result,
+            1 => ops.into_iter().next().expect("one change"),
+            _ => Op::Many(ops),
+        };
+        if self.group.borrow().is_some() {
+            if let Some(g) = self.group.borrow_mut().as_mut() {
+                g.push(op);
+            }
+        } else {
+            let mut s = self.state.borrow_mut();
+            s.redo.clear();
+            s.undo.push(op);
+            if s.undo.len() > UNDO_HISTORY_LIMIT {
+                s.undo.remove(0);
+            }
+        }
+        result
+    }
+
     /// `Ok(false)` if there was nothing to undo.
     pub fn undo(&self) -> Result<bool, String> {
         let Some(op) = self.state.borrow_mut().undo.pop() else {
             return Ok(false);
         };
         let inverse = invert(&op);
-        match self.run(&inverse) {
-            Ok(change) => {
+        match self.run_all(&inverse) {
+            Ok(changes) => {
                 self.state.borrow_mut().redo.push(op);
-                self.notify(&change);
+                for change in &changes {
+                    self.notify(change);
+                }
                 Ok(true)
             }
             Err(e) => {
@@ -199,10 +231,12 @@ impl AnnotationStore {
         let Some(op) = self.state.borrow_mut().redo.pop() else {
             return Ok(false);
         };
-        match self.run(&op) {
-            Ok(change) => {
+        match self.run_all(&op) {
+            Ok(changes) => {
                 self.state.borrow_mut().undo.push(op);
-                self.notify(&change);
+                for change in &changes {
+                    self.notify(change);
+                }
                 Ok(true)
             }
             Err(e) => {
@@ -214,6 +248,11 @@ impl AnnotationStore {
 
     fn apply_new(&self, op: Op) -> Result<(), String> {
         let change = self.run(&op)?;
+        if let Some(group) = self.group.borrow_mut().as_mut() {
+            group.push(op);
+            self.notify(&change);
+            return Ok(());
+        }
         {
             let mut s = self.state.borrow_mut();
             s.redo.clear();
@@ -224,6 +263,13 @@ impl AnnotationStore {
         }
         self.notify(&change);
         Ok(())
+    }
+
+    fn run_all(&self, op: &Op) -> Result<Vec<Change>, String> {
+        match op {
+            Op::Many(ops) => ops.iter().map(|o| self.run(o)).collect(),
+            _ => Ok(vec![self.run(op)?]),
+        }
     }
 
     /// Apply `op` to the sidecar and save it; undo it again if the save fails.
@@ -260,6 +306,7 @@ impl AnnotationStore {
                         after: after.clone(),
                     }
                 }
+                Op::Many(_) => unreachable!("a group is applied one change at a time"),
             };
             (change, previous_hash)
         };
@@ -278,6 +325,7 @@ impl AnnotationStore {
                         *slot = (**before).clone();
                     }
                 }
+                Op::Many(_) => {}
             }
             s.sidecar.pdf_hash = previous_hash;
             return Err(e);
@@ -309,6 +357,7 @@ fn invert(op: &Op) -> Op {
             before: after.clone(),
             after: before.clone(),
         },
+        Op::Many(ops) => Op::Many(ops.iter().rev().map(invert).collect()),
     }
 }
 
@@ -515,5 +564,41 @@ mod tests {
         let s = store(&host);
         assert_eq!(s.remove("nope"), Ok(false));
         assert_eq!(s.update("nope", |_| {}), Ok(false));
+    }
+
+    #[test]
+    fn a_group_of_changes_undoes_and_redoes_as_one_step() {
+        let host: Rc<dyn ReaderHost> = MockHost::new();
+        let store = AnnotationStore::new(&host, None);
+        let mk = |id: &str| {
+            let mut a = Annotation::drawn_epub(
+                AnnotationKind::Highlight,
+                "c".into(),
+                id.into(),
+                None,
+                None,
+                None,
+            );
+            a.id = id.into();
+            a
+        };
+        store.add(mk("a")).unwrap();
+        store.add(mk("b")).unwrap();
+        store.group(|| {
+            store
+                .update("a", |x| x.note = Some("merged".into()))
+                .unwrap();
+            store.remove("b").unwrap();
+        });
+        assert_eq!(store.sidecar().annotations.len(), 1);
+        assert!(store.undo().unwrap());
+        assert_eq!(store.sidecar().annotations.len(), 2);
+        assert_eq!(store.get("a").unwrap().note, None);
+        assert!(store.redo().unwrap());
+        assert_eq!(store.sidecar().annotations.len(), 1);
+        assert_eq!(store.get("a").unwrap().note.as_deref(), Some("merged"));
+        assert!(store.undo().unwrap());
+        assert!(store.undo().unwrap());
+        assert_eq!(store.sidecar().annotations.len(), 1);
     }
 }

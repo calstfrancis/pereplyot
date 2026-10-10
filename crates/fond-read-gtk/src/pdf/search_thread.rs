@@ -150,7 +150,7 @@ fn recognised_matches(
     query: &str,
     cache: &std::path::Path,
 ) -> Option<Vec<fond_doc::PdfSearchMatch>> {
-    let raw = crate::reflow::ocr::cached_page(doc, index, "eng", cache)?;
+    let raw = crate::reflow::ocr::cached_page(doc, index, &crate::reflow::ocr::language(), cache)?;
     let geom = crate::page_geom::PageGeom::read_doc(doc, index)?;
     let (w, h) = geom.display_size();
     let (w, h) = (w as f64, h as f64);

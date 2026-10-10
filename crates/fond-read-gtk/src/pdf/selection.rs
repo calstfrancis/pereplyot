@@ -24,6 +24,7 @@ pub(super) fn paint_text_marks(
                     quote,
                     rects,
                     rgba: annotation_rgba(a.color.as_deref()),
+                    note: a.note.clone().filter(|n| !n.trim().is_empty()),
                     style: match a.kind {
                         fond_annot::AnnotationKind::Underline => MarkStyle::Underline,
                         fond_annot::AnnotationKind::Strikeout => MarkStyle::Strikeout,
