@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.16.3] "Quiet Hands" — 2026-10-12
 - **Markdown notes are written in the background**, newest version of each document only, so an
   edit never waits for the disk (or a synced folder) to save; and when a document's title changes
   the notes file under the old title is removed instead of being left behind.

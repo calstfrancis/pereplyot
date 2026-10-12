@@ -1,6 +1,6 @@
 [package]
 name = "pereplyot-ui-gtk"
-version = "0.16.2"
+version = "0.16.3"
 description = "Pereplyot — standalone PDF/EPUB reader (proprietary)"
 license = "LicenseRef-Proprietary"
 edition.workspace = true

@@ -59,6 +59,13 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.16.3" date="2026-10-12">
+      <description>
+        <p>0.16.3 "Quiet Hands" — the Markdown notes folder is written on a background thread, so
+        editing never waits for the disk or a synced folder, and the file left behind when a
+        document is renamed is removed.</p>
+      </description>
+    </release>
     <release version="0.16.2" date="2026-10-12">
       <description>
         <p>0.16.2 "Closed Door" — fixes a crash a crafted pereplyot:// link could cause (a percent
