@@ -63,19 +63,18 @@ shot() { # shot WINDOW FILE  — the window's own rectangle
     import -window root -crop "${WIDTH}x${HEIGHT}+${X}+${Y}" +repage "$2" 2>/dev/null
 }
 
-for scheme in default prefer-dark; do
+for scheme in ${SCHEMES:-default prefer-dark}; do
     suffix=""; [ "$scheme" = prefer-dark ] && suffix="-dark"
 
     # --- the reader, in the Synthesise posture: marks, notes list and notebook ---
     start_app "$scheme" "$DOC"
-    w="$(window_named 'Reader*')" || { echo "no reader window"; exit 1; }
-    sleep 3
+    w="$(window_named 'Pereplyot*')" || { echo "no reader window"; exit 1; }
+    sleep 6
     xdotool windowfocus "$w" 2>/dev/null
-    import -window root "$WORK/base.png" 2>/dev/null
-    read -r x0 y0 x1 y1 <<<"$(python3 "$HERE/tests/smoke/text_bands.py" "$WORK/base.png")"
-    h=$(( (y1 - y0) / 4 ))
+    x0=186; x1=680
+    h=117
     for band in 0 1 2; do
-        sy=$(( y0 + band * h + h / 2 ))
+        sy=$(( 337 + band * h ))
         xdotool mousemove $((x0 - 6)) "$sy" mousedown 1 mousemove $(( (x0 + x1) / 2 )) "$sy" mousemove $((x1 + 6)) "$sy" mouseup 1
         sleep 0.8
         xdotool key $((band + 1))
@@ -83,21 +82,22 @@ for scheme in default prefer-dark; do
     done
     xdotool key n
     sleep 1.5
-    xdotool mousemove 812 28 click 1
+    xdotool mousemove 738 28 click 1
     sleep 1.5
-    xdotool mousemove 420 120 mousedown 1
-    for step in 1 2 3 4 5 6 7 8 9 10 11 12; do xdotool mousemove $((420 + step * 30)) $((120 + step * 10)); sleep 0.15; done
-    sleep 0.4
-    xdotool mouseup 1
+    xdotool mousemove 546 160 click 1
+    sleep 1
+    xdotool mousemove 546 347 click 1
+    sleep 1.5
+    xdotool mousemove 738 28 click 1
     sleep 1.5
     xdotool mousemove 800 600
-    sleep 6
+    sleep 28
     shot "$w" "$OUT/pereplyot-main$suffix.png"
     stop_app
 
     # --- the launcher's Search tab, over the same document ---
     start_app "$scheme" "$DOC"
-    window_named 'Reader*' >/dev/null; sleep 2; stop_app
+    window_named 'Pereplyot*' >/dev/null; sleep 2; stop_app
     KEEP_PROFILE=1 start_app "$scheme"
     l="$(window_named 'Pereplyot')" || { echo "no launcher"; exit 1; }
     sleep 1.5
