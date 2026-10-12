@@ -1,5 +1,31 @@
 # Changelog
 
+## [Unreleased]
+Found by an adversarial pass (hostile files, random-input testing, fuzzing, code review):
+- **Fixed a hard crash in Reading mode.** A scan with degenerate coordinates (NaN or infinite
+  boxes) could send the page layout into unbounded recursion and take the whole app down.
+- **EPUBs can no longer reach the network or start your browser.** A book's remote images,
+  stylesheets and frames used to be fetched (a tracking vector), and an iframe or redirect inside a
+  book could launch the default browser by itself. Web traffic is now blocked, and only a link you
+  click opens outside. An EPUB that would unpack to more than 4 GB is refused.
+- **Closing a book no longer quits the app while you are using the Library.** Opened from a file
+  manager, Pereplyot used to exit when the book closed even if you had been browsing the Library tab.
+- **Several files at once.** Selecting a few files in the file manager and choosing Open With opens
+  all of them (it used to open none), and a relative path given to an already-running Pereplyot is
+  resolved from where you typed the command.
+- **History keeps 1,000 documents instead of 50**, so annotations, search and links to older
+  books you never added to the Library stay reachable, and a damaged history file is set aside
+  instead of silently reset.
+- **The Markdown notes folder never overwrites a file that is not its own** — your own note with
+  the same name, or another document with the same title (it adds a short id to the name instead).
+- **Library thumbnails are made in the background**, one at a time, so a large library no longer
+  freezes the app; opening a very large PDF no longer reads it all into memory to hash it.
+- Plainer errors: a damaged `.pdf`/`.epub` says so (instead of "only PDF and EPUB files are
+  supported"), and a password-protected PDF says why it cannot be opened instead of showing an
+  internal error name. Dropping more than 8 files at once opens the first 8.
+- **Ctrl+W** closes the current tab and **Ctrl+1** goes to the Library; the window title names the
+  book on screen.
+
 ## [0.15.0] "Common Room" — 2026-10-10
 - **One window.** The library is no longer a window of its own that gets lost behind the reader:
   it is the first tab of the reader window, pinned and always visible, holding Library, History,

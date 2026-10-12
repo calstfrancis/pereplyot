@@ -96,6 +96,7 @@ thread_local! {
     // opened and cleared here as soon as it closes (its last tab closed, or the user closed
     // the window directly) — so the *next* "Read" after every reader was closed starts a
     // fresh window rather than trying to resurrect a dead one.
+    static HOME_SHOWN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static MAIN_HOST: RefCell<Option<(gtk4::Window, adw::TabView)>> = const { RefCell::new(None) };
     // Optional bottom-right status-bar widget an embedding app can ask every reader host
     // window (the shared one and any popped-out ones) to carry — see `set_host_footer`.
@@ -299,6 +300,26 @@ fn wire_host(host: &gtk4::Window, set_content: impl FnOnce(&adw::ToolbarView)) -
             let Some(page) = tab_view_for_keys.selected_page() else {
                 return glib::Propagation::Proceed;
             };
+            let only_ctrl = modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK)
+                && !modifiers.intersects(
+                    gtk4::gdk::ModifierType::SHIFT_MASK | gtk4::gdk::ModifierType::ALT_MASK,
+                );
+            if only_ctrl && keyval == gtk4::gdk::Key::w && !page.is_pinned() {
+                tab_view_for_keys.close_page(&page);
+                return glib::Propagation::Stop;
+            }
+            if only_ctrl && keyval == gtk4::gdk::Key::_1 {
+                if let Some(first) = tab_view_for_keys
+                    .pages()
+                    .item(0)
+                    .and_downcast::<adw::TabPage>()
+                {
+                    if first.is_pinned() {
+                        tab_view_for_keys.set_selected_page(&first);
+                        return glib::Propagation::Stop;
+                    }
+                }
+            }
             let handler = unsafe {
                 page.data::<KeyHandler>(KEY_HANDLER_DATA_KEY)
                     .map(|h| h.as_ref().clone())
@@ -316,8 +337,20 @@ fn wire_host(host: &gtk4::Window, set_content: impl FnOnce(&adw::ToolbarView)) -
 
     {
         let slots = header_slots.clone();
+        let window = host.downgrade();
+        let base = host.title().map(|t| t.to_string()).unwrap_or_default();
         tab_view.connect_notify_local(Some("selected-page"), move |view, _| {
             apply_selected_header(view, &slots);
+            // The window says which book it is showing, so a window list can tell them apart.
+            let Some(window) = window.upgrade() else {
+                return;
+            };
+            match view.selected_page() {
+                Some(page) if !page.is_pinned() && !page.title().is_empty() => {
+                    window.set_title(Some(&format!("{base} \u{2014} {}", page.title())));
+                }
+                _ => window.set_title(Some(&base)),
+            }
         });
     }
 
@@ -403,6 +436,12 @@ fn wire_host(host: &gtk4::Window, set_content: impl FnOnce(&adw::ToolbarView)) -
     tab_view
 }
 
+/// Whether the user has looked at the home tab this session: an app that closes itself when its
+/// last reader closes should not do so once they have been using it as a library.
+pub fn home_was_shown() -> bool {
+    HOME_SHOWN.with(|c| c.get())
+}
+
 /// Make `window` itself the shared reader host, with `home` as its first tab: pinned, always
 /// there, and taking the header controls `start`, `title` and `end` while it is selected. Readers
 /// opened afterwards become tabs beside it.
@@ -421,6 +460,14 @@ pub fn install_home(
     page.set_title("Library");
     page.set_icon(Some(&gtk4::gio::ThemedIcon::new("view-grid-symbolic")));
     tab_view.set_page_pinned(&page, true);
+    {
+        let home = page.clone();
+        tab_view.connect_notify_local(Some("selected-page"), move |view, _| {
+            if view.selected_page().as_ref() == Some(&home) {
+                HOME_SHOWN.with(|c| c.set(true));
+            }
+        });
+    }
     let tab = ReaderTab {
         host_window: host,
         tab_view,

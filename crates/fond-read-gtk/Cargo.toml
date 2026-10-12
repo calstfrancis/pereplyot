@@ -22,3 +22,6 @@ webkit6 = "0.6"
 # The EPUB reader serialises its highlight payload into the WebKit view as JSON.
 serde = { workspace = true }
 serde_json = { workspace = true }
+# Reads an EPUB's central directory to refuse one that unpacks to an absurd size (fond-doc
+# already depends on it, so this adds no new crate).
+zip = { version = "2", default-features = false }

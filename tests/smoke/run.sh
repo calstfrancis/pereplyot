@@ -853,6 +853,58 @@ run_home_case() {
     stop_app
 }
 
+run_epubnet_case() {
+    local port=18091
+    python3 - "$WORK" "$port" <<'PY'
+import sys, zipfile
+work, port = sys.argv[1], sys.argv[2]
+cont='<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>'
+opf='<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Net</dc:title><dc:identifier id="id">x</dc:identifier></metadata><manifest><item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="c1"/></spine></package>'
+ch=f'<html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" href="http://127.0.0.1:{port}/s.css"/></head><body><h1>N</h1><img src="http://127.0.0.1:{port}/i.png"/><iframe src="http://127.0.0.1:{port}/f"></iframe><p>text</p></body></html>'
+z=zipfile.ZipFile(work+'/net.epub','w',zipfile.ZIP_DEFLATED)
+z.writestr('mimetype','application/epub+zip',compress_type=zipfile.ZIP_STORED)
+z.writestr('META-INF/container.xml',cont); z.writestr('OEBPS/content.opf',opf); z.writestr('OEBPS/c1.xhtml',ch); z.close()
+PY
+    : >"$WORK/net.log"
+    python3 - "$port" "$WORK/net.log" <<'PY' &
+import socketserver, sys
+class H(socketserver.BaseRequestHandler):
+    def handle(self):
+        open(sys.argv[2], 'a').write(self.request.recv(1000).decode('latin1').split('\r\n')[0] + '\n')
+        self.request.sendall(b'HTTP/1.0 200 OK\r\nContent-Length: 0\r\n\r\n')
+socketserver.TCPServer.allow_reuse_address = True
+socketserver.TCPServer(('127.0.0.1', int(sys.argv[1])), H).serve_forever()
+PY
+    local server=$!
+    start_app "$WORK/net.epub"
+    reader_window >/dev/null || { check "epubnet: the book opens" 0; stop_app; kill "$server" 2>/dev/null; return; }
+    sleep 6
+    check "epubnet: a book's remote images, stylesheets and frames are never requested" "$([ ! -s "$WORK/net.log" ] && echo 1 || echo 0)" "(requests: $(tr '\n' ' ' <"$WORK/net.log"))"
+    check "epubnet: and no browser is started by it" "$([ -z "$(xdotool search --onlyvisible --name 'Firefox|Chrom' 2>/dev/null)" ] && echo 1 || echo 0)"
+    stop_app
+    kill "$server" 2>/dev/null
+}
+
+run_multi_case() {
+    start_app "$FX/plain.pdf" keep
+    stop_app
+    rm -rf "$WORK/h"; mkdir -p "$WORK/h"/{home,data,config,cache} "$WORK/h/data/fonts"
+    cp "$ROOT"/packaging/fonts/*.otf "$WORK/h/data/fonts/" 2>/dev/null
+    mkdir -p "$WORK/h/config/gtk-4.0"
+    printf '[Settings]\ngtk-decoration-layout=:close\n' >"$WORK/h/config/gtk-4.0/settings.ini"
+    env -u WAYLAND_DISPLAY PEREPLYOT_NO_WELCOME=1 PEREPLYOT_NO_TABBAR=1 GDK_BACKEND=x11 GTK_A11Y=none GSETTINGS_BACKEND=memory \
+        HOME="$WORK/h/home" XDG_DATA_HOME="$WORK/h/data" XDG_CONFIG_HOME="$WORK/h/config" XDG_CACHE_HOME="$WORK/h/cache" \
+        setsid dbus-run-session --config-file="$WORK/session.conf" -- "$BIN" "$FX/plain.pdf" "$FX/mixed.pdf" "$FX/scholar.epub" \
+        >"$WORK/app.log" 2>&1 </dev/null &
+    APP_PGID=$!
+    reader_window >/dev/null || { check "multi: the window opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
+    sleep 6
+    local opened
+    opened="$(grep -c '"hash"' "$WORK/h/home/.local/share/pereplyot/recents.json" 2>/dev/null)"
+    check "multi: several files given together are all opened" "$([ "${opened:-0}" -ge 3 ] && echo 1 || echo 0)" "(history entries: ${opened:-0}; log: $(tail -c 200 "$WORK/app.log"))"
+    stop_app
+}
+
 run_scholar_case() {
     start_app "$FX/scholar.epub"
     local w
@@ -1319,6 +1371,8 @@ want caret && run_caret_case
 want bubble && run_bubble_case
 want histadd && run_history_add_case
 want home && run_home_case
+want epubnet && run_epubnet_case
+want multi && run_multi_case
 want patterns && run_patterns_case
 
 echo

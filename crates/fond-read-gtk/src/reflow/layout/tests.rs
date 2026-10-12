@@ -458,3 +458,106 @@ fn notes_gathered_at_the_back_go_beside_the_markers_that_cite_them() {
         "the notes pages are not part of the text"
     );
 }
+
+struct Rng(u64);
+impl Rng {
+    fn next(&mut self) -> u64 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        self.0
+    }
+    fn f(&mut self) -> f32 {
+        match self.next() % 12 {
+            0 => f32::NAN,
+            1 => f32::INFINITY,
+            2 => f32::NEG_INFINITY,
+            3 => 0.0,
+            4 => -((self.next() % 500) as f32),
+            5 => 1e30,
+            _ => (self.next() % 800) as f32 + (self.next() % 100) as f32 / 100.0,
+        }
+    }
+    fn pick<'a>(&mut self, items: &[&'a str]) -> &'a str {
+        items[(self.next() % items.len() as u64) as usize]
+    }
+}
+
+#[test]
+#[ignore]
+fn fuzz_layout_never_panics() {
+    let words = [
+        "alpha",
+        "1",
+        "12",
+        "*",
+        "novel,*?",
+        "tales.**",
+        "x",
+        "",
+        " ",
+        "①",
+        "日本語",
+        "²",
+        "Notes",
+        "Chapter",
+        "Chapter 1;",
+        "bibliography",
+        "WHAT",
+        "IS",
+        "A",
+        "GOSPEL?",
+        "\u{0}",
+        "é",
+        "-",
+        "end.",
+        "A.",
+        "32.",
+        "33",
+        "34",
+        "9999",
+        "ⅷ",
+    ];
+    let seeds: u64 = std::env::var("FUZZ_SEEDS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2000);
+    for seed in 1..=seeds {
+        let mut r = Rng(seed.wrapping_mul(0x9E3779B97F4A7C15) | 1);
+        let pages: Vec<RawPage> = (0..(r.next() % 12) as u16)
+            .map(|n| {
+                let count = (r.next() % 120) as usize;
+                RawPage {
+                    page: n,
+                    width: r.f(),
+                    height: r.f(),
+                    words: (0..count)
+                        .map(|_| {
+                            let (x0, y0, x1, y1) = (r.f(), r.f(), r.f(), r.f());
+                            Word {
+                                text: r.pick(&words).to_string(),
+                                x0,
+                                y0,
+                                x1,
+                                y1,
+                                size: r.f(),
+                                bold: r.next() % 2 == 0,
+                                italic: r.next() % 2 == 0,
+                            }
+                        })
+                        .collect(),
+                    graphics: (0..(r.next() % 3))
+                        .map(|_| [r.f(), r.f(), r.f(), r.f()])
+                        .collect(),
+                }
+            })
+            .collect();
+        let result = std::panic::catch_unwind(|| {
+            let en = super::super::endnotes::find(pages.len() as u16, &|i| {
+                pages.get(i as usize).cloned()
+            });
+            let _ = flow_with(&pages, en);
+        });
+        assert!(result.is_ok(), "panicked for seed {seed}");
+    }
+}

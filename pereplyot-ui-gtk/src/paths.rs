@@ -43,3 +43,11 @@ pub fn record(path: &Path, hash: &str) {
         let _ = fsutil::write_atomic(&index_path(), json.as_bytes());
     }
 }
+
+/// The blake3 hash of a file's contents, read in chunks so a very large file is never held in
+/// memory whole.
+pub fn hash_file(path: &Path) -> std::io::Result<String> {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update_reader(std::fs::File::open(path)?)?;
+    Ok(hasher.finalize().to_hex().to_string())
+}

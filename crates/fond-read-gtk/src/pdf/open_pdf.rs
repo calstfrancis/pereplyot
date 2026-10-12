@@ -33,7 +33,7 @@ pub(super) fn open_pdf(
         Err(e) => {
             gtk4::AlertDialog::builder()
                 .message("Could not open PDF")
-                .detail(e.to_string())
+                .detail(friendly_pdf_error(&format!("{e:?}")))
                 .build()
                 .show(Some(window));
             return None;
@@ -143,4 +143,37 @@ fn outline_of(doc: &pdfium_render::prelude::PdfDocument<'_>) -> Vec<fond_doc::Pd
         out.push(fond_doc::PdfOutlineEntry { title, depth, page });
     }
     out
+}
+
+/// What to tell someone whose PDF would not open, in place of PDFium's own error name.
+fn friendly_pdf_error(debug: &str) -> String {
+    if debug.contains("Password") {
+        "This PDF is protected with a password, and Pereplyot cannot open protected PDFs yet. \
+         Remove the password in another app and open the copy."
+            .to_string()
+    } else if debug.contains("FormatError") || debug.contains("FileError") {
+        "This file is damaged, incomplete, or not really a PDF.".to_string()
+    } else {
+        "This PDF could not be read.".to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::friendly_pdf_error;
+
+    #[test]
+    fn pdfium_error_names_are_not_shown_to_people() {
+        for (raw, wants) in [
+            ("PdfiumLibraryInternalError(PasswordError)", "password"),
+            ("PdfiumLibraryInternalError(FormatError)", "damaged"),
+            ("PdfiumLibraryInternalError(Unknown)", "could not be read"),
+        ] {
+            let message = friendly_pdf_error(raw);
+            assert!(
+                message.contains(wants) && !message.contains("Pdfium"),
+                "{message}"
+            );
+        }
+    }
 }

@@ -40,6 +40,34 @@ pub fn path_for(folder: &Path, title: &str, hash: &str) -> PathBuf {
     folder.join(format!("{}.md", file_stem(title, hash)))
 }
 
+/// Whether the file at `path` is the one this program writes for `hash` (it names the document in
+/// its front matter), as opposed to somebody's own note that happens to share the name.
+fn is_ours(path: &Path, hash: &str) -> bool {
+    use std::io::Read;
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return false;
+    };
+    let mut head = vec![0u8; 2048];
+    let n = file.read(&mut head).unwrap_or(0);
+    String::from_utf8_lossy(&head[..n]).contains(&format!("pereplyot-hash: {}", yaml(hash)))
+}
+
+/// Where to write the notes for a document: `Title.md`, unless that name already belongs to a
+/// file that is not ours (another document with the same title, or the user's own note), in
+/// which case the first characters of the content hash are added to the name.
+pub fn resolve_path(folder: &Path, title: &str, hash: &str) -> PathBuf {
+    let plain = path_for(folder, title, hash);
+    if !plain.exists() || is_ours(&plain, hash) {
+        return plain;
+    }
+    let short: String = hash
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .take(8)
+        .collect();
+    folder.join(format!("{} ({short}).md", file_stem(title, hash)))
+}
+
 fn locator(a: &Annotation) -> String {
     match (
         fond_read_gtk::page_label_of(a),
@@ -147,7 +175,7 @@ pub fn render(doc: &Document, sidecar: &AnnotationSidecar) -> String {
 
 pub fn write(folder: &Path, doc: &Document, sidecar: &AnnotationSidecar) -> Result<(), String> {
     std::fs::create_dir_all(folder).map_err(|e| e.to_string())?;
-    let path = path_for(folder, doc.title, doc.hash);
+    let path = resolve_path(folder, doc.title, doc.hash);
     fond_read_gtk::fsutil::write_atomic(&path, render(doc, sidecar).as_bytes())
         .map_err(|e| e.to_string())
 }
@@ -222,6 +250,34 @@ mod tests {
         write(&dir, &doc, &two).unwrap();
         let text = std::fs::read_to_string(dir.join("Book.md")).unwrap();
         assert!(text.contains("second") && !text.contains("first"), "{text}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_note_that_is_not_ours_is_never_overwritten() {
+        let dir = std::env::temp_dir().join(format!("pp-md-own-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("Book.md"), "my own thoughts\n").unwrap();
+        let doc = |hash| Document {
+            title: "Book",
+            hash,
+            citation_key: None,
+            source: Path::new("/b.pdf"),
+        };
+        let sc = sidecar(
+            r#"{"schema":1,"key":"k","annotations":[{"id":"a","kind":"highlight","page":1,"snippet":"quoted"}]}"#,
+        );
+        write(&dir, &doc("abcdef012345"), &sc).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.join("Book.md")).unwrap(),
+            "my own thoughts\n"
+        );
+        assert!(std::fs::read_to_string(dir.join("Book (abcdef01).md"))
+            .unwrap()
+            .contains("quoted"));
+        write(&dir, &doc("abcdef012345"), &sc).unwrap();
+        write(&dir, &doc("999999999999"), &sc).unwrap();
+        assert!(dir.join("Book (99999999).md").is_file());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

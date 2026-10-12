@@ -19,6 +19,14 @@ pub(super) fn build_web_view_setup(reader: &Rc<RefCell<EpubReaderState>>) -> Web
         settings.set_allow_file_access_from_file_urls(false);
         settings.set_allow_universal_access_from_file_urls(false);
     }
+    // A book has no business on the network: images, stylesheets and frames it points at would
+    // tell whoever hosts them that it was opened, and when. Everything for the web goes to a
+    // proxy that is not there, so it fails fast and nothing leaves the machine; the book's own
+    // files are read from disk and are not affected.
+    if let Some(session) = webkit6::prelude::WebViewExt::network_session(&web_view) {
+        let proxy = webkit6::NetworkProxySettings::new(Some("http://127.0.0.1:1"), &[]);
+        session.set_proxy_settings(webkit6::NetworkProxyMode::Custom, Some(&proxy));
+    }
     {
         let cache_root = reader.borrow().cache_dir.clone();
         web_view.connect_decide_policy(move |_view, decision, kind| {
@@ -41,9 +49,15 @@ pub(super) fn build_web_view_setup(reader: &Rc<RefCell<EpubReaderState>>) -> Web
             if local {
                 return false;
             }
-            if uri.starts_with("http://")
-                || uri.starts_with("https://")
-                || uri.starts_with("mailto:")
+            // Only a link the reader actually clicked opens anything outside: a frame, a
+            // refresh or a redirect inside the book must not start the user's browser.
+            let clicked = nav.navigation_action().is_some_and(|a| {
+                a.navigation_type() == webkit6::NavigationType::LinkClicked && a.is_user_gesture()
+            });
+            if clicked
+                && (uri.starts_with("http://")
+                    || uri.starts_with("https://")
+                    || uri.starts_with("mailto:"))
             {
                 gtk4::UriLauncher::new(&uri).launch(
                     gtk4::Window::NONE,

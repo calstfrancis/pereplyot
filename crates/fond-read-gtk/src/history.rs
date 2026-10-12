@@ -17,12 +17,11 @@
 //! read file" toast on a failed open covers this, imperfectly, without needing the
 //! document-portal cross-app sharing machinery a real fix would take.
 
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-const MAX_ENTRIES: usize = 50;
+const MAX_ENTRIES: usize = 1000;
 
 fn history_path() -> PathBuf {
     glib::home_dir().join(".local/share/pereplyot/recents.json")
@@ -44,13 +43,19 @@ pub struct HistoryEntry {
     pub last_opened: String,
 }
 
-/// Every entry, most-recently-opened first. Empty (not an error) if the file doesn't
-/// exist yet or can't be parsed.
+/// Every entry, most-recently-opened first. Empty (not an error) if the file doesn't exist yet.
+/// A file that can't be parsed is set aside (`history.json.corrupt-…`) rather than left for the
+/// next save to overwrite, and the last good copy is used if there is one.
 pub fn load() -> Vec<HistoryEntry> {
-    fs::read_to_string(history_path())
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+    use crate::fsutil::{load_checked, Loaded};
+    match load_checked(&history_path(), |s| serde_json::from_str(s).ok()) {
+        Loaded::Ok(entries) => entries,
+        Loaded::Missing => Vec::new(),
+        Loaded::Corrupt {
+            recovered_from_backup,
+            ..
+        } => recovered_from_backup.unwrap_or_default(),
+    }
 }
 
 fn save(entries: &[HistoryEntry]) {

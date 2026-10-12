@@ -143,7 +143,16 @@ fn widest_gap(words: &[Word], axis: Axis, min_gap: f32) -> Option<f32> {
 }
 
 fn xy_cut(words: Vec<Word>, size: f32, out: &mut Vec<Vec<Word>>) {
-    if words.len() < 2 {
+    xy_cut_at(words, size, out, 0);
+}
+
+/// Cuts that leave one side empty (a coordinate that is NaN or infinite sorts to one side
+/// whatever the gap) would recurse on the same words for ever, so they are not cuts, and the
+/// depth is bounded regardless.
+const MAX_CUT_DEPTH: u32 = 400;
+
+fn xy_cut_at(words: Vec<Word>, size: f32, out: &mut Vec<Vec<Word>>, depth: u32) {
+    if words.len() < 2 || depth >= MAX_CUT_DEPTH {
         if !words.is_empty() {
             out.push(words);
         }
@@ -151,23 +160,23 @@ fn xy_cut(words: Vec<Word>, size: f32, out: &mut Vec<Vec<Word>>) {
     }
     if let Some(at) = widest_gap(&words, Axis::Y, 1.1 * size) {
         let (top, bottom): (Vec<Word>, Vec<Word>) =
-            words.into_iter().partition(|w| w.centre_y() < at);
-        xy_cut(top, size, out);
-        xy_cut(bottom, size, out);
-        return;
-    }
-    if let Some(at) = widest_gap(&words, Axis::X, 1.0 * size) {
-        let (left, right): (Vec<Word>, Vec<Word>) =
-            words.into_iter().partition(|w| (w.x0 + w.x1) / 2.0 < at);
-        if left.len() >= 6 && right.len() >= 6 {
-            xy_cut(left, size, out);
-            xy_cut(right, size, out);
+            words.iter().cloned().partition(|w| w.centre_y() < at);
+        if !top.is_empty() && !bottom.is_empty() {
+            xy_cut_at(top, size, out, depth + 1);
+            xy_cut_at(bottom, size, out, depth + 1);
             return;
         }
-        let mut all = left;
-        all.extend(right);
-        out.push(all);
-        return;
+    }
+    if let Some(at) = widest_gap(&words, Axis::X, 1.0 * size) {
+        let (left, right): (Vec<Word>, Vec<Word>) = words
+            .iter()
+            .cloned()
+            .partition(|w| (w.x0 + w.x1) / 2.0 < at);
+        if left.len() >= 6 && right.len() >= 6 {
+            xy_cut_at(left, size, out, depth + 1);
+            xy_cut_at(right, size, out, depth + 1);
+            return;
+        }
     }
     out.push(words);
 }
@@ -344,7 +353,7 @@ pub fn body_size(sample: &[RawPage]) -> f32 {
     }
     weight
         .into_iter()
-        .max_by_key(|(size, n)| (*n, -*size))
+        .max_by_key(|(size, n)| (*n, size.saturating_neg()))
         .map(|(size, _)| size as f32 / 2.0)
         .unwrap_or(10.0)
 }

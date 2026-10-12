@@ -599,6 +599,9 @@ fn install_actions(app: &adw::Application, widgets: &Rc<Widgets>) {
     app.set_accels_for_action("win.open", &["<Control>o"]);
 }
 
+/// Dropping a whole folder's worth of books would start that many readers at once.
+const MAX_DROPPED_OPENS: usize = 8;
+
 fn install_drop_target(widgets: &Rc<Widgets>) {
     let drop = gtk4::DropTarget::new(
         gtk4::gdk::FileList::static_type(),
@@ -611,13 +614,20 @@ fn install_drop_target(widgets: &Rc<Widgets>) {
             return false;
         };
         let mut handled = false;
-        for file in files.files() {
-            if let Some(path) = file.path() {
-                open_path(&handler_widgets, path);
-                handled = true;
-            }
+        let paths: Vec<PathBuf> = files.files().iter().filter_map(|f| f.path()).collect();
+        for path in paths.iter().take(MAX_DROPPED_OPENS) {
+            open_path(&handler_widgets, path.clone());
+            handled = true;
         }
-        if !handled {
+        if paths.len() > MAX_DROPPED_OPENS {
+            toast(
+                &handler_widgets,
+                &format!(
+                    "Opened the first {MAX_DROPPED_OPENS} of {} files — drop the rest in smaller groups",
+                    paths.len()
+                ),
+            );
+        } else if !handled {
             toast(&handler_widgets, "Only local files can be dropped");
         }
         handled
@@ -705,18 +715,32 @@ pub fn open_path_with_host(
     } else if fond_doc::looks_like_epub(&path) {
         DocKind::Epub
     } else {
-        toast(widgets, "Only PDF and EPUB files are supported");
+        let ext = path
+            .extension()
+            .map(|e| e.to_string_lossy().to_ascii_lowercase())
+            .unwrap_or_default();
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        toast(
+            widgets,
+            &match ext.as_str() {
+                "pdf" => format!("\u{201c}{name}\u{201d} is damaged or is not really a PDF"),
+                "epub" => format!("\u{201c}{name}\u{201d} is damaged or is not really an EPUB"),
+                _ => "Only PDF and EPUB files are supported".to_string(),
+            },
+        );
         return None;
     };
 
-    let bytes = match fs::read(&path) {
-        Ok(b) => b,
+    let hash = match crate::paths::hash_file(&path) {
+        Ok(h) => h,
         Err(e) => {
             toast(widgets, &format!("Couldn't read file: {e}"));
             return None;
         }
     };
-    let hash = blake3::hash(&bytes).to_hex().to_string();
 
     // The same path now has different contents than when it was last opened (re-saved, OCR'd,
     // annotated in another program): offer to bring its notes along instead of letting them
@@ -767,7 +791,7 @@ pub fn open_path_with_host(
     }
     let title = title_override
         .filter(|t| !t.trim().is_empty())
-        .or_else(|| sniff_title(kind, &path, &bytes))
+        .or_else(|| sniff_title(kind, &path))
         .unwrap_or_else(|| file_stem(&path).unwrap_or_else(|| "Untitled".to_string()));
 
     // Resolve the saved reading position before the host exists — same reason
@@ -863,11 +887,20 @@ pub fn open_path_with_host(
     None
 }
 
-fn sniff_title(kind: DocKind, path: &Path, bytes: &[u8]) -> Option<String> {
+/// Above this size a PDF's own title is not looked up: it would mean holding the whole file in
+/// memory just to read one string, and a book that big is a scan with none anyway.
+const SNIFF_TITLE_MAX_BYTES: u64 = 96 * 1024 * 1024;
+
+fn sniff_title(kind: DocKind, path: &Path) -> Option<String> {
     match kind {
-        DocKind::Pdf => fond_read_gtk::pdfium::get()
+        DocKind::Pdf => fs::metadata(path)
             .ok()
-            .and_then(|pdfium| fond_doc::extract_metadata(pdfium, bytes).ok())
+            .filter(|m| m.len() <= SNIFF_TITLE_MAX_BYTES)
+            .and_then(|_| fs::read(path).ok())
+            .and_then(|bytes| {
+                let pdfium = fond_read_gtk::pdfium::get().ok()?;
+                fond_doc::extract_metadata(pdfium, &bytes).ok()
+            })
             .and_then(|meta| meta.title)
             .filter(|t| !t.is_empty()),
         DocKind::Epub => fond_doc::extract_epub_metadata(path)
@@ -891,7 +924,7 @@ fn rebuild_history(widgets: &Rc<Widgets>) {
         return;
     }
 
-    for entry in entries {
+    for entry in entries.into_iter().take(HISTORY_ROWS) {
         let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
         row.add_css_class("recent-row");
 
@@ -1266,6 +1299,10 @@ fn show_card_menu(widgets: &Rc<Widgets>, hash: &str, anchor: &gtk4::Button) {
     popover.popup();
 }
 
+/// How many History rows are drawn: the list is kept far longer than anyone scrolls it, since
+/// Notes, Search and links look documents up there.
+const HISTORY_ROWS: usize = 200;
+
 fn build_library_card(widgets: &Rc<Widgets>, entry: &LibraryEntry) -> gtk4::Widget {
     let size = widgets
         .config
@@ -1284,26 +1321,30 @@ fn build_library_card(widgets: &Rc<Widgets>, entry: &LibraryEntry) -> gtk4::Widg
     cover_slot.set_valign(gtk4::Align::Start);
     card.set_valign(gtk4::Align::Start);
 
-    match thumbnail::render_thumbnail(entry.kind, &entry.path, &entry.hash, size) {
-        Some(texture) => {
-            let picture = gtk4::Picture::for_paintable(&texture);
-            picture.set_content_fit(gtk4::ContentFit::Cover);
-            picture.set_can_shrink(true);
-            // A bare Picture's natural size is the texture's, which ignores the card size;
-            // a non-propagating scroller pins it (and passes clicks/wheel through).
-            let pin = gtk4::ScrolledWindow::new();
-            pin.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Never);
-            pin.set_min_content_width(size as i32);
-            pin.set_min_content_height(cover_h as i32);
-            pin.set_propagate_natural_width(false);
-            pin.set_propagate_natural_height(false);
-            pin.set_can_target(false);
-            pin.set_focusable(false);
-            picture.set_hexpand(true);
-            picture.set_vexpand(true);
-            pin.set_child(Some(&picture));
-            cover_slot.append(&pin);
+    let show_cover = move |slot: &gtk4::Box, texture: &gtk4::gdk::Texture| {
+        let picture = gtk4::Picture::for_paintable(texture);
+        picture.set_content_fit(gtk4::ContentFit::Cover);
+        picture.set_can_shrink(true);
+        // A bare Picture's natural size is the texture's, which ignores the card size;
+        // a non-propagating scroller pins it (and passes clicks/wheel through).
+        let pin = gtk4::ScrolledWindow::new();
+        pin.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Never);
+        pin.set_min_content_width(size as i32);
+        pin.set_min_content_height(cover_h as i32);
+        pin.set_propagate_natural_width(false);
+        pin.set_propagate_natural_height(false);
+        pin.set_can_target(false);
+        pin.set_focusable(false);
+        picture.set_hexpand(true);
+        picture.set_vexpand(true);
+        pin.set_child(Some(&picture));
+        while let Some(child) = slot.first_child() {
+            slot.remove(&child);
         }
+        slot.append(&pin);
+    };
+    match thumbnail::cached_texture(&entry.hash, size) {
+        Some(texture) => show_cover(&cover_slot, &texture),
         None => {
             let icon_name = match entry.kind {
                 DocKind::Pdf => "x-office-document-symbolic",
@@ -1314,6 +1355,24 @@ fn build_library_card(widgets: &Rc<Widgets>, entry: &LibraryEntry) -> gtk4::Widg
             icon.add_css_class("dim-label");
             icon.set_vexpand(true);
             cover_slot.append(&icon);
+            let (kind, path, hash) = (entry.kind, entry.path.clone(), entry.hash.clone());
+            let slot = cover_slot.downgrade();
+            glib::spawn_future_local(async move {
+                let made = {
+                    let hash = hash.clone();
+                    gio::spawn_blocking(move || thumbnail::ensure_cached(kind, &path, &hash, size))
+                        .await
+                        .unwrap_or(false)
+                };
+                if !made {
+                    return;
+                }
+                if let (Some(slot), Some(texture)) =
+                    (slot.upgrade(), thumbnail::cached_texture(&hash, size))
+                {
+                    show_cover(&slot, &texture);
+                }
+            });
         }
     }
     card.append(&cover_slot);
