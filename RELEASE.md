@@ -1,4 +1,4 @@
-# Pereplyot v0.17.0 "Turned Key"
+# Pereplyot v0.17.1 "Steady Page"
 
 Install via Flatpak:
 
@@ -18,12 +18,13 @@ flatpak update io.github.calstfrancis.Pereplyot
 
 ### What's new
 
-**Password-protected PDFs open.** Pereplyot asks for the password (and again if it was wrong),
-then reads an unlocked copy it keeps in its cache for a day. Your file is not changed and your
-notes stay with it. The copy keeps the pages but not the original's outline or printed page numbers.
+**Reading mode stays responsive on a long book.** On a 600-page book the window used to freeze for
+up to a second while the text loaded and again at the first click or key press. The text view was
+making GTK lay out the whole book at every redraw; that is fixed. A far jump forward on a very long
+book is smoother but still takes a couple of seconds.
 
-**Drag a tab out into its own window.** Dropping a tab outside the tab bar used to snap it back
-with an error in the log; it now opens in a window of its own. The pinned Library tab stays put.
+**The page counter follows your scrolling in Reading mode.** The page number and chapter used to
+stay on page 1 however far you scrolled.
 
 ---
 

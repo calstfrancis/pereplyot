@@ -59,6 +59,12 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.17.1" date="2026-10-12">
+      <description>
+        <p>0.17.1 "Steady Page" — Reading mode stops freezing a long book while it loads and at the
+        first click, and its page counter and chapter now follow your scrolling.</p>
+      </description>
+    </release>
     <release version="0.17.0" date="2026-10-12">
       <description>
         <p>0.17.0 "Turned Key" — password-protected PDFs open (Pereplyot asks for the password and
