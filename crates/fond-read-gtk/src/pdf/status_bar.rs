@@ -82,8 +82,10 @@ pub(super) fn build_status_bar(
     typography_button.set_visible(false);
     {
         let typography_button = typography_button.clone();
+        let rotate_button = rotate_button.clone();
         text_toggle.connect_toggled(move |t| {
             typography_button.set_visible(t.is_active());
+            rotate_button.set_visible(!t.is_active());
             if let Some(label) = t.child().and_then(|c| c.downcast::<gtk4::Label>().ok()) {
                 let text = if t.is_active() {
                     "<b>Reading</b>"

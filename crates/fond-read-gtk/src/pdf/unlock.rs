@@ -13,6 +13,32 @@ fn unlocked_copy(hash: &str) -> PathBuf {
     unlocked_dir().join(format!("{safe}.pdf"))
 }
 
+/// What the unlocked copy cannot carry over itself: pages are imported into a fresh document,
+/// which drops the outline and the printed page numbers, so they are kept beside it.
+#[derive(Default, serde::Serialize, serde::Deserialize)]
+pub(super) struct Extras {
+    pub labels: Vec<Option<String>>,
+    pub outline: Vec<(String, u32, Option<u16>)>,
+}
+
+fn extras_path(copy: &std::path::Path) -> PathBuf {
+    copy.with_extension("json")
+}
+
+pub(super) fn extras_for(path: &std::path::Path) -> Option<Extras> {
+    if path.parent()? != unlocked_dir() {
+        return None;
+    }
+    serde_json::from_slice(&std::fs::read(extras_path(path)).ok()?).ok()
+}
+
+pub(super) fn forget(path: &std::path::Path) {
+    if path.parent() == Some(unlocked_dir().as_path()) {
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(extras_path(path));
+    }
+}
+
 enum Attempt {
     Open,
     NeedsPassword,
@@ -51,6 +77,20 @@ fn save_unlocked(path: &std::path::Path, hash: &str, password: &str) -> Result<P
         .append(&doc)
         .map_err(|e| format!("{e:?}"))?;
     plain.save_to_file(&out).map_err(|e| format!("{e:?}"))?;
+    let extras = Extras {
+        labels: doc
+            .pages()
+            .iter()
+            .map(|page| page.label().map(|s| s.to_string()))
+            .collect(),
+        outline: super::open_pdf::outline_of(&doc)
+            .into_iter()
+            .map(|e| (e.title, e.depth, e.page))
+            .collect(),
+    };
+    if let Ok(json) = serde_json::to_vec(&extras) {
+        let _ = std::fs::write(extras_path(&out), json);
+    }
     Ok(out)
 }
 
@@ -73,7 +113,7 @@ fn sweep(dir: &std::path::Path) {
 }
 
 /// Where to read the document from: the file itself, or — when it needs a password — an unlocked
-/// copy kept in the cache for the day, so every other reader of the path works unchanged.
+/// copy kept in the cache while the tab is open, so every other reader of the path works unchanged.
 /// Asks for the password when needed; `open` gets `None` if the reader should not open at all.
 pub(super) fn with_readable_path(
     window: &adw::ApplicationWindow,
@@ -112,8 +152,8 @@ fn ask(
         Some(window),
         Some("Password needed"),
         Some(&format!(
-            "\u{201c}{name}\u{201d} is protected. Pereplyot opens an unlocked copy kept in its cache \
-             for a day; your file is not changed.{}",
+            "\u{201c}{name}\u{201d} is protected. Pereplyot reads an unlocked copy kept in its cache \
+             while it is open; your file is not changed.{}",
             wrong.map(|w| format!("\n\n{w}")).unwrap_or_default()
         )),
     );
@@ -213,6 +253,9 @@ mod tests {
         assert_eq!(doc.pages().len(), original.pages().len());
         let text = doc.pages().get(0).unwrap().text().unwrap().all();
         assert!(!text.trim().is_empty());
-        let _ = std::fs::remove_file(out);
+        let extras = extras_for(&out).expect("extras written beside the copy");
+        assert_eq!(extras.labels.len(), original.pages().len() as usize);
+        forget(&out);
+        assert!(!out.exists() && extras_for(&out).is_none());
     }
 }

@@ -161,6 +161,10 @@ impl ReaderTab {
             .expect("a reader tab always has a window")
     }
 
+    pub fn window_handle(&self) -> HostWindow {
+        HostWindow(self.clone())
+    }
+
     /// Select this tab and raise its window.
     pub fn present(&self) {
         if let Some(view) = self.tab_view() {
@@ -628,4 +632,15 @@ pub fn toast_in_readers_with(message: &str, action: Option<ToastAction<'_>>) -> 
     }
     overlay.add_toast(toast);
     true
+}
+
+/// The window a tab is in, looked up each time it is asked for, so a dialog opened after the tab
+/// moved to another window belongs to that window and not to the one it was built in.
+#[derive(Clone)]
+pub struct HostWindow(ReaderTab);
+
+impl HostWindow {
+    pub fn get(&self) -> gtk4::Window {
+        self.0.host_window()
+    }
 }

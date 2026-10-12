@@ -369,16 +369,23 @@ pub fn show_pdf_reader(
     let (host, window_owned) = (host.clone(), window.clone());
     let (hash, title) = (pdf_hash.to_string(), title.to_string());
     unlock::with_readable_path(window, pdf_hash, blob, move |readable| {
-        if let Some(readable) = readable {
-            build_reader(
-                &host,
-                &window_owned,
-                &hash,
-                &readable,
-                &title,
-                start_page,
-                None,
-            );
+        let Some(readable) = readable else { return };
+        let built = build_reader(
+            &host,
+            &window_owned,
+            &hash,
+            &readable,
+            &title,
+            start_page,
+            None,
+        );
+        match built {
+            Some(built) => built
+                .reader
+                .borrow_mut()
+                .close_hooks
+                .push(Rc::new(move || unlock::forget(&readable))),
+            None => unlock::forget(&readable),
         }
     });
 }
@@ -566,7 +573,7 @@ fn build_reader(
         Some((_, tab, _)) => tab.clone(),
         None => crate::reader_host::open_reader_tab(window, title, &view),
     };
-    let reader_window = reader_tab.host_window();
+    let reader_window = reader_tab.window_handle();
     let quick_mark: QuickMarkSlot = Rc::new(RefCell::new(None));
     let reflow_popover: RebuildNotesCell = Rc::new(RefCell::new(None));
     if !is_pane {
@@ -649,7 +656,7 @@ fn build_reader(
             hash: pdf_hash.to_string(),
             title: title.to_string(),
         },
-        &reader_tab.host_window(),
+        &reader_tab.window_handle(),
     );
     {
         let store = reader.borrow().store.clone();

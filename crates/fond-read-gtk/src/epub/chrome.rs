@@ -14,7 +14,7 @@ pub(super) fn export_notes(
     reader: &Rc<RefCell<EpubReaderState>>,
     title: &str,
     hash: &str,
-    reader_window: &gtk4::Window,
+    reader_window: &crate::reader_host::HostWindow,
 ) {
     let (items, bookmarks, clips) = {
         let r = reader.borrow();
@@ -33,7 +33,15 @@ pub(super) fn export_notes(
             .collect();
         (items, bookmarks, clips)
     };
-    crate::export::show_export_dialog(host, reader_window, title, items, bookmarks, None, clips);
+    crate::export::show_export_dialog(
+        host,
+        &reader_window.get(),
+        title,
+        items,
+        bookmarks,
+        None,
+        clips,
+    );
 }
 
 /// Export items for an EPUB's annotations in reading order, each cited by its printed page when

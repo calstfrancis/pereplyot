@@ -6,7 +6,7 @@ pub(super) fn export_notes(
     host: &Rc<dyn ReaderHost>,
     reader: &Rc<RefCell<ReaderState>>,
     title: &str,
-    reader_window: &gtk4::Window,
+    reader_window: &crate::reader_host::HostWindow,
     hash: &str,
 ) {
     let (items, bookmarks, clips, path) = {
@@ -30,7 +30,7 @@ pub(super) fn export_notes(
     };
     crate::export::show_export_dialog(
         host,
-        reader_window,
+        &reader_window.get(),
         title,
         items,
         bookmarks,
@@ -55,7 +55,7 @@ pub(super) fn show_page_number_dialog(
     prev: &gtk4::Button,
     next: &gtk4::Button,
     bookmark_button: &gtk4::Button,
-    reader_window: &gtk4::Window,
+    reader_window: &crate::reader_host::HostWindow,
 ) {
     let (page, count) = {
         let r = reader.borrow();
@@ -67,7 +67,7 @@ pub(super) fn show_page_number_dialog(
     dialog.set_modal(true);
     // Modal against the reader window, not the main library window — see the same note on
     // `show_pdf_note_dialog`.
-    dialog.set_transient_for(Some(reader_window));
+    dialog.set_transient_for(Some(&reader_window.get()));
     dialog.set_default_size(380, -1);
 
     let view = adw::ToolbarView::new();
@@ -172,7 +172,7 @@ pub(super) fn show_page_number_dialog(
 pub(super) fn show_pdf_note_dialog(
     host: &Rc<dyn ReaderHost>,
     reader: &Rc<RefCell<ReaderState>>,
-    reader_window: &gtk4::Window,
+    reader_window: &crate::reader_host::HostWindow,
     at: Option<[f64; 2]>,
 ) {
     let current_page = reader.borrow().page as u32 + 1;
@@ -184,7 +184,7 @@ pub(super) fn show_pdf_note_dialog(
     // opening this from within the reader leaves the reader interactive but blocks the
     // library behind it, which is backwards and is what "the reader blocks the library"
     // reports were actually seeing (the reader's own top-level window was never modal).
-    dialog.set_transient_for(Some(reader_window));
+    dialog.set_transient_for(Some(&reader_window.get()));
     dialog.set_default_size(420, 260);
 
     let view = adw::ToolbarView::new();

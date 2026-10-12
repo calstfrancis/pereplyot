@@ -451,7 +451,7 @@ fn show_epub_reader_prepared(
     );
     crate::notebook_ui::bind_toggle(&notebook_toggle, &notebook_paned);
     let reader_tab = crate::reader_host::open_reader_tab(window, title, &view);
-    let reader_window = reader_tab.host_window();
+    let reader_window = reader_tab.window_handle();
     crate::register_reader(hash, &reader_tab);
     {
         let reader = reader.clone();

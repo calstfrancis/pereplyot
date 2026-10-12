@@ -317,7 +317,7 @@ pub(super) fn show_epub_selection_popover(
     selection: EpubSelection,
     host: &Rc<dyn ReaderHost>,
     apply_mark: &EpubMarkFn,
-    reader_window: &gtk4::Window,
+    reader_window: &crate::reader_host::HostWindow,
 ) {
     let popover = gtk4::Popover::new();
     popover.set_parent(view);
@@ -397,7 +397,7 @@ pub(super) fn show_epub_selection_popover(
             Rc::new(move || {
                 let apply_mark = apply_mark.clone();
                 let hex = hex.clone();
-                crate::note_dialog(&reader_window, Some(&quote), move |note| {
+                crate::note_dialog(&reader_window.get(), Some(&quote), move |note| {
                     apply_mark(
                         fond_annot::AnnotationKind::Highlight,
                         Some(hex.clone()),
@@ -527,7 +527,7 @@ pub(super) fn install_selection_popover(
     reader: &Rc<RefCell<EpubReaderState>>,
     web_view: &webkit6::WebView,
     apply_mark: &EpubMarkFn,
-    reader_window: &gtk4::Window,
+    reader_window: &crate::reader_host::HostWindow,
 ) {
     {
         let click = gtk4::GestureDrag::new();

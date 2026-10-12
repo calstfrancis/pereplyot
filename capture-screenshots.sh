@@ -2,7 +2,8 @@
 # capture-screenshots.sh — refresh screenshots/pereplyot-*.png (light and dark) from a throwaway
 # profile and an obviously fictional document ("Example Monograph"), never your own data.
 # Needs a built target/release/pereplyot (cargo build --release), Xvfb, xdotool and ImageMagick.
-# If ../calstfrancis.github.io exists the WebP copies are dropped into its images/ too.
+# If ../calstfrancis.github.io already shows Pereplyot (pereplyot.png at its root) the refreshed
+# PNG/WebP pair is dropped there too.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 BIN="${1:-$HERE/target/release/pereplyot}"
@@ -111,10 +112,10 @@ for scheme in ${SCHEMES:-default prefer-dark}; do
 done
 
 echo "wrote $(ls "$OUT"/pereplyot-*.png | wc -l) screenshots to $OUT"
-if [ -d "$WEBSITE_DIR/images" ]; then
-    for f in "$OUT"/pereplyot-main.png "$OUT"/pereplyot-main-dark.png; do
-        cp "$f" "$WEBSITE_DIR/images/"
-        convert "$f" -quality 80 "$WEBSITE_DIR/images/$(basename "${f%.png}").webp"
-    done
-    echo "also copied to $WEBSITE_DIR/images (review and commit there yourself)"
+if [ -e "$WEBSITE_DIR/pereplyot.png" ]; then
+    cp "$OUT/pereplyot-main.png" "$WEBSITE_DIR/pereplyot.png"
+    cp "$OUT/pereplyot-main-dark.png" "$WEBSITE_DIR/pereplyot-dark.png"
+    convert "$OUT/pereplyot-main.png" -quality 80 "$WEBSITE_DIR/pereplyot.webp"
+    convert "$OUT/pereplyot-main-dark.png" -quality 80 "$WEBSITE_DIR/pereplyot-dark.webp"
+    echo "also copied to $WEBSITE_DIR (review and commit there yourself)"
 fi

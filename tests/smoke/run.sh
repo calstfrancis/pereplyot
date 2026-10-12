@@ -927,7 +927,12 @@ run_locked_case() {
     geom="$(text_bands "$WORK/locked-0.png")"
     read -r x0 y0 x1 y1 <<<"$geom"
     check "locked: the right password shows the page text" "$([ -n "${y1:-}" ] && [ "${y1:-0}" -gt "${y0:-0}" ] && echo 1 || echo 0)" "(bands: $geom)"
-    check "locked: an unlocked copy is kept in the cache" "$([ "$(ls "$WORK"/h/cache/pereplyot/unlocked/*.pdf 2>/dev/null | wc -l)" = 1 ] && echo 1 || echo 0)"
+    check "locked: an unlocked copy is kept in the cache while it is open" "$([ "$(ls "$WORK"/h/cache/pereplyot/unlocked/*.pdf 2>/dev/null | wc -l)" = 1 ] && echo 1 || echo 0)"
+    check "locked: the outline and page numbers are kept beside it" "$([ "$(ls "$WORK"/h/cache/pereplyot/unlocked/*.json 2>/dev/null | wc -l)" = 1 ] && echo 1 || echo 0)"
+    xdotool windowfocus "$w" 2>/dev/null
+    xdotool key ctrl+w
+    sleep 2
+    check "locked: closing the tab removes the unlocked copy" "$([ "$(ls "$WORK"/h/cache/pereplyot/unlocked/ 2>/dev/null | wc -l)" = 0 ] && echo 1 || echo 0)"
     stop_app
 }
 

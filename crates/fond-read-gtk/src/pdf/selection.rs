@@ -228,7 +228,7 @@ pub(super) fn select_drag_text(
 pub(super) struct MarkCtx {
     pub(super) host: Rc<dyn ReaderHost>,
     pub(super) reader: Rc<RefCell<ReaderState>>,
-    pub(super) reader_window: gtk4::Window,
+    pub(super) reader_window: crate::reader_host::HostWindow,
 }
 
 /// Turn the current selection into a mark of `kind`, in `color` (hex). Consumes the selection.

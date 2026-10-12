@@ -13,7 +13,7 @@ pub(super) fn install_notes_sidebar(
     notes_scroll: &gtk4::ScrolledWindow,
     page_entry: &gtk4::Entry,
     doc: crate::notebook_ui::DocRef,
-    window: &gtk4::Window,
+    window: &crate::reader_host::HostWindow,
 ) -> (Rc<dyn Fn()>, Rc<Cell<bool>>) {
     let rebuild_notes_cell: RebuildNotesCell = Rc::new(RefCell::new(None));
     let quiet_notes = Rc::new(Cell::new(false));
@@ -190,7 +190,7 @@ pub(super) fn install_notes_sidebar(
                     let window = window.clone();
                     let host = host.clone();
                     crate::notebook_ui::connect::button(
-                        Rc::new(move || Some(window.clone().upcast::<gtk4::Window>())),
+                        Rc::new(move || Some(window.get())),
                         crate::notebook_ui::end_of(&doc, &page_label, &annotation),
                         Rc::new(move |m| host.notify(m)),
                     )

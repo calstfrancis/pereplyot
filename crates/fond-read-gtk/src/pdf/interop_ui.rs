@@ -88,7 +88,7 @@ fn save_copy(ui: &PdfUi) {
         .initial_name(format!("{} — annotated.pdf", ui.title))
         .build();
     let host = ui.host.clone();
-    let window = ui.reader_window.clone();
+    let window = ui.reader_window.get();
     dialog.save(Some(&window), gio::Cancellable::NONE, move |result| {
         let Some(out) = result.ok().and_then(|f| f.path()) else {
             return;

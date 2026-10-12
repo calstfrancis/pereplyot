@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.17.2] "Mended Spine" — 2026-10-12
+- **A password-protected PDF keeps its outline and printed page numbers.** The unlocked copy
+  Pereplyot reads used to lose both; they are now carried over from the original.
+- **The unlocked copy is removed when you close the tab**, instead of staying in the cache for a
+  day. Anything left behind by a crash is still swept after a day.
+- **Dialogs follow a tab that moved.** After dragging a tab into its own window, the dialogs it
+  opens (note, export, page numbering, command palette) now belong to the window the tab is in,
+  not the one it was opened in.
+- **Reading mode no longer widens the window.** Its typography button took the bar past the 1000 px
+  default width; it now replaces the Rotate button, which does nothing in Reading mode.
+- `capture-screenshots.sh` copies to the website only where the site already shows Pereplyot,
+  and at the path the site really uses.
+
 ## [0.17.1] "Steady Page" — 2026-10-12
 - **Reading mode no longer freezes a long book.** On a 600-page book the window froze for up to
   0.8 s while the text loaded and again at the first click or key press. The text view was wrapped

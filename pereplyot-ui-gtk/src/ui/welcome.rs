@@ -10,7 +10,7 @@ use crate::ui::Widgets;
 use std::rc::Rc;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub(crate) const RELEASE_NAME: &str = "Steady Page";
+pub(crate) const RELEASE_NAME: &str = "Mended Spine";
 
 /// Show the window if this version has not been seen: the welcome the first time ever, What's
 /// New after an update. Called when the launcher is actually shown.
@@ -102,12 +102,16 @@ pub fn show(parent: &impl IsA<gtk4::Window>, first_run: bool) {
 /// Updated at release time, with `RELEASE_NAME`.
 const NEW: &[(&str, &str)] = &[
     (
-        "Reading mode no longer freezes a long book",
-        "The window used to freeze for up to a second while a long book loaded and at the first click or key press. It stays responsive now.",
+        "Locked PDFs keep their contents and page numbers",
+        "A password-protected PDF used to lose its outline and printed page numbers once unlocked; they now come along, and the unlocked copy is deleted when you close the tab.",
     ),
     (
-        "The page counter follows your scrolling",
-        "In Reading mode the page number and chapter stayed on page 1 however far you scrolled; they now keep up.",
+        "Dialogs follow a tab that moved",
+        "After dragging a tab into its own window, its dialogs open over that window.",
+    ),
+    (
+        "Reading mode keeps the window narrow",
+        "The typography button replaces Rotate, which does nothing there, so the window no longer grows wider.",
     ),
 ];
 

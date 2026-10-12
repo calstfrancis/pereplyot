@@ -236,5 +236,5 @@ pub(super) fn open(ui: &PdfUi) {
             })]
         })
     };
-    commands::show(&ui.reader_window, list, Some(dynamic));
+    commands::show(&ui.reader_window.get(), list, Some(dynamic));
 }

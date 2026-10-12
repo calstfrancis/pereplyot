@@ -51,7 +51,21 @@ pub(super) fn open_pdf(
     let count = doc.pages().len();
     // Empty for most PDFs — outlines are the exception, not the rule — so the Contents
     // button below only appears when there's actually something to jump to.
-    let outline_entries = outline_of(&doc);
+    let extras = super::unlock::extras_for(blob);
+    let mut outline_entries = outline_of(&doc);
+    if outline_entries.is_empty() {
+        if let Some(extras) = &extras {
+            outline_entries = extras
+                .outline
+                .iter()
+                .map(|(title, depth, page)| fond_doc::PdfOutlineEntry {
+                    title: title.clone(),
+                    depth: *depth,
+                    page: *page,
+                })
+                .collect();
+        }
+    }
     // Likewise empty for most PDFs (no custom /PageLabels) — falls back to the raw page
     // number wherever it's displayed. When the PDF declares nothing of its own, fall back to
     // a manually-set `page_label_override` on the entry's note (see "Set page numbering…"
@@ -132,7 +146,9 @@ pub(super) fn open_pdf(
 
 /// The outline (bookmarks) flattened into document order with each entry's depth — the same
 /// thing `fond_doc::outline` reads, but from the document that is already open.
-fn outline_of(doc: &pdfium_render::prelude::PdfDocument<'_>) -> Vec<fond_doc::PdfOutlineEntry> {
+pub(super) fn outline_of(
+    doc: &pdfium_render::prelude::PdfDocument<'_>,
+) -> Vec<fond_doc::PdfOutlineEntry> {
     let mut out = Vec::new();
     for bookmark in doc.bookmarks().iter() {
         let Some(title) = bookmark.title() else {

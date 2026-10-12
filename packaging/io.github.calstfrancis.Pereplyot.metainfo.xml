@@ -59,6 +59,13 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.17.2" date="2026-10-12">
+      <description>
+        <p>0.17.2 "Mended Spine" — a password-protected PDF keeps its outline and page numbers and
+        its unlocked copy is deleted when you close the tab, dialogs follow a tab dragged into
+        another window, and Reading mode no longer widens the window.</p>
+      </description>
+    </release>
     <release version="0.17.1" date="2026-10-12">
       <description>
         <p>0.17.1 "Steady Page" — Reading mode stops freezing a long book while it loads and at the

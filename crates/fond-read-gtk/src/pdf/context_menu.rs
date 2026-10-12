@@ -22,7 +22,7 @@ pub(super) fn show_pdf_context_menu(
     parent: &gtk4::Picture,
     page: u16,
     geom: ClickGeometry,
-    reader_window: &gtk4::Window,
+    reader_window: &crate::reader_host::HostWindow,
 ) {
     let ClickGeometry {
         render_w,
@@ -221,7 +221,7 @@ pub(super) fn show_pdf_context_menu(
                         popover.popdown();
                         let host = host.clone();
                         crate::notebook_ui::connect::press(
-                            Some(window.upcast_ref::<gtk4::Window>()),
+                            Some(&window.get()),
                             end.clone(),
                             Rc::new(move |m| host.notify(m)),
                         );

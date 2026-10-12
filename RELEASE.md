@@ -1,4 +1,4 @@
-# Pereplyot v0.17.1 "Steady Page"
+# Pereplyot v0.17.2 "Mended Spine"
 
 Install via Flatpak:
 
@@ -18,13 +18,15 @@ flatpak update io.github.calstfrancis.Pereplyot
 
 ### What's new
 
-**Reading mode stays responsive on a long book.** On a 600-page book the window used to freeze for
-up to a second while the text loaded and again at the first click or key press. The text view was
-making GTK lay out the whole book at every redraw; that is fixed. A far jump forward on a very long
-book is smoother but still takes a couple of seconds.
+**Password-protected PDFs keep their outline and page numbers.** The unlocked copy Pereplyot reads
+used to lose the contents list and the printed page numbers; both now come along. The copy is also
+deleted when you close the tab rather than lingering in the cache.
 
-**The page counter follows your scrolling in Reading mode.** The page number and chapter used to
-stay on page 1 however far you scrolled.
+**Dialogs follow a tab that moved.** After a tab is dragged into its own window, its dialogs open
+over that window.
+
+**Reading mode no longer widens the window.** Its typography button replaces the Rotate button
+(which does nothing there), so the bar stays inside the default width.
 
 ---
 

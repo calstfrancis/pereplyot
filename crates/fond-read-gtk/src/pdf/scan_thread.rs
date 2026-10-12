@@ -50,7 +50,7 @@ fn read(path: &PathBuf) -> Option<Scan> {
     let doc = pdfium.load_pdf_from_file(path, None).ok()?;
     let count = doc.pages().len();
     let mut geoms = Vec::with_capacity(count as usize);
-    let mut labels = Vec::with_capacity(count as usize);
+    let mut labels: Vec<Option<String>> = Vec::with_capacity(count as usize);
     for index in 0..count {
         geoms.push(PageGeom::read_doc(&doc, index));
         labels.push(
@@ -59,6 +59,13 @@ fn read(path: &PathBuf) -> Option<Scan> {
                 .ok()
                 .and_then(|page| page.label().map(|s| s.to_string())),
         );
+    }
+    if labels.iter().all(|l| l.is_none()) {
+        if let Some(extras) = super::unlock::extras_for(path) {
+            if extras.labels.len() == labels.len() {
+                labels = extras.labels;
+            }
+        }
     }
     Some(Scan { geoms, labels })
 }
