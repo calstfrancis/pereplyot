@@ -153,7 +153,13 @@ fn ask(
                 };
                 match job {
                     Ok(Ok(Some(copy))) => open(Some(copy)),
-                    Ok(Ok(None)) => ask(&window, hash, path, Some("That password was not right."), open),
+                    Ok(Ok(None)) => ask(
+                        &window,
+                        hash,
+                        path,
+                        Some("That password was not right."),
+                        open,
+                    ),
                     Ok(Err(e)) => {
                         gtk4::AlertDialog::builder()
                             .message("Could not unlock PDF")
@@ -181,15 +187,29 @@ mod tests {
 
     #[test]
     fn a_protected_pdf_asks_for_a_password_and_the_right_one_opens_it() {
-        assert!(matches!(attempt(&locked(), None), Ok(Attempt::NeedsPassword)));
-        assert!(matches!(attempt(&locked(), Some("nope")), Ok(Attempt::NeedsPassword)));
-        assert!(matches!(attempt(&locked(), Some("secret")), Ok(Attempt::Open)));
+        let Ok(pdfium) = crate::pdfium::get() else {
+            eprintln!("no PDFium library; skipping");
+            return;
+        };
+        assert!(matches!(
+            attempt(&locked(), None),
+            Ok(Attempt::NeedsPassword)
+        ));
+        assert!(matches!(
+            attempt(&locked(), Some("nope")),
+            Ok(Attempt::NeedsPassword)
+        ));
+        assert!(matches!(
+            attempt(&locked(), Some("secret")),
+            Ok(Attempt::Open)
+        ));
 
         let out = save_unlocked(&locked(), "unit-test-hash", "secret").unwrap();
         assert!(matches!(attempt(&out, None), Ok(Attempt::Open)));
-        let pdfium = crate::pdfium::get().unwrap();
         let doc = pdfium.load_pdf_from_file(&out, None).unwrap();
-        let original = pdfium.load_pdf_from_file(&locked(), Some("secret")).unwrap();
+        let original = pdfium
+            .load_pdf_from_file(&locked(), Some("secret"))
+            .unwrap();
         assert_eq!(doc.pages().len(), original.pages().len());
         let text = doc.pages().get(0).unwrap().text().unwrap().all();
         assert!(!text.trim().is_empty());

@@ -33,10 +33,10 @@ mod keys;
 mod mark_edit;
 mod mark_layer;
 mod open_pdf;
-mod unlock;
 mod scrollbar_ticks;
 mod shapes;
 mod tiles;
+mod unlock;
 use open_pdf::OpenedPdf;
 mod render_actions;
 use render_actions::*;
@@ -370,7 +370,15 @@ pub fn show_pdf_reader(
     let (hash, title) = (pdf_hash.to_string(), title.to_string());
     unlock::with_readable_path(window, pdf_hash, blob, move |readable| {
         if let Some(readable) = readable {
-            build_reader(&host, &window_owned, &hash, &readable, &title, start_page, None);
+            build_reader(
+                &host,
+                &window_owned,
+                &hash,
+                &readable,
+                &title,
+                start_page,
+                None,
+            );
         }
     });
 }
