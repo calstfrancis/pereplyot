@@ -1,4 +1,4 @@
-# Pereplyot v0.16.3 "Quiet Hands"
+# Pereplyot v0.17.0 "Turned Key"
 
 Install via Flatpak:
 
@@ -18,10 +18,12 @@ flatpak update io.github.calstfrancis.Pereplyot
 
 ### What's new
 
-**Markdown notes save in the background.** The Markdown notes folder is now written on a worker
-thread, newest version only, so an edit never waits for the disk or a synced folder. When a
-document's title changes, the notes file under the old title is removed instead of being left
-behind; only files that carry that document's own id are ever removed.
+**Password-protected PDFs open.** Pereplyot asks for the password (and again if it was wrong),
+then reads an unlocked copy it keeps in its cache for a day. Your file is not changed and your
+notes stay with it. The copy keeps the pages but not the original's outline or printed page numbers.
+
+**Drag a tab out into its own window.** Dropping a tab outside the tab bar used to snap it back
+with an error in the log; it now opens in a window of its own. The pinned Library tab stays put.
 
 ---
 

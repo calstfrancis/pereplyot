@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.17.0] "Turned Key" — 2026-10-12
 - **Password-protected PDFs open.** Pereplyot asks for the password (and again if it was wrong),
   then reads an unlocked copy it keeps in its cache for a day; your file is not changed. Notes
   stay under the original file's identity. The copy carries the pages but not the outline or the

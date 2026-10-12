@@ -10,7 +10,7 @@ use crate::ui::Widgets;
 use std::rc::Rc;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub(crate) const RELEASE_NAME: &str = "Quiet Hands";
+pub(crate) const RELEASE_NAME: &str = "Turned Key";
 
 /// Show the window if this version has not been seen: the welcome the first time ever, What's
 /// New after an update. Called when the launcher is actually shown.
@@ -102,8 +102,12 @@ pub fn show(parent: &impl IsA<gtk4::Window>, first_run: bool) {
 /// Updated at release time, with `RELEASE_NAME`.
 const NEW: &[(&str, &str)] = &[
     (
-        "Markdown notes save in the background",
-        "Editing never waits for the notes folder to be written, and a renamed document no longer leaves its old notes file behind.",
+        "Password-protected PDFs open",
+        "Pereplyot asks for the password and reads an unlocked copy it keeps in its cache for a day; your file is not changed.",
+    ),
+    (
+        "Drag a tab out into its own window",
+        "Drop a tab outside the tab bar and it becomes a window of its own; the Library tab stays put.",
     ),
 ];
 

@@ -59,6 +59,13 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.17.0" date="2026-10-12">
+      <description>
+        <p>0.17.0 "Turned Key" — password-protected PDFs open (Pereplyot asks for the password and
+        reads an unlocked copy kept in its cache for a day), and a tab dragged out of the tab bar
+        becomes its own window instead of snapping back.</p>
+      </description>
+    </release>
     <release version="0.16.3" date="2026-10-12">
       <description>
         <p>0.16.3 "Quiet Hands" — the Markdown notes folder is written on a background thread, so
