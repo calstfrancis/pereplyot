@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.15.1] "Tight Binding" — 2026-10-12
 Found by an adversarial pass (hostile files, random-input testing, fuzzing, code review):
 - **Fixed a hard crash in Reading mode.** A scan with degenerate coordinates (NaN or infinite
   boxes) could send the page layout into unbounded recursion and take the whole app down.

@@ -59,6 +59,16 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.15.1" date="2026-10-12">
+      <description>
+        <p>0.15.1 "Tight Binding" — a hardening release after an adversarial test pass. Fixes a
+        crash in Reading mode on scans with broken coordinates; stops EPUBs reaching the network or
+        starting the browser unprompted; makes Open With work for several files and for relative
+        paths; keeps a longer History and sets a damaged one aside; stops the Markdown notes folder
+        overwriting files that are not its own; makes library thumbnails render in the background;
+        and adds Ctrl+W and Ctrl+1 for tabs.</p>
+      </description>
+    </release>
     <release version="0.15.0" date="2026-10-10">
       <description>
         <p>0.15.0 "Common Room" — the library is now the first tab of the reader window, pinned and

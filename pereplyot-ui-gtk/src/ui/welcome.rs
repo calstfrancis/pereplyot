@@ -10,7 +10,7 @@ use crate::ui::Widgets;
 use std::rc::Rc;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub(crate) const RELEASE_NAME: &str = "Common Room";
+pub(crate) const RELEASE_NAME: &str = "Tight Binding";
 
 /// Show the window if this version has not been seen: the welcome the first time ever, What's
 /// New after an update. Called when the launcher is actually shown.
@@ -102,16 +102,20 @@ pub fn show(parent: &impl IsA<gtk4::Window>, first_run: bool) {
 /// Updated at release time, with `RELEASE_NAME`.
 const NEW: &[(&str, &str)] = &[
     (
-        "One window",
-        "The library is now the first tab of the reader window — pinned and always there — so it can't get lost behind a book. Opening a book adds a tab beside it.",
+        "A crash fixed",
+        "A scan with broken page coordinates could crash Reading mode; it can't any more.",
     ),
     (
-        "Fixed: a crash",
-        "Adding a document to the Library with the + button in History no longer closes Pereplyot.",
+        "EPUBs stay offline",
+        "A book can no longer fetch things from the web or start your browser by itself; only a link you click opens outside.",
     ),
     (
-        "Your place is kept",
-        "Switching to another tab and back leaves a book where you left it.",
+        "Open several files at once",
+        "Select a few files in your file manager and Open With Pereplyot opens all of them, and a relative path works when it is already running.",
+    ),
+    (
+        "Safer notes and a longer history",
+        "The Markdown folder never overwrites a file that isn't its own, History keeps 1,000 documents, and library thumbnails no longer freeze the app. Ctrl+W closes a tab and Ctrl+1 goes to the Library.",
     ),
 ];
 

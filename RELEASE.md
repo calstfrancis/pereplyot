@@ -1,4 +1,4 @@
-# Pereplyot v0.15.0 "Common Room"
+# Pereplyot v0.15.1 "Tight Binding"
 
 Install via Flatpak:
 
@@ -18,16 +18,28 @@ flatpak update io.github.calstfrancis.Pereplyot
 
 ### What's new
 
-**One window.** The library used to be a window of its own that disappeared behind the reader. It
-is now the first tab of the reader window — pinned, always visible — with Library, History, Notes,
-Notebooks and Search inside it. Opening a book adds a tab beside it, a click on Library takes you
-home, and closing the last book lands you there. A book can still be popped out into a window of
-its own, and opening a file from another app goes straight to the book.
+A hardening release, from a deliberate attempt to break Pereplyot with hostile files, random input and
+fuzzing.
 
-**Fixed: a crash.** Adding a document to the Library with the + button in History closed
-Pereplyot every time.
+**A crash fixed.** A scanned book whose page boxes were broken could send Reading mode into endless
+recursion and take the whole app down.
 
-**Your place is kept.** Switching to another tab and back leaves a book where you left it.
+**EPUBs stay offline.** A book's remote images, stylesheets and frames used to be fetched, telling
+whoever hosted them that you had opened it, and a frame or redirect could start your browser on its own.
+Neither happens now; only a link you click opens outside. An EPUB that would unpack to more than 4 GB
+is refused.
+
+**Open several files at once.** Selecting a few files and choosing Open With Pereplyot opens all of
+them (it used to open none), and a relative path works even when Pereplyot is already running.
+
+**Safer data.** History keeps 1,000 documents instead of 50, so notes and links on older books stay
+reachable, and a damaged history file is set aside rather than reset. The Markdown notes folder never
+overwrites a file that isn't its own. Closing a book no longer quits the app while you are using the
+Library.
+
+**Smoother.** Library thumbnails are made in the background, very large PDFs are no longer read into
+memory whole, Ctrl+W closes a tab and Ctrl+1 goes to the Library, and the window title names the book
+on screen.
 
 ---
 
