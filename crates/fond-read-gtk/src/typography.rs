@@ -234,7 +234,7 @@ impl Typography {
         css.push('}');
         if let Some((bg, fg, _)) = self.colours() {
             css.push_str(&format!(
-                " textview, textview text, #fond-reflow-scroll, #fond-reflow-clamp, \
+                " textview, textview text, #fond-reflow-scroll, \
                  #fond-reflow-margin {{ background-color: {bg}; color: {fg}; }}"
             ));
         }

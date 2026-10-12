@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+- **Reading mode no longer freezes a long book.** On a 600-page book the window froze for up to
+  0.8 s while the text loaded and again at the first click or key press. The text view was wrapped
+  in a way that made GTK lay out the whole book at every redraw, and the margin column re-measured
+  every page label each time; both are fixed. A far jump forward over text not yet laid out is
+  smoother but still takes a couple of seconds on a very long book.
+- **The page counter and chapter follow your scrolling in Reading mode.** They stayed on page 1
+  (and "Chapter 1") however far you scrolled.
+
 ## [0.17.0] "Turned Key" — 2026-10-12
 - **Password-protected PDFs open.** Pereplyot asks for the password (and again if it was wrong),
   then reads an unlocked copy it keeps in its cache for a day; your file is not changed. Notes

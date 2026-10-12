@@ -121,26 +121,44 @@ pub(super) fn install_text_view(ui: &PdfUi) {
                         let prev = prev.clone();
                         let next = next.clone();
                         let bookmark_button = bookmark_button.clone();
+                        let pending = Rc::new(std::cell::Cell::new(false));
                         view.scroll.vadjustment().connect_value_changed(move |_| {
-                            if view_for_scroll.loaded_pages() == 0 {
+                            if pending.replace(true) {
                                 return;
                             }
-                            let page = view_for_scroll.visible_page();
-                            let mut r = reader.borrow_mut();
-                            if r.page != page && r.text_goto.is_some() {
-                                r.page = page;
-                                update_page_display(
-                                    &page_entry,
-                                    &page_of_label,
-                                    &prev,
-                                    &next,
-                                    &bookmark_button,
-                                    page,
-                                    r.count,
-                                    &r.page_labels,
-                                    &r.bookmarks,
-                                );
-                            }
+                            let pending = pending.clone();
+                            let reader = reader.clone();
+                            let view_for_scroll = view_for_scroll.clone();
+                            let page_entry = page_entry.clone();
+                            let page_of_label = page_of_label.clone();
+                            let prev = prev.clone();
+                            let next = next.clone();
+                            let bookmark_button = bookmark_button.clone();
+                            glib::timeout_add_local_once(
+                                std::time::Duration::from_millis(120),
+                                move || {
+                                    pending.set(false);
+                                    if view_for_scroll.loaded_pages() == 0 {
+                                        return;
+                                    }
+                                    let page = view_for_scroll.visible_page();
+                                    let mut r = reader.borrow_mut();
+                                    if r.page != page && r.text_goto.is_some() {
+                                        r.page = page;
+                                        update_page_display(
+                                            &page_entry,
+                                            &page_of_label,
+                                            &prev,
+                                            &next,
+                                            &bookmark_button,
+                                            page,
+                                            r.count,
+                                            &r.page_labels,
+                                            &r.bookmarks,
+                                        );
+                                    }
+                                },
+                            );
                         });
                     }
                     // A selection in the text becomes the thing the 1–4 keys and the popover act

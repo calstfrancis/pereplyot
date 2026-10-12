@@ -93,7 +93,8 @@ struct MarkerRec {
 pub struct ReadingView {
     pub scroll: gtk4::ScrolledWindow,
     pub text_view: gtk4::TextView,
-    clamp: libadwaita::Clamp,
+    /// Width of the column of text with its two margins, which is centred in a wider window.
+    column_width: Cell<i32>,
     left: Rc<MarginColumn>,
     right: Rc<MarginColumn>,
     right_width: Cell<i32>,
@@ -145,21 +146,17 @@ impl ReadingView {
             "Document text. Select with Shift and the arrow keys, then press 1 to 4 to mark it.",
         )]);
 
-        let left = MarginColumn::new(&text_view, LEFT_WIDTH);
-        let right = MarginColumn::new(&text_view, 230);
+        let left = MarginColumn::new(&text_view, LEFT_WIDTH, true);
+        let right = MarginColumn::new(&text_view, 230, false);
         text_view.set_gutter(gtk4::TextWindowType::Left, Some(&left.fixed));
         text_view.set_gutter(gtk4::TextWindowType::Right, Some(&right.fixed));
 
-        let clamp = libadwaita::Clamp::new();
-        clamp.set_child(Some(&text_view));
-        clamp.set_halign(gtk4::Align::Fill);
         let scroll = gtk4::ScrolledWindow::new();
         scroll.set_vexpand(true);
         scroll.set_hexpand(true);
-        scroll.set_child(Some(&clamp));
+        scroll.set_child(Some(&text_view));
 
         scroll.set_widget_name("fond-reflow-scroll");
-        clamp.set_widget_name("fond-reflow-clamp");
         left.fixed.set_widget_name("fond-reflow-margin");
         right.fixed.set_widget_name("fond-reflow-margin");
 
@@ -168,7 +165,6 @@ impl ReadingView {
         for widget in [
             text_view.upcast_ref::<gtk4::Widget>(),
             scroll.upcast_ref(),
-            clamp.upcast_ref(),
             left.fixed.upcast_ref(),
             right.fixed.upcast_ref(),
         ] {
@@ -231,7 +227,7 @@ impl ReadingView {
         let view = Rc::new(ReadingView {
             scroll,
             text_view,
-            clamp,
+            column_width: Cell::new(i32::MAX),
             left,
             right,
             right_width: Cell::new(230),
@@ -294,14 +290,6 @@ impl ReadingView {
                 }
             }
         });
-        self.scroll.vadjustment().connect_changed({
-            let this = this.clone();
-            move |_| {
-                if let Some(v) = this.upgrade() {
-                    v.schedule_relayout();
-                }
-            }
-        });
         let last_size = Cell::new((0, 0));
         self.text_view.add_tick_callback({
             let this = this.clone();
@@ -310,6 +298,7 @@ impl ReadingView {
                 if size != last_size.get() {
                     last_size.set(size);
                     if let Some(v) = this.upgrade() {
+                        v.centre();
                         v.schedule_relayout();
                     }
                 }
@@ -351,6 +340,15 @@ impl ReadingView {
             this.relayout_pending.set(false);
             this.relayout_margins();
         });
+    }
+
+    /// Keep the column centred, with equal empty space either side of the margins. The text view
+    /// has to be the scroll window's own child — inside another widget GTK would think all of a
+    /// long book is on screen and lay all of it out at the first redraw.
+    fn centre(&self) {
+        let spare = (self.text_view.width() - self.column_width.get()).max(0);
+        self.left.set_pad(spare / 2);
+        self.right.set_pad(spare - spare / 2);
     }
 
     fn relayout_margins(&self) {
@@ -461,8 +459,8 @@ impl ReadingView {
         self.right_width.set(note_width);
         self.right.set_width(note_width);
         let total = LEFT_WIDTH + 2 * (t.margin as i32 + 8) + t.width as i32 + note_width;
-        self.clamp.set_maximum_size(total);
-        self.clamp.set_tightening_threshold(total);
+        self.column_width.set(total);
+        self.centre();
         self.left.refresh();
         self.right.refresh();
     }
@@ -783,10 +781,15 @@ impl ReadingView {
         };
         let buffer = self.text_view.buffer();
         let iter = buffer.iter_at_offset(offset);
-        let mark = buffer.create_mark(None, &iter, true);
-        self.text_view.scroll_to_mark(&mark, 0.0, true, 0.0, 0.0);
+        if offset == 0 {
+            self.scroll.vadjustment().set_value(0.0);
+            buffer.place_cursor(&iter);
+            return;
+        }
+        let adj = self.scroll.vadjustment();
+        let y = self.text_view.iter_location(&iter).y() as f64;
+        adj.set_value(y.min(adj.upper() - adj.page_size()).max(0.0));
         buffer.place_cursor(&iter);
-        buffer.delete_mark(&mark);
     }
 
     pub fn page_at_offset(&self, offset: i32) -> u16 {
@@ -801,9 +804,10 @@ impl ReadingView {
 
     /// The page whose text is at the top of the viewport.
     pub fn visible_page(&self) -> u16 {
+        let top = self.scroll.vadjustment().value() as i32 + 4;
         let iter = self
             .text_view
-            .iter_at_location(0, 0)
+            .iter_at_location(self.text_view.left_margin() + 4, top)
             .unwrap_or_else(|| self.text_view.buffer().start_iter());
         self.page_at_offset(iter.offset())
     }

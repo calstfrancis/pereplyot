@@ -28,12 +28,15 @@ pub struct MarginColumn {
     pub fixed: gtk4::Fixed,
     view: gtk4::TextView,
     width: Cell<i32>,
+    /// Empty space added on the outer side, so a column narrower than the window can be centred.
+    pad: Cell<i32>,
+    pad_before: bool,
     items: RefCell<Vec<MarginItem>>,
     shown: RefCell<HashMap<usize, gtk4::Widget>>,
 }
 
 impl MarginColumn {
-    pub fn new(view: &gtk4::TextView, width: i32) -> Rc<MarginColumn> {
+    pub fn new(view: &gtk4::TextView, width: i32, pad_before: bool) -> Rc<MarginColumn> {
         let fixed = gtk4::Fixed::new();
         fixed.set_size_request(width, -1);
         fixed.set_overflow(gtk4::Overflow::Hidden);
@@ -41,6 +44,8 @@ impl MarginColumn {
             fixed,
             view: view.clone(),
             width: Cell::new(width),
+            pad: Cell::new(0),
+            pad_before,
             items: RefCell::new(Vec::new()),
             shown: RefCell::new(HashMap::new()),
         })
@@ -49,7 +54,22 @@ impl MarginColumn {
     /// Change the column's width; the items are rebuilt at the next `refresh`.
     pub fn set_width(&self, width: i32) {
         self.width.set(width);
-        self.fixed.set_size_request(width, -1);
+        self.fixed.set_size_request(width + self.pad.get(), -1);
+    }
+
+    /// Reserve `pad` pixels of empty space on the column's outer side.
+    pub fn set_pad(&self, pad: i32) {
+        if self.pad.replace(pad) != pad {
+            self.fixed.set_size_request(self.width.get() + pad, -1);
+        }
+    }
+
+    fn lead(&self) -> f64 {
+        if self.pad_before {
+            self.pad.get() as f64
+        } else {
+            0.0
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -106,8 +126,9 @@ impl MarginColumn {
         self.view.buffer().iter_at_mark(&item.mark).offset()
     }
 
-    /// The buffer offsets of the text a screen above and below the viewport. Items are found by
-    /// offset, which costs nothing, so far-away text never has to be laid out just to place them.
+    /// The buffer offsets of the text in the viewport. Items are found by offset, which costs
+    /// nothing; asking the view where a point beyond the viewport is makes GTK lay the text out
+    /// up to it, which on a long book is slow and changes the scroll range under us.
     fn visible_offsets(&self) -> Option<(i32, i32)> {
         let scrolled = self
             .view
@@ -116,13 +137,14 @@ impl MarginColumn {
             .ok()?;
         let adj = scrolled.vadjustment();
         let (top, height) = (adj.value(), adj.page_size().max(1.0));
+        let x = self.view.left_margin() + 4;
         let at = |y: f64| {
             self.view
-                .iter_at_location(0, y.max(0.0) as i32)
+                .iter_at_location(x, y.max(0.0) as i32)
                 .map(|i| i.offset())
         };
-        let from = at(top - height).unwrap_or(0);
-        let to = at(top + 2.0 * height).unwrap_or(i32::MAX);
+        let from = at(top).unwrap_or(0);
+        let to = at(top + height).unwrap_or(i32::MAX);
         Some((from, to))
     }
 
@@ -154,13 +176,13 @@ impl MarginColumn {
                 .or_insert_with(|| {
                     let w = (item.build)(item.expanded.get());
                     w.set_size_request(self.width.get(), -1);
-                    self.fixed.put(&w, 0.0, anchor);
+                    self.fixed.put(&w, self.lead(), anchor);
                     w
                 })
                 .clone();
             let (_, natural, _, _) = widget.measure(gtk4::Orientation::Vertical, self.width.get());
             let y = anchor.max(bottom + GAP);
-            self.fixed.move_(&widget, 0.0, y);
+            self.fixed.move_(&widget, self.lead(), y);
             bottom = y + natural as f64;
             keep.push(index);
         }

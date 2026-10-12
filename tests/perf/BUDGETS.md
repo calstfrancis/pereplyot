@@ -95,15 +95,21 @@ render thread loads it too) and GTK's first frame under the Cairo renderer in Xv
 Both happen before the window can be shown, so getting under 16 ms would mean showing a blank
 window first and reading the geometry afterwards.
 
-## Reading mode: the first interaction on a long book — 2026-10-10 (not fixed)
+## Reading mode: the first interaction on a long book — 2026-10-12 (mostly fixed)
 
-On `book-600`, the first click in the Reading text, and a far jump (Ctrl+End, or a page number
-typed in the entry), each freeze the window for 0.8–1.5 s (`PEREPLYOT_PERF=1` stalls of 785 and
-1500 ms); later clicks cost nothing. A debug-build backtrace taken during the stall is entirely
-inside GTK's size allocation of the text view, in HarfBuzz shaping: GTK lays out the whole 600-page
-buffer on first need. These did **not** help, and were backed out: scrolling from a line's
-position instead of `scroll_to_mark`, finding the visible page and the margin items by position
-instead of `iter_at_location`, removing the text view's tick callback (a candidate for starving
-GTK's low-priority background layout), and disabling the margin columns entirely. A real fix means
-windowing the text (only the pages near the view in the buffer), which touches every
-offset-keyed feature (marks, notes, margins, search).
+Cause: the Reading text view sat inside an `adw::Clamp` inside the scroll window, so GTK treated
+the whole 600-page buffer as on screen and laid all of it out (4,399 `pango_layout_set_text`
+calls) at the first redraw, and again at later ones; the margin column also asked GTK where points
+a screen above and below the viewport were, and a mistaken x of 0 made that fail, so every
+relayout walked and measured every page label. The text view is now the scroll window's own child
+(the column is centred with padding on the margin columns), and the margin column asks only about
+the viewport.
+
+On `book-600` (`/tmp/jump.sh`-style run, release build): no stall over 100 ms while the book
+loads or on the first mouse move, key press or click (was 0.5–0.85 s, six times while loading and
+at the first interaction). A far jump back over text already laid out is ~0.2 s in total. A far
+jump forward over text GTK has not laid out yet is still ~2.5 s, in 15 slices of 130–220 ms
+instead of one 0.85 s freeze: the window answers between slices, but GTK still has to lay out
+everything above the target. Windowing the text (only the pages near the view in the buffer) is
+the real fix for that and still touches every offset-keyed feature.
+
