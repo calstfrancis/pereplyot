@@ -931,6 +931,38 @@ run_locked_case() {
     stop_app
 }
 
+run_dragout_case() {
+    TABBAR_OK=PEREPLYOT_TABBAR_SHOWN=1 start_app "$FX/plain.pdf"
+    local w
+    w="$(reader_window)" || { check "dragout: window opens" 0; stop_app; return; }
+    sleep 4
+    xdotool windowfocus "$w" 2>/dev/null
+    xdotool mousemove 500 67 mousedown 1
+    for p in 505 520 540 560 580; do xdotool mousemove "$p" $((67 + (p - 500) * 6)); sleep 0.15; done
+    xdotool mouseup 1
+    sleep 3
+    screenshot "$WORK/drag-1.png"
+    check "dragout: dragging a tab out raises no critical" "$([ "$(grep -c 'CRITICAL' "$WORK/app.log")" = 0 ] && echo 1 || echo 0)" "($(grep CRITICAL "$WORK/app.log" | head -2))"
+    check "dragout: the app is still running" "$(kill -0 -- "-$APP_PGID" 2>/dev/null && echo 1 || echo 0)"
+    stop_app
+}
+
+run_dragout_library_case() {
+    TABBAR_OK=PEREPLYOT_TABBAR_SHOWN=1 start_app "$FX/plain.pdf"
+    local w
+    w="$(reader_window)" || { check "dragout-lib: window opens" 0; stop_app; return; }
+    sleep 4
+    xdotool windowfocus "$w" 2>/dev/null
+    xdotool mousemove 28 67 mousedown 1
+    for p in 33 50 80 120 160; do xdotool mousemove "$p" $((67 + p * 4)); sleep 0.15; done
+    xdotool mouseup 1
+    sleep 3
+    screenshot "$WORK/dragl-1.png"
+    check "dragout-lib: dragging the Library tab out raises no critical" "$([ "$(grep -c 'CRITICAL' "$WORK/app.log")" = 0 ] && echo 1 || echo 0)" "($(grep CRITICAL "$WORK/app.log" | head -2))"
+    check "dragout-lib: the app is still running" "$(kill -0 -- "-$APP_PGID" 2>/dev/null && echo 1 || echo 0)"
+    stop_app
+}
+
 run_mdsync_case() {
     mkdir -p "$WORK/h/config/pereplyot" "$WORK/mdnotes"
     start_app "$FX/plain.pdf" keep
@@ -1431,6 +1463,8 @@ want epubnet && run_epubnet_case
 want multi && run_multi_case
 want mdsync && run_mdsync_case
 want locked && run_locked_case
+want dragout && run_dragout_case
+want dragoutlib && run_dragout_library_case
 want patterns && run_patterns_case
 
 echo

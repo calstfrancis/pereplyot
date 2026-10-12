@@ -5,12 +5,9 @@
 //! independent reader window was a guaranteed crash the moment either reader closed, and
 //! even with that fixed, a window per open document doesn't scale past two or three. A tab
 //! can still be popped out to its own standalone window via [`ReaderTab::pop_out`] (wired to
-//! a headerbar button by each reader) — deliberately the *only* way to detach a tab, rather
-//! than also handling `AdwTabView`'s free-form drag-out-of-the-bar gesture: that gesture
-//! moves the page to a brand new `TabView` GTK builds on the fly, which this module has no
-//! hook into, so a `ReaderTab` handle (and the `pdf_hash`/`hash`-keyed dedup registry in
-//! `lib.rs` built on top of it) would go stale the moment a drag-out happened instead of
-//! only on an explicit, fully-tracked `pop_out` call.
+//! a headerbar button by each reader), or dragged out of the tab bar: either way the page moves
+//! to a new host window, and a `ReaderTab` handle (and the `pdf_hash`/`hash`-keyed registry in
+//! `lib.rs`) finds the page's current window and tab view from the page itself.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -139,37 +136,55 @@ pub fn host_footer_widget() -> Option<gtk4::Widget> {
 /// shared host window or one popped out on its own.
 #[derive(Clone)]
 pub struct ReaderTab {
-    pub host_window: gtk4::Window,
-    tab_view: adw::TabView,
     page: adw::TabPage,
 }
 
 impl ReaderTab {
+    fn new(page: adw::TabPage) -> Self {
+        Self { page }
+    }
+
+    fn tab_view(&self) -> Option<adw::TabView> {
+        self.page
+            .child()
+            .ancestor(adw::TabView::static_type())
+            .and_then(|w| w.downcast().ok())
+    }
+
+    /// The window this tab is in right now.
+    pub fn host_window(&self) -> gtk4::Window {
+        self.page
+            .child()
+            .root()
+            .and_then(|r| r.downcast().ok())
+            .or_else(|| MAIN_HOST.with(|c| c.borrow().as_ref().map(|(h, _)| h.clone())))
+            .expect("a reader tab always has a window")
+    }
+
     /// Select this tab and raise its window.
     pub fn present(&self) {
-        self.tab_view.set_selected_page(&self.page);
-        self.host_window.present();
+        if let Some(view) = self.tab_view() {
+            view.set_selected_page(&self.page);
+        }
+        self.host_window().present();
     }
 
     /// Close just this tab (confirms immediately — there is nothing here to confirm).
     pub fn close(&self) {
-        self.tab_view.close_page(&self.page);
+        if let Some(view) = self.tab_view() {
+            view.close_page(&self.page);
+        }
     }
 
     /// Move this tab out of its current window into a brand-new standalone one — the
-    /// explicit counterpart to dragging a tab out of the bar. Returns the new handle; the
-    /// old one still refers to the same page but is no longer useful for `present`/`close`
-    /// once the transfer completes (the page's tab view has changed).
+    /// explicit counterpart to dragging a tab out of the bar.
     pub fn pop_out(&self, parent: &adw::ApplicationWindow) -> ReaderTab {
         let (new_host, new_view) = new_tab_view(parent);
-        self.tab_view.transfer_page(&self.page, &new_view, 0);
-        let new_host: gtk4::Window = new_host.upcast();
-        new_host.present();
-        ReaderTab {
-            host_window: new_host,
-            tab_view: new_view,
-            page: self.page.clone(),
+        if let Some(view) = self.tab_view() {
+            view.transfer_page(&self.page, &new_view, 0);
         }
+        new_host.present();
+        self.clone()
     }
 }
 
@@ -191,7 +206,7 @@ fn toggle_fullscreen(host: &gtk4::Window, button: &gtk4::Button) {
 /// Build a reader host window: an `adw::Window` with a header bar, a tab bar, and an
 /// `adw::TabView` filling the rest — used both for the shared default window and for every
 /// popped-out one, so both look and behave identically.
-fn new_tab_view(parent: &adw::ApplicationWindow) -> (adw::Window, adw::TabView) {
+fn new_tab_view(parent: &impl IsA<gtk4::Window>) -> (adw::Window, adw::TabView) {
     let host = adw::Window::new();
     host.set_title(Some("Reader"));
     host.set_transient_for(Some(parent));
@@ -362,8 +377,18 @@ fn wire_host(host: &gtk4::Window, set_content: impl FnOnce(&adw::ToolbarView)) -
     toolbar.set_content(Some(&toasts));
     set_content(&toolbar);
 
-    // No `create-window` handler: dragging a tab out of the bar is left as GTK's default
-    // (refused, snaps back) rather than spawning a window — see the module doc for why.
+    // Dropping a tab outside every tab bar asks for a window to put it in; without a handler
+    // libadwaita logs a critical and refuses. `ReaderTab` finds its window from its page, so
+    // the handle stays right after the move.
+    {
+        let host_weak = host.downgrade();
+        tab_view.connect_create_window(move |_| {
+            let parent = host_weak.upgrade()?;
+            let (new_host, new_view) = new_tab_view(&parent);
+            new_host.present();
+            Some(new_view)
+        });
+    }
 
     // The last tab leaving this view (closed, or transferred out via drag/`pop_out`) closes
     // the now-empty window instead of leaving a stray blank "Reader" window behind.
@@ -468,11 +493,7 @@ pub fn install_home(
             }
         });
     }
-    let tab = ReaderTab {
-        host_window: host,
-        tab_view,
-        page,
-    };
+    let tab = ReaderTab::new(page);
     set_tab_header(&tab, start, title, end);
 }
 
@@ -487,7 +508,7 @@ pub fn open_reader_tab(
     title: &str,
     content: &impl IsA<gtk4::Widget>,
 ) -> ReaderTab {
-    let (host_window, tab_view) = MAIN_HOST.with(|cell| {
+    let (_, tab_view) = MAIN_HOST.with(|cell| {
         let mut slot = cell.borrow_mut();
         if let Some(existing) = slot.clone() {
             return existing;
@@ -502,11 +523,7 @@ pub fn open_reader_tab(
     page.set_title(title);
     tab_view.set_selected_page(&page);
 
-    ReaderTab {
-        host_window,
-        tab_view,
-        page,
-    }
+    ReaderTab::new(page)
 }
 
 /// Run `on_close` once, when this tab is closed for good — its own tab-close button,
@@ -560,10 +577,13 @@ pub fn set_tab_header(
     unsafe {
         tab.page.set_data(HEADER_CONTENT_DATA_KEY, content);
     }
-    if tab.tab_view.selected_page().as_ref() == Some(&tab.page) {
+    let Some(view) = tab.tab_view() else {
+        return;
+    };
+    if view.selected_page().as_ref() == Some(&tab.page) {
         unsafe {
-            if let Some(slots) = tab.host_window.data::<HeaderSlots>(HEADER_SLOTS_DATA_KEY) {
-                apply_selected_header(&tab.tab_view, slots.as_ref());
+            if let Some(slots) = tab.host_window().data::<HeaderSlots>(HEADER_SLOTS_DATA_KEY) {
+                apply_selected_header(&view, slots.as_ref());
             }
         }
     }

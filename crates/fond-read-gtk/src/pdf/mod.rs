@@ -558,7 +558,7 @@ fn build_reader(
         Some((_, tab, _)) => tab.clone(),
         None => crate::reader_host::open_reader_tab(window, title, &view),
     };
-    let reader_window = reader_tab.host_window.clone();
+    let reader_window = reader_tab.host_window();
     let quick_mark: QuickMarkSlot = Rc::new(RefCell::new(None));
     let reflow_popover: RebuildNotesCell = Rc::new(RefCell::new(None));
     if !is_pane {
@@ -641,7 +641,7 @@ fn build_reader(
             hash: pdf_hash.to_string(),
             title: title.to_string(),
         },
-        &reader_tab.host_window,
+        &reader_tab.host_window(),
     );
     {
         let store = reader.borrow().store.clone();

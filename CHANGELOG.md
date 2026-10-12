@@ -5,6 +5,10 @@
   then reads an unlocked copy it keeps in its cache for a day; your file is not changed. Notes
   stay under the original file's identity. The copy carries the pages but not the outline or the
   printed page numbers of the original.
+- **Dragging a tab out of the tab bar opens it in its own window.** It used to snap back with an
+  Adwaita critical in the log. A tab now always knows which window it is in, so Back/pop-out/
+  re-opening a document that was dragged out still reaches the right window; the pinned Library
+  tab stays put.
 
 ## [0.16.3] "Quiet Hands" — 2026-10-12
 - **Markdown notes are written in the background**, newest version of each document only, so an

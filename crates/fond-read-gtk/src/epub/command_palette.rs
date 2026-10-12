@@ -160,5 +160,5 @@ pub(super) fn open(ui: &EpubUi) {
             )]
         })
     };
-    commands::show(&ui.reader_tab.host_window, list, Some(dynamic));
+    commands::show(&ui.reader_tab.host_window(), list, Some(dynamic));
 }
