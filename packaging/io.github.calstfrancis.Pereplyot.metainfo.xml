@@ -59,6 +59,14 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.16.2" date="2026-10-12">
+      <description>
+        <p>0.16.2 "Closed Door" — fixes a crash a crafted pereplyot:// link could cause (a percent
+        sign followed by a non-ASCII character), the same slip in the EPUB link reader, and a
+        notebook line that could crash the notebook loader. The text parsers are now fuzzed with
+        tens of thousands of hostile inputs.</p>
+      </description>
+    </release>
     <release version="0.16.1" date="2026-10-12">
       <description>
         <p>0.16.1 "Light Load" — big EPUBs unpack in the background instead of freezing the

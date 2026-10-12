@@ -45,6 +45,9 @@ mod session;
 mod toggles;
 mod ui;
 use ui::EpubUi;
+
+#[cfg(test)]
+mod fuzz;
 mod search;
 use chrome::*;
 use highlights::*;

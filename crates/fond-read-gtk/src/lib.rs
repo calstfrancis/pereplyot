@@ -31,6 +31,8 @@ pub mod epub;
 pub mod epub_cover;
 pub mod export;
 pub mod fsutil;
+#[cfg(test)]
+mod fuzz_tests;
 pub mod history;
 pub mod index;
 pub mod interop;

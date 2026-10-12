@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.16.2] "Closed Door" — 2026-10-12
+- **A crafted link could crash Pereplyot.** Pereplyot opens `pereplyot://` links, and a link
+  containing a `%` followed by a non-ASCII character made the link reader panic — closing the app
+  from a web page or a document. The same slip was in the EPUB link reader, and a notebook line with a
+  setting that had no colon could crash the notebook loader. All three are fixed, and the parsers
+  (links, EPUB markup, notebooks, search, anchors, annotation files, page layout) are now fuzzed
+  with tens of thousands of hostile inputs.
+
 ## [0.16.1] "Light Load" — 2026-10-12
 - **Big EPUBs unpack in the background.** A book that has to be unpacked first no longer freezes the
   window while it is; it says it is unpacking, and a second click does not start a second reader.

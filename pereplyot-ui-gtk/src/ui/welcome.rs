@@ -10,7 +10,7 @@ use crate::ui::Widgets;
 use std::rc::Rc;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub(crate) const RELEASE_NAME: &str = "Light Load";
+pub(crate) const RELEASE_NAME: &str = "Closed Door";
 
 /// Show the window if this version has not been seen: the welcome the first time ever, What's
 /// New after an update. Called when the launcher is actually shown.
@@ -102,12 +102,8 @@ pub fn show(parent: &impl IsA<gtk4::Window>, first_run: bool) {
 /// Updated at release time, with `RELEASE_NAME`.
 const NEW: &[(&str, &str)] = &[
     (
-        "Big EPUBs unpack in the background",
-        "A book that has to be unpacked first no longer freezes the window; it says it is unpacking and opens when ready.",
-    ),
-    (
-        "Heavily marked books open at once",
-        "The notes sidebar builds 300 cards at a time with a Show more row, so thousands of marks no longer make a book slow to open.",
+        "A crash from crafted links fixed",
+        "A pereplyot:// link, an EPUB link or a notebook line with an odd character in the wrong place could close the app. They no longer can.",
     ),
 ];
 

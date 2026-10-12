@@ -161,7 +161,7 @@ fn parse_quote_line(line: &str) -> Option<Quote> {
             i += 1;
         }
         let name: String = chars[start..i].iter().collect();
-        i += 1;
+        i = (i + 1).min(chars.len());
         while i < chars.len() && chars[i] == ' ' {
             i += 1;
         }

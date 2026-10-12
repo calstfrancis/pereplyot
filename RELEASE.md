@@ -1,4 +1,4 @@
-# Pereplyot v0.16.1 "Light Load"
+# Pereplyot v0.16.2 "Closed Door"
 
 Install via Flatpak:
 
@@ -18,12 +18,13 @@ flatpak update io.github.calstfrancis.Pereplyot
 
 ### What's new
 
-**Big EPUBs unpack in the background.** A book that has to be unpacked first no longer freezes the
-window while it is: it says it is unpacking and opens when ready, and a second click doesn't start a
-second reader.
+**A crash from crafted links, fixed.** Pereplyot opens `pereplyot://` links. A link with a `%` followed
+by a non-ASCII character made the link reader panic and close the app, so a web page or a document
+could close Pereplyot just by being clicked. The same slip was in the EPUB link reader, and a
+notebook line with a setting that had no colon could crash the notebook loader. All three are fixed.
 
-**Heavily marked books open at once.** The notes sidebars build 300 cards at a time with a "Show more"
-row, so a book with thousands of highlights no longer makes the window slow to open.
+The parsers for links, EPUB markup, notebooks, search, anchors, annotation files and page layout
+are now fuzzed with tens of thousands of hostile inputs as part of testing.
 
 ---
 

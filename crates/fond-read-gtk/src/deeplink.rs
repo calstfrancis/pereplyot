@@ -29,8 +29,9 @@ fn unescape(s: &str) -> String {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
-                out.push(v);
+            let hex = |b: u8| (b as char).to_digit(16);
+            if let (Some(hi), Some(lo)) = (hex(bytes[i + 1]), hex(bytes[i + 2])) {
+                out.push((hi * 16 + lo) as u8);
                 i += 3;
                 continue;
             }
@@ -81,6 +82,21 @@ pub fn file_uri_path(s: &str) -> Option<std::path::PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_percent_sign_before_other_text_never_panics() {
+        assert_eq!(unescape("%é1"), "%é1");
+        assert_eq!(unescape("a%2"), "a%2");
+        assert_eq!(unescape("%41%zz%"), "A%zz%");
+        assert_eq!(
+            parse("pereplyot://open?hash=%é%é&annotation=%"),
+            Some(DeepLink {
+                hash: "%é%é".into(),
+                annotation: Some("%".into()),
+                page: None
+            })
+        );
+    }
 
     #[test]
     fn a_link_survives_a_round_trip_with_awkward_ids() {
