@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+- **Big EPUBs unpack in the background.** A book that has to be unpacked first no longer freezes the
+  window while it is; it says it is unpacking, and a second click does not start a second reader.
+- **Notes sidebars build 300 cards at a time** with a "Show more" row, so a book with thousands of
+  marks opens at once (30,000 annotations: about 21 s down to under 1 s in a debug build).
+
 ## [0.16.0] "Narrow Margin" — 2026-10-12
 - **The EPUB reader fits on a laptop screen.** It refused to be narrower than about 1,320 px;
   text size, export and "open in a new window" now live in a ⋮ menu (as in the PDF reader) and a long

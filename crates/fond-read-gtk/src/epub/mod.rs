@@ -122,10 +122,69 @@ pub fn show_epub_reader(
         return;
     }
 
-    let Some((book, cache_dir)) = open_book::open_book_cached(blob, hash, window) else {
+    // An unpacked book opens at once; one that has to be unpacked first is unpacked on a worker
+    // thread, so a big book does not freeze the window while it is.
+    if open_book::is_unpacked(hash) {
+        match open_book::prepare_book(blob, hash) {
+            Ok((book, cache_dir)) => show_epub_reader_prepared(
+                host,
+                window,
+                hash,
+                title,
+                start_annotation_id,
+                start_progress,
+                book,
+                cache_dir,
+            ),
+            Err(e) => open_book::show_open_error(window, &e),
+        }
         return;
-    };
+    }
+    if !open_book::begin_opening(hash) {
+        return;
+    }
+    host.notify("Unpacking the book\u{2026}");
+    let (host, window) = (host.clone(), window.clone());
+    let (hash, blob, title) = (hash.to_string(), blob.to_path_buf(), title.to_string());
+    let start_annotation_id = start_annotation_id.map(str::to_string);
+    glib::spawn_future_local(async move {
+        let prepared = {
+            let (blob, hash) = (blob.clone(), hash.clone());
+            gio::spawn_blocking(move || open_book::prepare_book(&blob, &hash)).await
+        };
+        open_book::end_opening(&hash);
+        match prepared {
+            Ok(Ok((book, cache_dir))) => show_epub_reader_prepared(
+                &host,
+                &window,
+                &hash,
+                &title,
+                start_annotation_id.as_deref(),
+                start_progress,
+                book,
+                cache_dir,
+            ),
+            Ok(Err(e)) => open_book::show_open_error(&window, &e),
+            Err(_) => open_book::show_open_error(&window, "Unpacking the book failed"),
+        }
+    });
+}
 
+/// The rest of opening an EPUB once its contents are unpacked.
+#[allow(clippy::too_many_arguments)]
+fn show_epub_reader_prepared(
+    host: &Rc<dyn ReaderHost>,
+    window: &adw::ApplicationWindow,
+    hash: &str,
+    title: &str,
+    start_annotation_id: Option<&str>,
+    start_progress: Option<fond_annot::Progress>,
+    book: fond_doc::EpubBook,
+    cache_dir: PathBuf,
+) {
+    if crate::present_existing(hash) {
+        return;
+    }
     let store = AnnotationStore::new(host, None);
 
     let start_index = start_annotation_id

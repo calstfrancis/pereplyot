@@ -1,5 +1,9 @@
 use super::*;
 
+/// How many note cards the sidebar builds at a time: a book with thousands of marks would
+/// otherwise build thousands of widgets before the window could be used.
+const NOTE_CARDS_AT_FIRST: usize = 300;
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn install_notes_sidebar(
     host: &Rc<dyn ReaderHost>,
@@ -13,6 +17,7 @@ pub(super) fn install_notes_sidebar(
 ) -> (Rc<dyn Fn()>, Rc<Cell<bool>>) {
     let rebuild_notes_cell: RebuildNotesCell = Rc::new(RefCell::new(None));
     let quiet_notes = Rc::new(Cell::new(false));
+    let shown_limit: Rc<Cell<usize>> = Rc::new(Cell::new(NOTE_CARDS_AT_FIRST));
     let filter: Rc<RefCell<NotesFilter>> = Rc::new(RefCell::new(NotesFilter::default()));
     let cards: Rc<RefCell<std::collections::HashMap<String, gtk4::Widget>>> =
         Rc::new(RefCell::new(std::collections::HashMap::new()));
@@ -24,6 +29,7 @@ pub(super) fn install_notes_sidebar(
         let bookmark_button = bookmark_button.clone();
         let rebuild_notes_cell_inner = rebuild_notes_cell.clone();
         let quiet_notes = quiet_notes.clone();
+        let shown_limit = shown_limit.clone();
         let filter = filter.clone();
         let cards = cards.clone();
         let active_card = active_card.clone();
@@ -55,6 +61,8 @@ pub(super) fn install_notes_sidebar(
                         && f.tag.as_ref().map_or(true, |t| a.tags().contains(t))
                 });
             }
+            let hidden = all.len().saturating_sub(shown_limit.get());
+            all.truncate(shown_limit.get());
             if any_annotations {
                 notes_rows.append(&filter_bar(
                     &filter,
@@ -329,6 +337,23 @@ pub(super) fn install_notes_sidebar(
                 if i != last {
                     notes_rows.append(&popover_separator());
                 }
+            }
+            if hidden > 0 {
+                let more = gtk4::Button::with_label(&format!(
+                    "Show {} more\u{2026}",
+                    hidden.min(NOTE_CARDS_AT_FIRST)
+                ));
+                more.add_css_class("flat");
+                let shown_limit = shown_limit.clone();
+                let rebuild = rebuild_notes_cell_inner.clone();
+                more.connect_clicked(move |_| {
+                    shown_limit.set(shown_limit.get() + NOTE_CARDS_AT_FIRST);
+                    let run = rebuild.borrow().clone();
+                    if let Some(run) = run {
+                        run();
+                    }
+                });
+                notes_rows.append(&more);
             }
         };
         *rebuild_notes_cell.borrow_mut() = Some(Rc::new(builder));

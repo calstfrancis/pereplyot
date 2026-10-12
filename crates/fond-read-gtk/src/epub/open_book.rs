@@ -1,38 +1,30 @@
 use super::*;
 
-/// Open the EPUB and make sure its contents are extracted to the cache (content-addressed by
-/// hash, so a repeat open reuses it); shows an error dialog and returns `None` on failure.
-pub(super) fn open_book_cached(
-    blob: &std::path::Path,
-    hash: &str,
-    window: &adw::ApplicationWindow,
-) -> Option<(fond_doc::EpubBook, PathBuf)> {
-    let book = match fond_doc::open_book(blob) {
-        Ok(b) => b,
-        Err(e) => {
-            gtk4::AlertDialog::builder()
-                .message("Could not open EPUB")
-                .detail(e.to_string())
-                .build()
-                .show(Some(window));
-            return None;
-        }
-    };
-
+/// Where the unpacked contents of the book with this content hash are kept.
+pub(super) fn cache_dir_for(hash: &str) -> PathBuf {
     let hex = hash.split_once(':').map(|(_, h)| h).unwrap_or(hash);
-    let cache_dir = glib::user_cache_dir()
+    glib::user_cache_dir()
         .join("pereplyot")
         .join("epub")
-        .join(hex);
+        .join(hex)
+}
+
+/// Whether the book is already unpacked, so opening it needs no slow work.
+pub(super) fn is_unpacked(hash: &str) -> bool {
+    cache_dir_for(hash).join(".complete").exists()
+}
+
+/// Open the EPUB and make sure its contents are extracted to the cache (content-addressed by
+/// hash, so a repeat open reuses it). Blocking: unpacking a big book takes a while, so this runs
+/// off the GTK thread unless the book is already unpacked.
+pub(super) fn prepare_book(
+    blob: &std::path::Path,
+    hash: &str,
+) -> Result<(fond_doc::EpubBook, PathBuf), String> {
+    let book = fond_doc::open_book(blob).map_err(|e| e.to_string())?;
+    let cache_dir = cache_dir_for(hash);
     if !cache_dir.join(".complete").exists() {
-        if let Err(e) = check_unpacked_size(blob) {
-            gtk4::AlertDialog::builder()
-                .message("Could not open EPUB")
-                .detail(e)
-                .build()
-                .show(Some(window));
-            return None;
-        }
+        check_unpacked_size(blob)?;
         let partial = cache_dir.with_extension("partial");
         let _ = std::fs::remove_dir_all(&partial);
         let _ = std::fs::remove_dir_all(&cache_dir);
@@ -43,15 +35,19 @@ pub(super) fn open_book_cached(
             .and_then(|_| std::fs::rename(&partial, &cache_dir).map_err(|e| e.to_string()));
         if let Err(e) = extracted {
             let _ = std::fs::remove_dir_all(&partial);
-            gtk4::AlertDialog::builder()
-                .message("Could not open EPUB")
-                .detail(e)
-                .build()
-                .show(Some(window));
-            return None;
+            return Err(e);
         }
     }
-    Some((book, cache_dir))
+    Ok((book, cache_dir))
+}
+
+/// Say why a book could not be opened.
+pub(super) fn show_open_error(window: &adw::ApplicationWindow, detail: &str) {
+    gtk4::AlertDialog::builder()
+        .message("Could not open EPUB")
+        .detail(detail)
+        .build()
+        .show(Some(window));
 }
 
 /// The most an EPUB may unpack to. Books with many large pictures reach a gigabyte or two; past
@@ -107,4 +103,20 @@ mod tests {
         assert!(super::check_unpacked_size_within(&make("bomb.zip", 40), limit).is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
+}
+
+thread_local! {
+    static OPENING: RefCell<std::collections::HashSet<String>> = RefCell::new(Default::default());
+}
+
+/// Note that the book with this hash is being unpacked; false if it already is, so a second
+/// click does not start a second reader on the same book.
+pub(super) fn begin_opening(hash: &str) -> bool {
+    OPENING.with(|s| s.borrow_mut().insert(hash.to_string()))
+}
+
+pub(super) fn end_opening(hash: &str) {
+    OPENING.with(|s| {
+        s.borrow_mut().remove(hash);
+    });
 }

@@ -1,5 +1,8 @@
 use super::*;
 
+/// How many note cards the sidebar builds at a time (see the PDF reader's own sidebar).
+const NOTE_CARDS_AT_FIRST: usize = 300;
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn install_notes_sidebar(
     host: &Rc<dyn ReaderHost>,
@@ -14,6 +17,7 @@ pub(super) fn install_notes_sidebar(
     doc: crate::notebook_ui::DocRef,
 ) -> (Rc<dyn Fn()>, Rc<Cell<bool>>) {
     let rebuild_notes_cell: RebuildCell = Rc::new(RefCell::new(None));
+    let shown_limit: Rc<Cell<usize>> = Rc::new(Cell::new(NOTE_CARDS_AT_FIRST));
     let quiet_notes = Rc::new(Cell::new(false));
     {
         let notes_rows = notes_rows.clone();
@@ -27,6 +31,7 @@ pub(super) fn install_notes_sidebar(
         let pending_scroll = pending_scroll.clone();
         let quiet_notes = quiet_notes.clone();
         let rebuild_notes_cell_inner = rebuild_notes_cell.clone();
+        let shown_limit = shown_limit.clone();
         let doc = doc.clone();
         let builder = move || {
             while let Some(child) = notes_rows.first_child() {
@@ -134,6 +139,8 @@ pub(super) fn install_notes_sidebar(
             if all.is_empty() {
                 return;
             }
+            let hidden = all.len().saturating_sub(shown_limit.get());
+            all.truncate(shown_limit.get());
             let last = all.len().saturating_sub(1);
             for (i, annotation) in all.into_iter().enumerate() {
                 let Some(chapter) = annotation.chapter.clone() else {
@@ -324,6 +331,23 @@ pub(super) fn install_notes_sidebar(
                 if i != last {
                     notes_rows.append(&popover_separator());
                 }
+            }
+            if hidden > 0 {
+                let more = gtk4::Button::with_label(&format!(
+                    "Show {} more\u{2026}",
+                    hidden.min(NOTE_CARDS_AT_FIRST)
+                ));
+                more.add_css_class("flat");
+                let shown_limit = shown_limit.clone();
+                let rebuild = rebuild_notes_cell_inner.clone();
+                more.connect_clicked(move |_| {
+                    shown_limit.set(shown_limit.get() + NOTE_CARDS_AT_FIRST);
+                    let run = rebuild.borrow().clone();
+                    if let Some(run) = run {
+                        run();
+                    }
+                });
+                notes_rows.append(&more);
             }
         };
         *rebuild_notes_cell.borrow_mut() = Some(Rc::new(builder));
