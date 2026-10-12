@@ -125,11 +125,16 @@ impl Typography {
     }
 
     pub fn load() -> Typography {
-        std::fs::read_to_string(path())
-            .ok()
-            .and_then(|s| serde_json::from_str::<Typography>(&s).ok())
-            .unwrap_or_default()
-            .clamped()
+        use crate::fsutil::{lenient, load_checked, Loaded};
+        match load_checked(&path(), lenient::<Typography>) {
+            Loaded::Ok(t) => t,
+            Loaded::Missing => Typography::default(),
+            Loaded::Corrupt {
+                recovered_from_backup,
+                ..
+            } => recovered_from_backup.unwrap_or_default(),
+        }
+        .clamped()
     }
 
     pub fn save(&self) {

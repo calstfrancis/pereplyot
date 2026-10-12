@@ -67,7 +67,7 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
     library_flow.set_margin_end(12);
 
     let library_empty_hint = gtk4::Label::new(Some(
-        "Nothing in your library yet — open a document and add it here from History.",
+        "Nothing in your library yet — open a document, then press Ctrl+K and choose Add to Library (or use + in History).",
     ));
     library_empty_hint.set_wrap(true);
     library_empty_hint.set_justify(gtk4::Justification::Center);
@@ -697,14 +697,6 @@ pub fn open_path_with_host(
     path: PathBuf,
     options: LaunchOptions,
 ) -> Option<adw::Window> {
-    let LaunchOptions {
-        host_override: override_,
-        title: title_override,
-        annotations_only,
-        start_page,
-        start_annotation,
-        search,
-    } = options;
     if !path.is_file() {
         toast(widgets, "Not a file");
         return None;
@@ -734,6 +726,25 @@ pub fn open_path_with_host(
         return None;
     };
 
+    // Hashing a large file takes a while: for an ordinary open it happens off the GTK thread. A launch
+    // on another app's behalf already knows its hash, and a dialog has to be returned at once.
+    if options.host_override.is_none() && !options.annotations_only {
+        let widgets = widgets.clone();
+        glib::spawn_future_local(async move {
+            let hashed = {
+                let path = path.clone();
+                gio::spawn_blocking(move || crate::paths::hash_file(&path)).await
+            };
+            match hashed {
+                Ok(Ok(hash)) => {
+                    open_with_hash(&widgets, path, kind, hash, options);
+                }
+                Ok(Err(e)) => toast(&widgets, &format!("Couldn't read file: {e}")),
+                Err(_) => toast(&widgets, "Couldn't read file"),
+            }
+        });
+        return None;
+    }
     let hash = match crate::paths::hash_file(&path) {
         Ok(h) => h,
         Err(e) => {
@@ -741,6 +752,25 @@ pub fn open_path_with_host(
             return None;
         }
     };
+    open_with_hash(widgets, path, kind, hash, options)
+}
+
+/// The rest of opening a document once its content hash is known.
+fn open_with_hash(
+    widgets: &Rc<Widgets>,
+    path: PathBuf,
+    kind: DocKind,
+    hash: String,
+    options: LaunchOptions,
+) -> Option<adw::Window> {
+    let LaunchOptions {
+        host_override: override_,
+        title: title_override,
+        annotations_only,
+        start_page,
+        start_annotation,
+        search,
+    } = options;
 
     // The same path now has different contents than when it was last opened (re-saved, OCR'd,
     // annotated in another program): offer to bring its notes along instead of letting them
@@ -981,7 +1011,7 @@ fn rebuild_history(widgets: &Rc<Widgets>) {
     }
 }
 
-fn add_to_library(widgets: &Rc<Widgets>, entry: &HistoryEntry) {
+pub(crate) fn add_to_library(widgets: &Rc<Widgets>, entry: &HistoryEntry) {
     let shelf = current_shelf(widgets);
     widgets.library.borrow_mut().add(LibraryEntry {
         hash: entry.hash.clone(),
@@ -1208,7 +1238,7 @@ fn rebuild_library_cards(widgets: &Rc<Widgets>) {
     let nothing_at_all = widgets.library.borrow().entries().is_empty();
     widgets.library_empty_hint.set_visible(entries.is_empty());
     widgets.library_empty_hint.set_text(if nothing_at_all {
-        "Nothing in your library yet — open a document and add it here from History."
+        "Nothing in your library yet — open a document, then press Ctrl+K and choose Add to Library (or use + in History)."
     } else {
         "This shelf is empty — right-click a document in the Library to move it here."
     });

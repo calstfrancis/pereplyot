@@ -17,7 +17,15 @@ pub fn write_atomic(path: &Path, contents: &[u8]) -> std::io::Result<()> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }
-    let tmp = sibling(path, ".tmp");
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let tmp = sibling(
+        path,
+        &format!(
+            ".tmp-{}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ),
+    );
     {
         let mut f = fs::File::create(&tmp)?;
         f.write_all(contents)?;
@@ -28,7 +36,36 @@ pub fn write_atomic(path: &Path, contents: &[u8]) -> std::io::Result<()> {
     }
     fs::rename(&tmp, path).inspect_err(|_| {
         let _ = fs::remove_file(&tmp);
-    })
+    })?;
+    // Make the rename itself survive a power cut.
+    if let Some(dir) = path.parent() {
+        if let Ok(d) = fs::File::open(dir) {
+            let _ = d.sync_all();
+        }
+    }
+    Ok(())
+}
+
+/// Parse a settings file one field at a time: a field of the wrong type (or a value out of
+/// range for it) is left at its default instead of discarding every other setting. `None` only
+/// when the text is not a JSON object at all.
+pub fn lenient<T>(text: &str) -> Option<T>
+where
+    T: serde::de::DeserializeOwned + serde::Serialize + Default,
+{
+    let given: serde_json::Value = serde_json::from_str(text).ok()?;
+    let given = given.as_object()?;
+    let mut merged = serde_json::to_value(T::default()).ok()?;
+    for (key, value) in given {
+        let mut trial = merged.clone();
+        if let Some(object) = trial.as_object_mut() {
+            object.insert(key.clone(), value.clone());
+        }
+        if serde_json::from_value::<T>(trial.clone()).is_ok() {
+            merged = trial;
+        }
+    }
+    serde_json::from_value(merged).ok()
 }
 
 /// What reading a persisted file found.
@@ -46,10 +83,19 @@ pub enum Loaded<T> {
 /// instead of being left to be overwritten by the next save, and `<name>.bak` is tried as a
 /// fallback.
 pub fn load_checked<T>(path: &Path, parse: impl Fn(&str) -> Option<T>) -> Loaded<T> {
-    let text = match fs::read_to_string(path) {
-        Ok(t) => t,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Loaded::Missing,
-        Err(_) => String::new(),
+    // A read that fails for a reason other than the file not being there (a sync client holding
+    // it, a network drive hiccup) is tried again before the file is judged unreadable.
+    let mut attempt = 0;
+    let text = loop {
+        match fs::read_to_string(path) {
+            Ok(t) => break t,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Loaded::Missing,
+            Err(e) if e.kind() != std::io::ErrorKind::InvalidData && attempt < 3 => {
+                attempt += 1;
+                std::thread::sleep(std::time::Duration::from_millis(60));
+            }
+            Err(_) => break String::new(),
+        }
     };
     if let Some(v) = parse(&text) {
         return Loaded::Ok(v);
@@ -93,7 +139,12 @@ mod tests {
         write_atomic(&p, b"2").unwrap();
         assert_eq!(fs::read_to_string(&p).unwrap(), "2");
         assert_eq!(fs::read_to_string(sibling(&p, ".bak")).unwrap(), "1");
-        assert!(!sibling(&p, ".tmp").exists());
+        let leftovers = fs::read_dir(&d)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(".tmp"))
+            .count();
+        assert_eq!(leftovers, 0);
     }
 
     #[test]
@@ -123,5 +174,29 @@ mod tests {
             }
             _ => panic!("expected corrupt"),
         }
+    }
+
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq)]
+    #[serde(default)]
+    struct Settings {
+        theme: String,
+        size: u32,
+        names: Vec<String>,
+    }
+
+    #[test]
+    fn a_wrong_field_costs_only_that_field() {
+        let got: Settings =
+            lenient(r#"{"theme":"dark","size":"huge","names":["a"],"future":1}"#).unwrap();
+        assert_eq!(
+            got,
+            Settings {
+                theme: "dark".into(),
+                size: 0,
+                names: vec!["a".into()]
+            }
+        );
+        assert!(lenient::<Settings>("[1,2]").is_none());
+        assert!(lenient::<Settings>("{broken").is_none());
     }
 }

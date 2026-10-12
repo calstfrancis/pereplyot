@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.16.0] "Narrow Margin" — 2026-10-12
+- **The EPUB reader fits on a laptop screen.** It refused to be narrower than about 1,320 px;
+  text size, export and "open in a new window" now live in a ⋮ menu (as in the PDF reader) and a long
+  chapter title shortens instead of widening the window, so it now needs about 1,050 px.
+- **Add to Library** is a command in each reader's Ctrl+K palette, so a book no longer has to be
+  found in History first.
+- **Settings survive a bad value.** A wrong value for one setting (in `config.json` or the
+  typography file) now costs only that setting instead of resetting them all, and an unreadable
+  settings file is set aside instead of overwritten. Saves use a unique temporary name and sync the
+  folder, and a read that fails for a passing reason (a sync client holding the file) is retried
+  before a file is called damaged.
+- **History lives with the rest of the data** (the XDG data folder), carrying over from the old
+  location on first run.
+- **Opening a file no longer hashes it on the UI thread.** A very large book opens without freezing
+  the window while it is read.
+- A zero-page PDF says so instead of showing a blank page; a language file for OCR that is too
+  small to be real is refused instead of silently breaking text recognition; and "Add to
+  Kartoteka" says it only adds the file if Kartoteka has a library open.
+
 ## [0.15.1] "Tight Binding" — 2026-10-12
 Found by an adversarial pass (hostile files, random-input testing, fuzzing, code review):
 - **Fixed a hard crash in Reading mode.** A scan with degenerate coordinates (NaN or infinite

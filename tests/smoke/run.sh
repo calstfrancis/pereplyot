@@ -41,6 +41,7 @@ export DISPLAY=":$(tr -d '\n' <"$WORK/display")"
 
 start_app() {
     local file="$1"
+    LAST_FILE="$file"
     [ "$file" = - ] && file=""
     [ "${2:-}" = keep ] || rm -rf "$WORK/h"
     mkdir -p "$WORK/h"/{home,data,config,cache} "$WORK/h/data/fonts"
@@ -72,7 +73,10 @@ reader_window() {
             local g
             g="$(xdotool getwindowgeometry "$w" 2>/dev/null | tail -1)"
             case "$(xdotool getwindowname "$w" 2>/dev/null)" in
-                Reader*|Pereplyot*) echo "$w"; return 0 ;;
+                Reader*|Pereplyot*)
+                    # The EPUB cases were written for the width the EPUB header used to force.
+                    case "${LAST_FILE:-}" in *.epub) xdotool windowsize "$w" 1360 820 2>/dev/null; sleep 1 ;; esac
+                    echo "$w"; return 0 ;;
             esac
             : "$g"
         done
@@ -900,7 +904,7 @@ run_multi_case() {
     reader_window >/dev/null || { check "multi: the window opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
     sleep 6
     local opened
-    opened="$(grep -c '"hash"' "$WORK/h/home/.local/share/pereplyot/recents.json" 2>/dev/null)"
+    opened="$(grep -c '"hash"' "$WORK/h/data/pereplyot/recents.json" 2>/dev/null)"
     check "multi: several files given together are all opened" "$([ "${opened:-0}" -ge 3 ] && echo 1 || echo 0)" "(history entries: ${opened:-0}; log: $(tail -c 200 "$WORK/app.log"))"
     stop_app
 }
@@ -921,7 +925,7 @@ run_scholar_case() {
     xdotool key Escape
     sleep 0.5
     local nav
-    nav="$(python3 "$HERE/text_bands.py" "$WORK/sc-0.png" --ink-in 205 15 250 40)"
+    nav="$(python3 "$HERE/text_bands.py" "$WORK/sc-0.png" --ink-in 440 15 485 40)"
     check "scholar: the printed page from the book's page list is shown (p. 41)" "$([ "${nav:-0}" -gt 60 ] && echo 1 || echo 0)" "(ink in the page label: $nav)"
     xdotool mousemove 286 201 mousedown 1 mousemove 600 201 mousemove 968 201 mouseup 1
     sleep 1
@@ -1025,11 +1029,11 @@ run_pages_case() {
     xdotool key space
     sleep 2.5
     screenshot "$WORK/pg-3.png"
-    check "pages: past the last page it goes on to the next chapter, and the printed page moves on" "$([ "$(same_region "$WORK/pg-2.png" "$WORK/pg-3.png" 205 15 50 26)" = 0 ] && echo 1 || echo 0)"
+    check "pages: past the last page it goes on to the next chapter, and the printed page moves on" "$([ "$(same_region "$WORK/pg-2.png" "$WORK/pg-3.png" 440 15 50 26)" = 0 ] && echo 1 || echo 0)"
     xdotool key shift+space
     sleep 2.5
     screenshot "$WORK/pg-4.png"
-    check "pages: Shift+Space from the top of a chapter lands on the last page of the one before" "$([ "$(same_region "$WORK/pg-2.png" "$WORK/pg-4.png" 90 780 50 22)" = 1 ] && [ "$(same_region "$WORK/pg-2.png" "$WORK/pg-4.png" 205 15 50 26)" = 1 ] && echo 1 || echo 0)"
+    check "pages: Shift+Space from the top of a chapter lands on the last page of the one before" "$([ "$(same_region "$WORK/pg-2.png" "$WORK/pg-4.png" 90 780 50 22)" = 1 ] && [ "$(same_region "$WORK/pg-2.png" "$WORK/pg-4.png" 440 15 50 26)" = 1 ] && echo 1 || echo 0)"
     stop_app
     start_app "$FX/scholar.epub" keep
     reader_window >/dev/null
@@ -1050,16 +1054,17 @@ run_epubnotes_case() {
     sleep 1
     xdotool key 1
     sleep 1
-    xdotool mousemove 1061 28 click 1
+    xdotool mousemove 1173 28 click 1
     sleep 1.5
-    xdotool mousemove 1181 74 click 1
+    screenshot "$WORK/en-0.png"
+    xdotool mousemove 1292 74 click 1
     sleep 1.5
     xdotool mousemove 115 791 click 1
     sleep 2
     screenshot "$WORK/en-1.png"
     local body
     body="$(cat "$(notebook_file)" 2>/dev/null)"
-    check "epub notebook: + on a note adds it as a quote that cites the printed page" "$([[ "$body" == *'label: "41"'* && "$body" == *'covenant liturgy scripture'* && "$body" != *'chapter: true'* ]] && echo 1 || echo 0)" "(file: $(tail -c 250 "$(notebook_file)" 2>/dev/null))"
+    check "epub notebook: + on a note adds it as a quote that cites the printed page" "$([[ "$body" == *'label: "41"'* && "$body" == *'narrative community witness'* && "$body" != *'chapter: true'* ]] && echo 1 || echo 0)" "(file: $(tail -c 250 "$(notebook_file)" 2>/dev/null))"
     local card
     card="$(python3 "$HERE/text_bands.py" "$WORK/en-1.png" --ink-in 960 100 1230 200)"
     check "epub notebook: the Notebook toggle shows it beside the book, with the quote card" "$([ "${card:-0}" -gt 200 ] && echo 1 || echo 0)" "(ink where the card is: $card)"
@@ -1090,7 +1095,9 @@ except Exception as e:
     local ring
     ring="$(python3 "$HERE/text_bands.py" "$WORK/ei-2.png" --tint-in 300 676 440 690)"
     check "epub image: the clip knows the printed page it is on" "$([[ "$got" == "area OEBPS/fig.png 43" ]] && echo 1 || echo 0)" "(got '$got')"
-    xdotool mousemove 541 28 click 1
+    xdotool mousemove 1131 28 click 1
+    sleep 1
+    xdotool mousemove 1130 160 click 1
     sleep 1.5
     xdotool mousemove 383 27 click 1
     sleep 2

@@ -206,6 +206,19 @@ impl ReaderHost for LocalReaderHost {
         LocalMeta::load(&self.hash).pins
     }
 
+    fn library_action(&self) -> Option<Rc<dyn Fn()>> {
+        if self.widgets.library.borrow().contains(&self.hash) {
+            return None;
+        }
+        let entry = fond_read_gtk::history::load()
+            .into_iter()
+            .find(|e| e.hash == self.hash)?;
+        let widgets = self.widgets.clone();
+        Some(Rc::new(move || {
+            crate::ui::window::add_to_library(&widgets, &entry)
+        }))
+    }
+
     fn kartoteka_handoff(&self) -> Option<Rc<dyn Fn()>> {
         if LocalMeta::load(&self.hash).citation_key.is_some() {
             return None;

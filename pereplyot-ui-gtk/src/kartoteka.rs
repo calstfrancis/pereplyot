@@ -8,7 +8,7 @@ pub fn hand_off(path: &Path) {
     let file = path.to_path_buf();
     glib::spawn_future_local(async move {
         let note = match open_over_dbus(&file).await {
-            Ok(()) => "Sent to Kartoteka — it adds the file to its open library".to_string(),
+            Ok(()) => "Sent to Kartoteka — it adds the file if it has a library open".to_string(),
             Err(_) => match std::process::Command::new("kartoteka-gtk")
                 .arg(&file)
                 .spawn()

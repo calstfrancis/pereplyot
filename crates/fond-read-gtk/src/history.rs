@@ -24,6 +24,11 @@ use serde::{Deserialize, Serialize};
 const MAX_ENTRIES: usize = 1000;
 
 fn history_path() -> PathBuf {
+    glib::user_data_dir().join("pereplyot").join("recents.json")
+}
+
+/// Where earlier versions kept it, under the home directory whatever the data directory was.
+fn legacy_history_path() -> PathBuf {
     glib::home_dir().join(".local/share/pereplyot/recents.json")
 }
 
@@ -50,7 +55,16 @@ pub fn load() -> Vec<HistoryEntry> {
     use crate::fsutil::{load_checked, Loaded};
     match load_checked(&history_path(), |s| serde_json::from_str(s).ok()) {
         Loaded::Ok(entries) => entries,
-        Loaded::Missing => Vec::new(),
+        Loaded::Missing => {
+            let legacy = legacy_history_path();
+            if legacy == history_path() {
+                return Vec::new();
+            }
+            std::fs::read_to_string(legacy)
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_default()
+        }
         Loaded::Corrupt {
             recovered_from_backup,
             ..

@@ -1,4 +1,3 @@
-use std::fs;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -56,10 +55,15 @@ impl Default for Config {
 
 impl Config {
     pub fn load() -> Config {
-        fs::read_to_string(config_path())
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+        use fond_read_gtk::fsutil::{lenient, load_checked, Loaded};
+        match load_checked(&config_path(), lenient::<Config>) {
+            Loaded::Ok(c) => c,
+            Loaded::Missing => Config::default(),
+            Loaded::Corrupt {
+                recovered_from_backup,
+                ..
+            } => recovered_from_backup.unwrap_or_default(),
+        }
     }
 
     pub fn save(&self) {

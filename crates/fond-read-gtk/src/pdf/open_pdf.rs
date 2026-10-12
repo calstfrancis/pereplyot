@@ -40,7 +40,15 @@ pub(super) fn open_pdf(
         }
     };
     crate::perf::mark_rss("document loaded");
-    let count = doc.pages().len().max(1);
+    if doc.pages().is_empty() {
+        gtk4::AlertDialog::builder()
+            .message("Could not open PDF")
+            .detail("This PDF has no pages.")
+            .build()
+            .show(Some(window));
+        return None;
+    }
+    let count = doc.pages().len();
     // Empty for most PDFs — outlines are the exception, not the rule — so the Contents
     // button below only appears when there's actually something to jump to.
     let outline_entries = outline_of(&doc);

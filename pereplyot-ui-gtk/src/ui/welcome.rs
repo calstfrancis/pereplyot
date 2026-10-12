@@ -10,7 +10,7 @@ use crate::ui::Widgets;
 use std::rc::Rc;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub(crate) const RELEASE_NAME: &str = "Tight Binding";
+pub(crate) const RELEASE_NAME: &str = "Narrow Margin";
 
 /// Show the window if this version has not been seen: the welcome the first time ever, What's
 /// New after an update. Called when the launcher is actually shown.
@@ -102,20 +102,20 @@ pub fn show(parent: &impl IsA<gtk4::Window>, first_run: bool) {
 /// Updated at release time, with `RELEASE_NAME`.
 const NEW: &[(&str, &str)] = &[
     (
-        "A crash fixed",
-        "A scan with broken page coordinates could crash Reading mode; it can't any more.",
+        "A narrower EPUB window",
+        "The EPUB reader no longer insists on a very wide window: text size, export and new-window moved into a menu, and long chapter titles shorten.",
     ),
     (
-        "EPUBs stay offline",
-        "A book can no longer fetch things from the web or start your browser by itself; only a link you click opens outside.",
+        "Add to Library from the reader",
+        "Press Ctrl+K and choose Add to Library — no need to find the book in History first.",
     ),
     (
-        "Open several files at once",
-        "Select a few files in your file manager and Open With Pereplyot opens all of them, and a relative path works when it is already running.",
+        "Settings that survive a bad value",
+        "One wrong setting no longer resets all the others, and a damaged settings file is set aside instead of overwritten.",
     ),
     (
-        "Safer notes and a longer history",
-        "The Markdown folder never overwrites a file that isn't its own, History keeps 1,000 documents, and library thumbnails no longer freeze the app. Ctrl+W closes a tab and Ctrl+1 goes to the Library.",
+        "Smoother opening",
+        "Opening a very large file no longer freezes the window while it is read.",
     ),
 ];
 

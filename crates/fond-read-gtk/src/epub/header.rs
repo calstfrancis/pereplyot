@@ -127,14 +127,42 @@ pub(super) fn build_header(
     header_start.append(&undo_button);
     header_start.append(&redo_button);
     let header_end = gtk4::Box::new(Orientation::Horizontal, 6);
+    // Text size, export and "new window" live in a menu, as in the PDF reader: nine controls in a
+    // row made this window refuse to be narrower than 1,300 px. The buttons themselves stay (the
+    // palette and shortcuts press them); the menu rows press them too.
+    let more_button = gtk4::MenuButton::new();
+    more_button.set_icon_name("view-more-symbolic");
+    more_button.set_tooltip_text(Some("More: text size, export, new window"));
+    more_button.add_css_class("flat");
+    {
+        let rows = gtk4::Box::new(Orientation::Vertical, 2);
+        rows.set_margin_top(6);
+        rows.set_margin_bottom(6);
+        rows.set_margin_start(6);
+        rows.set_margin_end(6);
+        let popover = gtk4::Popover::new();
+        for (label, target) in [
+            ("Smaller text", zoom_out_button.clone()),
+            ("Larger text", zoom_in_button.clone()),
+            ("Export notes & highlights…", export_button.clone()),
+            ("Open in a new window", popout_button.clone()),
+        ] {
+            let row = crate::popover_button(label, false);
+            let popover = popover.clone();
+            row.connect_clicked(move |_| {
+                popover.popdown();
+                target.emit_clicked();
+            });
+            rows.append(&row);
+        }
+        popover.set_child(Some(&rows));
+        more_button.set_popover(Some(&popover));
+    }
     header_end.append(&typography_button);
-    header_end.append(&export_button);
-    header_end.append(&zoom_out_button);
-    header_end.append(&zoom_in_button);
     header_end.append(&palette);
     header_end.append(&mode_drop);
     header_end.append(&apply_button);
-    header_end.append(&popout_button);
+    header_end.append(&more_button);
     header_end.append(&notes_toggle);
 
     HeaderParts {

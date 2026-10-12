@@ -1,4 +1,4 @@
-# Pereplyot v0.15.1 "Tight Binding"
+# Pereplyot v0.16.0 "Narrow Margin"
 
 Install via Flatpak:
 
@@ -18,28 +18,26 @@ flatpak update io.github.calstfrancis.Pereplyot
 
 ### What's new
 
-A hardening release, from a deliberate attempt to break Pereplyot with hostile files, random input and
-fuzzing.
+The second half of the hardening work started in 0.15.1.
 
-**A crash fixed.** A scanned book whose page boxes were broken could send Reading mode into endless
-recursion and take the whole app down.
+**A narrower EPUB window.** The EPUB reader refused to be narrower than about 1,320 px, wider than a
+small laptop screen. Text size, export and "open in a new window" now sit in a ⋮ menu, as in the
+PDF reader, and a long chapter title shortens instead of widening the window. It needs about
+1,050 px now.
 
-**EPUBs stay offline.** A book's remote images, stylesheets and frames used to be fetched, telling
-whoever hosted them that you had opened it, and a frame or redirect could start your browser on its own.
-Neither happens now; only a link you click opens outside. An EPUB that would unpack to more than 4 GB
-is refused.
+**Add to Library from the reader.** Press Ctrl+K and choose Add to Library, instead of finding the
+book in History first.
 
-**Open several files at once.** Selecting a few files and choosing Open With Pereplyot opens all of
-them (it used to open none), and a relative path works even when Pereplyot is already running.
+**Settings that survive a bad value.** A wrong value for one setting used to discard every setting;
+now it costs only that one, and an unreadable settings file is set aside rather than overwritten.
+History moves into the data folder with everything else, carrying over on first run.
 
-**Safer data.** History keeps 1,000 documents instead of 50, so notes and links on older books stay
-reachable, and a damaged history file is set aside rather than reset. The Markdown notes folder never
-overwrites a file that isn't its own. Closing a book no longer quits the app while you are using the
-Library.
+**Smoother opening.** A very large file is hashed in the background, so the window doesn't freeze
+while it is read.
 
-**Smoother.** Library thumbnails are made in the background, very large PDFs are no longer read into
-memory whole, Ctrl+W closes a tab and Ctrl+1 goes to the Library, and the window title names the book
-on screen.
+**Smaller things.** A PDF with no pages says so, an OCR language file too small to be real is
+refused (it would have silently broken recognition), and "Add to Kartoteka" says it only adds the
+file if Kartoteka has a library open.
 
 ---
 

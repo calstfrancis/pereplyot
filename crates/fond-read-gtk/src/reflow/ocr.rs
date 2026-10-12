@@ -84,6 +84,10 @@ pub fn language() -> String {
     compose_language(&chosen_languages(), &added_languages())
 }
 
+/// Real language files are megabytes; a smaller one is a failed download, and added to the
+/// language list it would make every page's recognition fail.
+const MIN_TRAINEDDATA_BYTES: u64 = 64 * 1024;
+
 /// Copy a `.traineddata` file the user has chosen into our own language folder. Returns the
 /// language's code.
 pub fn add_language_file(file: &Path) -> Result<String, String> {
@@ -96,6 +100,13 @@ pub fn add_language_file(file: &Path) -> Result<String, String> {
         .filter(|c| !c.is_empty() && c.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_'))
         .ok_or("That is not a Tesseract language file (it should be named like fra.traineddata)")?
         .to_string();
+    let size = std::fs::metadata(file).map_err(|e| e.to_string())?.len();
+    if size < MIN_TRAINEDDATA_BYTES {
+        return Err(format!(
+            "{name} is only {size} bytes, too small to be a language file — it may be an \
+             incomplete download"
+        ));
+    }
     let dir = tessdata_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     std::fs::copy(file, dir.join(&name)).map_err(|e| e.to_string())?;

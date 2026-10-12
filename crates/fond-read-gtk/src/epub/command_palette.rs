@@ -45,6 +45,9 @@ pub(super) fn open(ui: &EpubUi) {
             }),
         );
     }
+    if let Some(run) = ui.host.library_action() {
+        add("Add to Library", "", run);
+    }
     if let Some(run) = ui.host.kartoteka_handoff() {
         add("Add to Kartoteka", "", run);
     }

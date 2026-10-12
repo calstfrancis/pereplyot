@@ -181,6 +181,10 @@ pub fn show_epub_reader(
     next.set_tooltip_text(Some("Next chapter"));
     let chapter_label = gtk4::Label::new(None);
     chapter_label.add_css_class("dim-label");
+    // A long chapter title must shorten, not widen the window: unshortened it set the window's
+    // minimum width by itself.
+    chapter_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    chapter_label.set_max_width_chars(30);
     let page_label = gtk4::Label::new(None);
     page_label.add_css_class("heading");
     page_label.set_tooltip_text(Some("The printed page you are on"));
