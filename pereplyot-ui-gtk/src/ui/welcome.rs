@@ -10,7 +10,7 @@ use crate::ui::Widgets;
 use std::rc::Rc;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub(crate) const RELEASE_NAME: &str = "Narrow Margin";
+pub(crate) const RELEASE_NAME: &str = "Light Load";
 
 /// Show the window if this version has not been seen: the welcome the first time ever, What's
 /// New after an update. Called when the launcher is actually shown.
@@ -102,20 +102,12 @@ pub fn show(parent: &impl IsA<gtk4::Window>, first_run: bool) {
 /// Updated at release time, with `RELEASE_NAME`.
 const NEW: &[(&str, &str)] = &[
     (
-        "A narrower EPUB window",
-        "The EPUB reader no longer insists on a very wide window: text size, export and new-window moved into a menu, and long chapter titles shorten.",
+        "Big EPUBs unpack in the background",
+        "A book that has to be unpacked first no longer freezes the window; it says it is unpacking and opens when ready.",
     ),
     (
-        "Add to Library from the reader",
-        "Press Ctrl+K and choose Add to Library — no need to find the book in History first.",
-    ),
-    (
-        "Settings that survive a bad value",
-        "One wrong setting no longer resets all the others, and a damaged settings file is set aside instead of overwritten.",
-    ),
-    (
-        "Smoother opening",
-        "Opening a very large file no longer freezes the window while it is read.",
+        "Heavily marked books open at once",
+        "The notes sidebar builds 300 cards at a time with a Show more row, so thousands of marks no longer make a book slow to open.",
     ),
 ];
 

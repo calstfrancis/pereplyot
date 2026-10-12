@@ -59,6 +59,13 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.16.1" date="2026-10-12">
+      <description>
+        <p>0.16.1 "Light Load" — big EPUBs unpack in the background instead of freezing the
+        window, and the notes sidebars build 300 cards at a time with a "Show more" row, so a
+        book with thousands of marks opens at once.</p>
+      </description>
+    </release>
     <release version="0.16.0" date="2026-10-12">
       <description>
         <p>0.16.0 "Narrow Margin" — the EPUB reader no longer needs a very wide window (secondary

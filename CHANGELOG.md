@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.16.1] "Light Load" — 2026-10-12
 - **Big EPUBs unpack in the background.** A book that has to be unpacked first no longer freezes the
   window while it is; it says it is unpacking, and a second click does not start a second reader.
 - **Notes sidebars build 300 cards at a time** with a "Show more" row, so a book with thousands of

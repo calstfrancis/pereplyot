@@ -1,4 +1,4 @@
-# Pereplyot v0.16.0 "Narrow Margin"
+# Pereplyot v0.16.1 "Light Load"
 
 Install via Flatpak:
 
@@ -18,26 +18,12 @@ flatpak update io.github.calstfrancis.Pereplyot
 
 ### What's new
 
-The second half of the hardening work started in 0.15.1.
+**Big EPUBs unpack in the background.** A book that has to be unpacked first no longer freezes the
+window while it is: it says it is unpacking and opens when ready, and a second click doesn't start a
+second reader.
 
-**A narrower EPUB window.** The EPUB reader refused to be narrower than about 1,320 px, wider than a
-small laptop screen. Text size, export and "open in a new window" now sit in a ⋮ menu, as in the
-PDF reader, and a long chapter title shortens instead of widening the window. It needs about
-1,050 px now.
-
-**Add to Library from the reader.** Press Ctrl+K and choose Add to Library, instead of finding the
-book in History first.
-
-**Settings that survive a bad value.** A wrong value for one setting used to discard every setting;
-now it costs only that one, and an unreadable settings file is set aside rather than overwritten.
-History moves into the data folder with everything else, carrying over on first run.
-
-**Smoother opening.** A very large file is hashed in the background, so the window doesn't freeze
-while it is read.
-
-**Smaller things.** A PDF with no pages says so, an OCR language file too small to be real is
-refused (it would have silently broken recognition), and "Add to Kartoteka" says it only adds the
-file if Kartoteka has a library open.
+**Heavily marked books open at once.** The notes sidebars build 300 cards at a time with a "Show more"
+row, so a book with thousands of highlights no longer makes the window slow to open.
 
 ---
 
