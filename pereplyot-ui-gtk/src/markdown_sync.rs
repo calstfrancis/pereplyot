@@ -176,8 +176,30 @@ pub fn render(doc: &Document, sidecar: &AnnotationSidecar) -> String {
 pub fn write(folder: &Path, doc: &Document, sidecar: &AnnotationSidecar) -> Result<(), String> {
     std::fs::create_dir_all(folder).map_err(|e| e.to_string())?;
     let path = resolve_path(folder, doc.title, doc.hash);
+    let first_time_here = !path.exists();
     fond_read_gtk::fsutil::write_atomic(&path, render(doc, sidecar).as_bytes())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    if first_time_here {
+        remove_renamed(folder, doc.hash, &path);
+    }
+    Ok(())
+}
+
+/// The document's notes written under an earlier title are ours and now stale: remove them. Only
+/// looked for when a file is created, so an ordinary save never reads the folder through.
+fn remove_renamed(folder: &Path, hash: &str, current: &Path) {
+    let Ok(entries) = std::fs::read_dir(folder) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path == current || path.extension().map_or(true, |e| e != "md") {
+            continue;
+        }
+        if entry.metadata().is_ok_and(|m| m.is_file()) && is_ours(&path, hash) {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -278,6 +300,28 @@ mod tests {
         write(&dir, &doc("abcdef012345"), &sc).unwrap();
         write(&dir, &doc("999999999999"), &sc).unwrap();
         assert!(dir.join("Book (99999999).md").is_file());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_renamed_document_does_not_leave_its_old_file_behind() {
+        let dir = std::env::temp_dir().join(format!("pp-md-rename-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("Someone else.md"), "unrelated\n").unwrap();
+        let sc = sidecar(
+            r#"{"schema":1,"key":"k","annotations":[{"id":"a","kind":"highlight","page":1,"snippet":"q"}]}"#,
+        );
+        let doc = |title| Document {
+            title,
+            hash: "feedface",
+            citation_key: None,
+            source: Path::new("/b.pdf"),
+        };
+        write(&dir, &doc("Old Title"), &sc).unwrap();
+        write(&dir, &doc("New Title"), &sc).unwrap();
+        assert!(dir.join("New Title.md").is_file());
+        assert!(!dir.join("Old Title.md").exists());
+        assert!(dir.join("Someone else.md").is_file());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -909,6 +909,33 @@ run_multi_case() {
     stop_app
 }
 
+run_mdsync_case() {
+    mkdir -p "$WORK/h/config/pereplyot" "$WORK/mdnotes"
+    start_app "$FX/plain.pdf" keep
+    stop_app
+    mkdir -p "$WORK/h/config/pereplyot"
+    printf '{"markdown_folder": "%s"}' "$WORK/mdnotes" >"$WORK/h/config/pereplyot/config.json"
+    start_app "$FX/plain.pdf" keep
+    local w
+    w="$(reader_window)" || { check "mdsync: reader opens" 0; stop_app; return; }
+    sleep 2
+    xdotool windowfocus "$w" 2>/dev/null
+    screenshot "$WORK/md-0.png"
+    local geom x0 y0 x1 y1
+    geom="$(text_bands "$WORK/md-0.png")"
+    read -r x0 y0 x1 y1 <<<"$geom"
+    local h=$(( (y1 - y0) / 4 )) sy
+    sy=$(( y0 + 2 * h + h / 2 ))
+    xdotool mousemove $((x0 - 6)) "$sy" mousedown 1 mousemove $(( (x0 + x1) / 2 )) "$sy" mousemove $((x1 + 6)) "$sy" mouseup 1
+    sleep 1
+    xdotool key 1
+    sleep 3
+    local file
+    file="$(ls "$WORK"/mdnotes/*.md 2>/dev/null | head -1)"
+    check "mdsync: marking text writes the document's Markdown notes in the chosen folder" "$([[ -n "$file" && "$(cat "$file")" == *'^annot-'* && "$(cat "$file")" == *'Pack my box'* ]] && echo 1 || echo 0)" "(files: $(ls "$WORK/mdnotes" 2>/dev/null | tr '\n' ' '))"
+    stop_app
+}
+
 run_scholar_case() {
     start_app "$FX/scholar.epub"
     local w
@@ -1380,6 +1407,7 @@ want histadd && run_history_add_case
 want home && run_home_case
 want epubnet && run_epubnet_case
 want multi && run_multi_case
+want mdsync && run_mdsync_case
 want patterns && run_patterns_case
 
 echo

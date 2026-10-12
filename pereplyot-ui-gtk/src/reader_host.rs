@@ -128,9 +128,7 @@ impl ReaderHost for LocalReaderHost {
         if extra > 0 {
             self.notify(&merged_notice(extra));
         }
-        if let Err(e) = write_markdown(&self.hash, sidecar) {
-            self.notify(&format!("Couldn't update the Markdown notes: {e}"));
-        }
+        queue_markdown(&self.hash, sidecar);
         Ok(())
     }
 
@@ -703,6 +701,51 @@ impl ReaderHost for ExternalPathReaderHost {
         meta.citation_key = key;
         meta.save(&self.hash);
     }
+}
+
+static MARKDOWN_PENDING: std::sync::Mutex<Vec<(String, fond_annot::AnnotationSidecar)>> =
+    std::sync::Mutex::new(Vec::new());
+static MARKDOWN_RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Have the Markdown notes file brought up to date without making the editing that caused it wait
+/// for the disk: the newest notes of each document are written on a worker thread, one file at a
+/// time, and a burst of edits writes only the last.
+fn queue_markdown(hash: &str, sidecar: &fond_annot::AnnotationSidecar) {
+    use std::sync::atomic::Ordering;
+    if crate::config::Config::load().markdown_folder.is_empty() {
+        return;
+    }
+    {
+        let mut pending = MARKDOWN_PENDING.lock().unwrap_or_else(|e| e.into_inner());
+        pending.retain(|(h, _)| h != hash);
+        pending.push((hash.to_string(), sidecar.clone()));
+    }
+    if MARKDOWN_RUNNING.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    std::thread::spawn(|| loop {
+        let next = MARKDOWN_PENDING
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .pop();
+        let Some((hash, sidecar)) = next else {
+            MARKDOWN_RUNNING.store(false, Ordering::Release);
+            let again = !MARKDOWN_PENDING
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_empty();
+            if again && !MARKDOWN_RUNNING.swap(true, Ordering::AcqRel) {
+                continue;
+            }
+            return;
+        };
+        if let Err(e) = write_markdown(&hash, &sidecar) {
+            let message = format!("Couldn't update the Markdown notes: {e}");
+            glib::MainContext::default().invoke(move || {
+                fond_read_gtk::reader_host::toast_in_readers(&message);
+            });
+        }
+    });
 }
 
 /// Bring the document's Markdown notes file up to date, if a folder for them is set.

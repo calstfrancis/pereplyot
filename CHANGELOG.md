@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+- **Markdown notes are written in the background**, newest version of each document only, so an
+  edit never waits for the disk (or a synced folder) to save; and when a document's title changes
+  the notes file under the old title is removed instead of being left behind.
+
 ## [0.16.2] "Closed Door" — 2026-10-12
 - **A crafted link could crash Pereplyot.** Pereplyot opens `pereplyot://` links, and a link
   containing a `%` followed by a non-ASCII character made the link reader panic — closing the app
