@@ -33,6 +33,7 @@ mod keys;
 mod mark_edit;
 mod mark_layer;
 mod open_pdf;
+mod unlock;
 mod scrollbar_ticks;
 mod shapes;
 mod tiles;
@@ -365,7 +366,13 @@ pub fn show_pdf_reader(
     }
     crate::perf::watch_main_loop();
     crate::perf::mark("show_pdf_reader start");
-    build_reader(host, window, pdf_hash, blob, title, start_page, None);
+    let (host, window_owned) = (host.clone(), window.clone());
+    let (hash, title) = (pdf_hash.to_string(), title.to_string());
+    unlock::with_readable_path(window, pdf_hash, blob, move |readable| {
+        if let Some(readable) = readable {
+            build_reader(&host, &window_owned, &hash, &readable, &title, start_page, None);
+        }
+    });
 }
 
 /// A second view of the document the tab is showing, for a split view: a complete reader of its

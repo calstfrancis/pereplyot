@@ -909,6 +909,28 @@ run_multi_case() {
     stop_app
 }
 
+run_locked_case() {
+    start_app "$FX/locked.pdf"
+    sleep 4
+    screenshot "$WORK/locked-ask.png"
+    xdotool type --delay 40 "wrong"; xdotool key Return
+    sleep 2
+    local early
+    early="$(ls "$WORK"/h/cache/pereplyot/unlocked/*.pdf 2>/dev/null | wc -l)"
+    check "locked: a wrong password opens nothing" "$([ "$early" = 0 ] && echo 1 || echo 0)"
+    xdotool type --delay 40 "secret"; xdotool key Return
+    sleep 4
+    local w
+    w="$(reader_window)" || { check "locked: the right password opens the reader" 0 "(log: $(tail -c 300 "$WORK/app.log"))"; stop_app; return; }
+    screenshot "$WORK/locked-0.png"
+    local geom x0 y0 x1 y1
+    geom="$(text_bands "$WORK/locked-0.png")"
+    read -r x0 y0 x1 y1 <<<"$geom"
+    check "locked: the right password shows the page text" "$([ -n "${y1:-}" ] && [ "${y1:-0}" -gt "${y0:-0}" ] && echo 1 || echo 0)" "(bands: $geom)"
+    check "locked: an unlocked copy is kept in the cache" "$([ "$(ls "$WORK"/h/cache/pereplyot/unlocked/*.pdf 2>/dev/null | wc -l)" = 1 ] && echo 1 || echo 0)"
+    stop_app
+}
+
 run_mdsync_case() {
     mkdir -p "$WORK/h/config/pereplyot" "$WORK/mdnotes"
     start_app "$FX/plain.pdf" keep
@@ -1408,6 +1430,7 @@ want home && run_home_case
 want epubnet && run_epubnet_case
 want multi && run_multi_case
 want mdsync && run_mdsync_case
+want locked && run_locked_case
 want patterns && run_patterns_case
 
 echo

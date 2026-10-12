@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+- **Password-protected PDFs open.** Pereplyot asks for the password (and again if it was wrong),
+  then reads an unlocked copy it keeps in its cache for a day; your file is not changed. Notes
+  stay under the original file's identity. The copy carries the pages but not the outline or the
+  printed page numbers of the original.
+
 ## [0.16.3] "Quiet Hands" — 2026-10-12
 - **Markdown notes are written in the background**, newest version of each document only, so an
   edit never waits for the disk (or a synced folder) to save; and when a document's title changes
