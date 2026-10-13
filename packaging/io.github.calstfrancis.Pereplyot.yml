@@ -110,6 +110,11 @@ modules:
       - cargo --offline build --release -p pereplyot-ui-gtk
       - install -Dm755 target/release/pereplyot /app/bin/pereplyot
       - strip /app/bin/pereplyot
+      # A separate command for `--extract-text` (Sputnik's syllabus import): a Pereplyot
+      # without it fails `flatpak run --command=pereplyot-extract-text` outright instead
+      # of opening the file in a reader window.
+      - printf '#!/bin/sh\nexec /app/bin/pereplyot --extract-text "$@"\n' > pereplyot-extract-text
+      - install -Dm755 pereplyot-extract-text /app/bin/pereplyot-extract-text
       # Bundle PDFium (BSD-3).
       - install -Dm755 pdfium/lib/libpdfium.so /app/lib/libpdfium.so
       # Desktop entry, icon, AppStream metainfo.

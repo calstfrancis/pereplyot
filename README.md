@@ -89,6 +89,19 @@ stand where the file goes: Pereplyot finds the document by hash in its own Histo
 that exported notes carry open the exact passage. Unknown `--options` are ignored with a warning rather than
 rejected, so a newer Kartoteka/Sputnik can't break an older Pereplyot by passing one.
 
+A fourth shape opens no window at all:
+
+```bash
+pereplyot --extract-text <file>      # print a PDF's or EPUB's text to stdout, then exit
+```
+
+Sputnik's syllabus import uses it. The flatpak also installs it as its own command,
+`pereplyot-extract-text <file>`, which is what callers should run (`flatpak run
+--command=pereplyot-extract-text io.github.calstfrancis.Pereplyot <file>`): an older
+Pereplyot without the mode then fails with "command not found" instead of treating the
+unknown option as ignorable and opening the file in a reader. Exit status 0 on success,
+1 if the file couldn't be read, 2 with no file given.
+
 The `--vault`/`--key` form writes straight into that vault's `notes/<key>.md` /
 `annots/<key>.json` — the exact files Kartoteka's own `KartotekaReaderHost` reads and
 writes — via a `fond_bib::Library` opened directly on `root`, so annotations, resume

@@ -183,7 +183,59 @@ fn content_hash(path: &std::path::Path) -> Result<String, String> {
     paths::hash_file(path).map_err(|e| format!("Couldn't read {path:?}: {e}"))
 }
 
+/// `--extract-text <file>`: print a PDF's (or EPUB's) text to stdout and exit, without
+/// starting the GUI — for Sputnik's syllabus import, which runs it through the
+/// `pereplyot-extract-text` command so that a Pereplyot too old to have this mode fails
+/// with "command not found" instead of opening a reader window. `None` when the flag
+/// isn't there.
+fn extract_text_mode(args: &[std::ffi::OsString]) -> Option<glib::ExitCode> {
+    if !args.iter().any(|a| a == "--extract-text") {
+        return None;
+    }
+    let Some(file) = args
+        .iter()
+        .find(|a| !a.to_string_lossy().starts_with("--"))
+        .map(PathBuf::from)
+    else {
+        eprintln!("pereplyot: --extract-text needs a file");
+        return Some(glib::ExitCode::from(2));
+    };
+    match extract_text(&file) {
+        Ok(text) => {
+            use std::io::Write;
+            let mut out = std::io::stdout().lock();
+            if out.write_all(text.as_bytes()).is_err() {
+                return Some(glib::ExitCode::FAILURE);
+            }
+            Some(glib::ExitCode::SUCCESS)
+        }
+        Err(e) => {
+            eprintln!("pereplyot: {}: {e}", file.display());
+            Some(glib::ExitCode::FAILURE)
+        }
+    }
+}
+
+/// A document's whole text: an EPUB's chapters, else a PDF's pages, blank-line separated.
+fn extract_text(file: &std::path::Path) -> Result<String, String> {
+    let is_epub = file
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("epub"));
+    if is_epub {
+        return fond_doc::epub::extract_text(file).map_err(|e| e.to_string());
+    }
+    let pdfium = fond_read_gtk::pdfium::get()?;
+    let bytes = std::fs::read(file).map_err(|e| e.to_string())?;
+    fond_doc::extract_text(pdfium, &bytes)
+        .map(|t| t.full_text())
+        .map_err(|e| e.to_string())
+}
+
 fn main() -> glib::ExitCode {
+    let argv: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    if let Some(code) = extract_text_mode(&argv) {
+        return code;
+    }
     fond_read_gtk::perf::init();
     let app = adw::Application::builder()
         .application_id(APP_ID)
