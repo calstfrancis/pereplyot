@@ -217,7 +217,29 @@ fn extract_text_mode(args: &[std::ffi::OsString]) -> Option<glib::ExitCode> {
 }
 
 /// A document's whole text: an EPUB's chapters, else a PDF's pages, blank-line separated.
+/// `-` reads the document from stdin instead — a caller in another sandbox may hold a
+/// file at a path this one can't see.
 fn extract_text(file: &std::path::Path) -> Result<String, String> {
+    if file.as_os_str() == "-" {
+        use std::io::Read;
+        let mut bytes = Vec::new();
+        std::io::stdin()
+            .read_to_end(&mut bytes)
+            .map_err(|e| e.to_string())?;
+        if bytes.starts_with(b"PK") {
+            // An EPUB: fond-doc reads those from a path.
+            let tmp =
+                std::env::temp_dir().join(format!("pereplyot-extract-{}.epub", std::process::id()));
+            std::fs::write(&tmp, &bytes).map_err(|e| e.to_string())?;
+            let text = fond_doc::epub::extract_text(&tmp).map_err(|e| e.to_string());
+            let _ = std::fs::remove_file(&tmp);
+            return text;
+        }
+        let pdfium = fond_read_gtk::pdfium::get()?;
+        return fond_doc::extract_text(pdfium, &bytes)
+            .map(|t| t.full_text())
+            .map_err(|e| e.to_string());
+    }
     let is_epub = file
         .extension()
         .is_some_and(|e| e.eq_ignore_ascii_case("epub"));

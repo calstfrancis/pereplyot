@@ -93,6 +93,7 @@ A fourth shape opens no window at all:
 
 ```bash
 pereplyot --extract-text <file>      # print a PDF's or EPUB's text to stdout, then exit
+pereplyot --extract-text - < file    # the same, reading the document from stdin
 ```
 
 Sputnik's syllabus import uses it. The flatpak also installs it as its own command,
