@@ -1,4 +1,4 @@
-# Pereplyot v0.17.2 "Mended Spine"
+# Pereplyot v0.18.0 "Loose Leaf"
 
 Install via Flatpak:
 
@@ -18,15 +18,15 @@ flatpak update io.github.calstfrancis.Pereplyot
 
 ### What's new
 
-**Password-protected PDFs keep their outline and page numbers.** The unlocked copy Pereplyot reads
-used to lose the contents list and the printed page numbers; both now come along. The copy is also
-deleted when you close the tab rather than lingering in the cache.
+**Text for other apps.** Pereplyot can now hand a document's text to another program without
+opening a window. `--extract-text <file>` prints a PDF's or EPUB's text and exits, and `-` reads
+the document from standard input. The flatpak also installs it as its own
+`pereplyot-extract-text` command, so an app can run
+`flatpak run --command=pereplyot-extract-text io.github.calstfrancis.Pereplyot -` and pipe the
+file in, with no shared folder needed between sandboxes. Sputnik 0.22 uses this to import PDF
+syllabi.
 
-**Dialogs follow a tab that moved.** After a tab is dragged into its own window, its dialogs open
-over that window.
-
-**Reading mode no longer widens the window.** Its typography button replaces the Rotate button
-(which does nothing there), so the bar stays inside the default width.
+Reading itself is unchanged in this release.
 
 ---
 

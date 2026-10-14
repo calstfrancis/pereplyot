@@ -10,7 +10,7 @@ use crate::ui::Widgets;
 use std::rc::Rc;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub(crate) const RELEASE_NAME: &str = "Mended Spine";
+pub(crate) const RELEASE_NAME: &str = "Loose Leaf";
 
 /// Show the window if this version has not been seen: the welcome the first time ever, What's
 /// New after an update. Called when the launcher is actually shown.
@@ -100,20 +100,10 @@ pub fn show(parent: &impl IsA<gtk4::Window>, first_run: bool) {
 }
 
 /// Updated at release time, with `RELEASE_NAME`.
-const NEW: &[(&str, &str)] = &[
-    (
-        "Locked PDFs keep their contents and page numbers",
-        "A password-protected PDF used to lose its outline and printed page numbers once unlocked; they now come along, and the unlocked copy is deleted when you close the tab.",
-    ),
-    (
-        "Dialogs follow a tab that moved",
-        "After dragging a tab into its own window, its dialogs open over that window.",
-    ),
-    (
-        "Reading mode keeps the window narrow",
-        "The typography button replaces Rotate, which does nothing there, so the window no longer grows wider.",
-    ),
-];
+const NEW: &[(&str, &str)] = &[(
+    "Text for other apps",
+    "Other apps can now ask Pereplyot for a PDF's or EPUB's text without opening a window. Sputnik uses this to read PDF syllabi.",
+)];
 
 const TRY: &[(&str, &str)] = &[
     (

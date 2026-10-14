@@ -25,3 +25,13 @@ Reader chrome has minimum widths of about 705 / 964 / 1050 px depending on mode.
 ## Done in 0.17.2 "Mended Spine"
 
 The smaller follow-ups: the unlocked-PDF copy is removed on tab close and carries the outline and page labels (kept in a `.json` beside it); dialogs resolve the tab's window when opened (`HostWindow`); Reading mode's typography button replaces Rotate so the window stays at 1000 px; `capture-screenshots.sh` targets the website's real layout (the site has no Pereplyot section yet, so nothing to publish there).
+
+## CI smoke test: two hover checks fail
+
+Found 2026-10-14 while releasing 0.18.0. `tests/smoke/run.sh` in CI has failed every run since at
+least 0.16.1 on the same two checks — "hover: resting on an unlinked citation previews its
+bibliography entry" and "hover: resting on a link previews where it leads" (the screen's ink count
+doesn't change, so no preview appeared). Every other smoke check passes, and `release-flatpak.yml`
+gates only on "build & test", so releases have gone out regardless. Not yet investigated: it may be
+CI-only timing (the hover delay under a slow runner) rather than a real regression.
+

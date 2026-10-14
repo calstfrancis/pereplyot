@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased] — Text extraction for other apps
+## [0.18.0] "Loose Leaf" — 2026-10-14 — Text extraction for other apps
 - **`--extract-text <file>`** prints a PDF's or EPUB's text and exits without opening a
   window (`-` reads the document from stdin), also installed as the
   `pereplyot-extract-text` command. Sputnik uses it to read PDF syllabi.

@@ -59,6 +59,14 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.18.0" date="2026-10-14">
+      <description>
+        <p>0.18.0 "Loose Leaf" — Pereplyot can hand a document's text to other apps:
+        --extract-text prints a PDF's or EPUB's text without opening a window, and the
+        flatpak installs it as the pereplyot-extract-text command. Sputnik uses it to read
+        PDF syllabi.</p>
+      </description>
+    </release>
     <release version="0.17.2" date="2026-10-12">
       <description>
         <p>0.17.2 "Mended Spine" — a password-protected PDF keeps its outline and page numbers and
