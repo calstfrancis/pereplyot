@@ -14,6 +14,24 @@ Annotations and reading progress are stored locally, keyed by the file's content
 Kartoteka and Sputnik write, so it's portable between all three as long as the file's hash
 matches.
 
+### Keeping notes safe
+
+- Every save is atomic (temporary file, fsync, rename) and keeps the previous file as `.bak`; a
+  file that won't load is set aside as `.corrupt-<time>`, never overwritten.
+- A save merges with whatever is on disk, by annotation id, so an annotation added, edited or
+  deleted by another window or app (Kartoteka, Sputnik, a sync client) while a document is open
+  is kept rather than overwritten.
+- **Earlier versions** (menu → *Earlier versions of notes…*): a copy of a document's notes is kept
+  under `versions/<hash>/` when a session first changes them, then at most hourly, and before every
+  bulk edit or restore — the newest 20 plus one a day for 90 days. Any of them can be restored, and
+  restoring keeps the replaced notes as a version too.
+- **Backup** (menu → *Backup…*): once a day, everything under the data folder that matters (notes,
+  bookmarks and reading places, notebooks, the Library, earlier versions) is copied as plain files
+  to a folder you choose — point it at a synced folder or a backup drive to get it off the computer.
+  The newest 14 are kept. *Restore from a backup…* only adds what is missing here; nothing is
+  removed or overwritten. Notes for documents opened from Kartoteka or Sputnik live in those apps'
+  vaults and are backed up with them.
+
 ## Status
 
 **v0.11.0 "Gilt Spine", released 2026-10-09** (the paragraph below was v0.10.0 "Fair Copy"; the one after it is what 0.11.0 added). Opening a PDF or EPUB (via Open,

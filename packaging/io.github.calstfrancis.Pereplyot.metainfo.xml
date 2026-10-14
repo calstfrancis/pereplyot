@@ -59,6 +59,14 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.19.0" date="2026-10-14">
+      <description>
+        <p>0.19.0 "Kettle Stitch" — notes you can't lose: changes made to a document's notes in
+        another window or app are kept instead of overwritten, earlier versions of each
+        document's notes are kept and can be restored, and a daily backup can copy everything
+        to a folder you choose.</p>
+      </description>
+    </release>
     <release version="0.18.0" date="2026-10-14">
       <description>
         <p>0.18.0 "Loose Leaf" — Pereplyot can hand a document's text to other apps:

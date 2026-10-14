@@ -50,6 +50,7 @@ pub mod reflow;
 pub mod store;
 mod style;
 pub mod typography;
+pub mod versions;
 
 const PAGE_LABEL_KEY: &str = "page_label";
 
@@ -127,8 +128,12 @@ pub trait ReaderHost {
 
     /// Persist the sidecar. Called on every annotation add, edit, and delete — the reader
     /// holds the authoritative in-memory copy for the session and rewrites the whole
-    /// sidecar each time.
-    fn save_annotations(&self, sidecar: &fond_annot::AnnotationSidecar) -> Result<(), String>;
+    /// sidecar each time. `Some` when what was written differs because changes made elsewhere
+    /// were kept: the reader must take that as its copy, or its next save drops them.
+    fn save_annotations(
+        &self,
+        sidecar: &fond_annot::AnnotationSidecar,
+    ) -> Result<Option<fond_annot::AnnotationSidecar>, String>;
 
     /// Persist reading position, on reader close. Best-effort: a failure is not surfaced,
     /// since losing a resume position is not worth interrupting a close for.

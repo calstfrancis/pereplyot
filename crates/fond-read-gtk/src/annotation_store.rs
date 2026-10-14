@@ -247,10 +247,12 @@ impl AnnotationStore {
     }
 
     fn apply_new(&self, op: Op) -> Result<(), String> {
-        let change = self.run(&op)?;
+        let changes = self.run(&op)?;
         if let Some(group) = self.group.borrow_mut().as_mut() {
             group.push(op);
-            self.notify(&change);
+            for change in &changes {
+                self.notify(change);
+            }
             return Ok(());
         }
         {
@@ -261,19 +263,28 @@ impl AnnotationStore {
                 s.undo.remove(0);
             }
         }
-        self.notify(&change);
+        for change in &changes {
+            self.notify(change);
+        }
         Ok(())
     }
 
     fn run_all(&self, op: &Op) -> Result<Vec<Change>, String> {
         match op {
-            Op::Many(ops) => ops.iter().map(|o| self.run(o)).collect(),
-            _ => Ok(vec![self.run(op)?]),
+            Op::Many(ops) => {
+                let mut all = Vec::new();
+                for o in ops {
+                    all.extend(self.run(o)?);
+                }
+                Ok(all)
+            }
+            _ => self.run(op),
         }
     }
 
-    /// Apply `op` to the sidecar and save it; undo it again if the save fails.
-    fn run(&self, op: &Op) -> Result<Change, String> {
+    /// Apply `op` to the sidecar and save it; undo it again if the save fails. Returns the
+    /// change made, then any made elsewhere that the save picked up.
+    fn run(&self, op: &Op) -> Result<Vec<Change>, String> {
         let (change, previous_hash) = {
             let mut s = self.state.borrow_mut();
             let previous_hash = s.sidecar.pdf_hash.clone();
@@ -311,6 +322,13 @@ impl AnnotationStore {
             (change, previous_hash)
         };
         let saved = self.host.save_annotations(&self.state.borrow().sidecar);
+        if let Ok(Some(merged)) = saved {
+            let mut s = self.state.borrow_mut();
+            let mut changes = vec![change];
+            changes.extend(differences(&s.sidecar.annotations, &merged.annotations));
+            s.sidecar = merged;
+            return Ok(changes);
+        }
         if let Err(e) = saved {
             let mut s = self.state.borrow_mut();
             match op {
@@ -330,7 +348,7 @@ impl AnnotationStore {
             s.sidecar.pdf_hash = previous_hash;
             return Err(e);
         }
-        Ok(change)
+        Ok(vec![change])
     }
 
     fn notify(&self, change: &Change) {
@@ -344,6 +362,26 @@ impl AnnotationStore {
             l(self, change);
         }
     }
+}
+
+fn differences(before: &[Annotation], after: &[Annotation]) -> Vec<Change> {
+    let mut changes = Vec::new();
+    for a in after {
+        match before.iter().find(|b| b.id == a.id) {
+            None => changes.push(Change::Added(a.clone())),
+            Some(b) if b != a => changes.push(Change::Updated {
+                before: Box::new(b.clone()),
+                after: Box::new(a.clone()),
+            }),
+            Some(_) => {}
+        }
+    }
+    for b in before {
+        if !after.iter().any(|a| a.id == b.id) {
+            changes.push(Change::Removed(b.clone()));
+        }
+    }
+    changes
 }
 
 fn invert(op: &Op) -> Op {
@@ -370,6 +408,7 @@ mod tests {
     struct MockHost {
         saved: RefCell<Vec<usize>>,
         fail_next: Cell<bool>,
+        outside: RefCell<Option<Annotation>>,
     }
 
     impl MockHost {
@@ -377,6 +416,7 @@ mod tests {
             Rc::new(MockHost {
                 saved: RefCell::new(Vec::new()),
                 fail_next: Cell::new(false),
+                outside: RefCell::new(None),
             })
         }
     }
@@ -385,12 +425,20 @@ mod tests {
         fn load_annotations(&self) -> AnnotationSidecar {
             AnnotationSidecar::new("k")
         }
-        fn save_annotations(&self, sidecar: &AnnotationSidecar) -> Result<(), String> {
+        fn save_annotations(
+            &self,
+            sidecar: &AnnotationSidecar,
+        ) -> Result<Option<AnnotationSidecar>, String> {
             if self.fail_next.replace(false) {
                 return Err("disk full".into());
             }
             self.saved.borrow_mut().push(sidecar.annotations.len());
-            Ok(())
+            if let Some(extra) = self.outside.borrow_mut().take() {
+                let mut merged = sidecar.clone();
+                merged.annotations.push(extra);
+                return Ok(Some(merged));
+            }
+            Ok(None)
         }
         fn save_progress(&self, _: fond_annot::Progress) {}
         fn page_label_override(&self) -> Option<fond_annot::PageLabelOverride> {
@@ -447,6 +495,23 @@ mod tests {
             ["a"]
         );
         assert!(matches!(seen.borrow()[0], Change::Added(_)));
+    }
+
+    #[test]
+    fn changes_picked_up_by_a_save_join_the_store_and_are_announced() {
+        let host = MockHost::new();
+        let s = store(&host);
+        let seen = Rc::new(RefCell::new(Vec::new()));
+        {
+            let seen = seen.clone();
+            s.subscribe(move |_, c| seen.borrow_mut().push(c.id().to_string()));
+        }
+        *host.outside.borrow_mut() = Some(ann("elsewhere", "from another window"));
+        s.add(ann("a", "one")).unwrap();
+        assert_eq!(ids(&s), ["a", "elsewhere"]);
+        assert_eq!(*seen.borrow(), ["a", "elsewhere"]);
+        s.add(ann("b", "two")).unwrap();
+        assert_eq!(*host.saved.borrow(), [1, 3]);
     }
 
     #[test]

@@ -32,6 +32,8 @@ pub struct Config {
     pub markdown_folder: String,
     /// The last version whose Welcome / What's New window was shown.
     pub last_seen_version: String,
+    /// Folder that receives a daily backup; empty means off.
+    pub backup_folder: String,
 }
 
 pub const LIBRARY_SIZE_MIN: u32 = 80;
@@ -49,6 +51,7 @@ impl Default for Config {
             patterns: false,
             markdown_folder: String::new(),
             last_seen_version: String::new(),
+            backup_folder: String::new(),
         }
     }
 }

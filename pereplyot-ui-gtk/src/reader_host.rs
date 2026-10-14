@@ -25,6 +25,15 @@ fn data_dir() -> PathBuf {
     glib::user_data_dir().join("pereplyot")
 }
 
+/// Earlier versions of a document's notes, for "Earlier versions…".
+pub fn versions_dir(hash: &str) -> PathBuf {
+    data_dir().join("versions").join(hash)
+}
+
+pub fn annotations_path(hash: &str) -> PathBuf {
+    data_dir().join("annotations").join(format!("{hash}.json"))
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct LocalMeta {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -57,10 +66,14 @@ impl LocalMeta {
     }
 
     fn load(hash: &str) -> LocalMeta {
-        fs::read_to_string(Self::path(hash))
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+        match fsutil::load_checked(&Self::path(hash), |t| serde_json::from_str(t).ok()) {
+            fsutil::Loaded::Ok(meta) => meta,
+            fsutil::Loaded::Missing => LocalMeta::default(),
+            fsutil::Loaded::Corrupt {
+                recovered_from_backup,
+                ..
+            } => recovered_from_backup.unwrap_or_default(),
+        }
     }
 
     fn save(&self, hash: &str) {
@@ -71,7 +84,7 @@ impl LocalMeta {
 }
 
 fn merged_notice(n: usize) -> String {
-    format!("{n} annotation(s) added elsewhere were kept; reopen the document to see them")
+    format!("Kept {n} change(s) to these notes made in another window or app")
 }
 
 fn toast_anywhere(widgets: &Rc<Widgets>, message: &str) {
@@ -101,7 +114,7 @@ impl LocalReaderHost {
         Rc::new(LocalReaderHost {
             widgets: widgets.clone(),
             hash: hash.to_string(),
-            sync: SidecarSync::default(),
+            sync: SidecarSync::with_versions(versions_dir(hash)),
         })
     }
 
@@ -123,13 +136,16 @@ impl ReaderHost for LocalReaderHost {
         report.sidecar
     }
 
-    fn save_annotations(&self, sidecar: &fond_annot::AnnotationSidecar) -> Result<(), String> {
-        let extra = self.sync.save(&self.annotations_path(), sidecar)?;
-        if extra > 0 {
-            self.notify(&merged_notice(extra));
+    fn save_annotations(
+        &self,
+        sidecar: &fond_annot::AnnotationSidecar,
+    ) -> Result<Option<fond_annot::AnnotationSidecar>, String> {
+        let saved = self.sync.save(&self.annotations_path(), sidecar)?;
+        if saved.outside > 0 {
+            self.notify(&merged_notice(saved.outside));
         }
-        queue_markdown(&self.hash, sidecar);
-        Ok(())
+        queue_markdown(&self.hash, saved.merged.as_ref().unwrap_or(sidecar));
+        Ok(saved.merged)
     }
 
     fn save_progress(&self, progress: fond_annot::Progress) {
@@ -448,12 +464,15 @@ impl ReaderHost for VaultReaderHost {
         report.sidecar
     }
 
-    fn save_annotations(&self, sidecar: &fond_annot::AnnotationSidecar) -> Result<(), String> {
-        let extra = self.sync.save(&self.annotations_path(), sidecar)?;
-        if extra > 0 {
-            self.notify(&merged_notice(extra));
+    fn save_annotations(
+        &self,
+        sidecar: &fond_annot::AnnotationSidecar,
+    ) -> Result<Option<fond_annot::AnnotationSidecar>, String> {
+        let saved = self.sync.save(&self.annotations_path(), sidecar)?;
+        if saved.outside > 0 {
+            self.notify(&merged_notice(saved.outside));
         }
-        Ok(())
+        Ok(saved.merged)
     }
 
     fn save_progress(&self, progress: fond_annot::Progress) {
@@ -597,12 +616,15 @@ impl ReaderHost for ExternalPathReaderHost {
         report.sidecar
     }
 
-    fn save_annotations(&self, sidecar: &fond_annot::AnnotationSidecar) -> Result<(), String> {
-        let extra = self.sync.save(&self.annotations_path, sidecar)?;
-        if extra > 0 {
-            self.notify(&merged_notice(extra));
+    fn save_annotations(
+        &self,
+        sidecar: &fond_annot::AnnotationSidecar,
+    ) -> Result<Option<fond_annot::AnnotationSidecar>, String> {
+        let saved = self.sync.save(&self.annotations_path, sidecar)?;
+        if saved.outside > 0 {
+            self.notify(&merged_notice(saved.outside));
         }
-        Ok(())
+        Ok(saved.merged)
     }
 
     fn save_progress(&self, progress: fond_annot::Progress) {

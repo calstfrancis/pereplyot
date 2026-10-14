@@ -31,7 +31,7 @@ pub struct NoteHit {
 pub const MAX_HITS: usize = 300;
 
 /// Title/path per content hash, from History and the Library.
-fn known_documents(library: &Library) -> HashMap<String, (String, PathBuf, DocKind)> {
+pub fn known_documents(library: &Library) -> HashMap<String, (String, PathBuf, DocKind)> {
     let mut map = HashMap::new();
     for e in fond_read_gtk::history::load() {
         map.insert(e.hash, (e.title, e.path, e.kind));

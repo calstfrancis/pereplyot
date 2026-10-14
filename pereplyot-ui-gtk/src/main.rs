@@ -4,6 +4,7 @@
 //! same binary to open a document rather than duplicating its reader UI.
 
 mod about;
+mod backup;
 mod changelog;
 mod config;
 mod kartoteka;
@@ -12,6 +13,7 @@ mod markdown_sync;
 mod notes_edit;
 mod notes_export;
 mod notes_index;
+mod notes_versions;
 mod paths;
 mod reader_host;
 mod search_index;

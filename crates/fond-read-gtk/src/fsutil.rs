@@ -79,6 +79,18 @@ pub enum Loaded<T> {
     },
 }
 
+/// Rename a file that won't parse to `<name>.corrupt-<unix time>`, out of the way of the next
+/// save.
+pub fn set_aside(path: &Path) -> PathBuf {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let quarantined = sibling(path, &format!(".corrupt-{stamp}"));
+    let _ = fs::rename(path, &quarantined);
+    quarantined
+}
+
 /// Read and parse `path`. A file that fails to parse is renamed to `<name>.corrupt-<unix time>`
 /// instead of being left to be overwritten by the next save, and `<name>.bak` is tried as a
 /// fallback.
@@ -100,12 +112,7 @@ pub fn load_checked<T>(path: &Path, parse: impl Fn(&str) -> Option<T>) -> Loaded
     if let Some(v) = parse(&text) {
         return Loaded::Ok(v);
     }
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let quarantined = sibling(path, &format!(".corrupt-{stamp}"));
-    let _ = fs::rename(path, &quarantined);
+    let quarantined = set_aside(path);
     let recovered_from_backup = fs::read_to_string(sibling(path, ".bak"))
         .ok()
         .and_then(|t| parse(&t));

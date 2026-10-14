@@ -52,17 +52,42 @@ pub enum Sort {
     Title,
 }
 
+fn parse(text: &str) -> Option<Library> {
+    serde_json::from_str::<OnDisk>(text).ok().map(|d| match d {
+        OnDisk::Current(l) => l,
+        OnDisk::Legacy(entries) => Library {
+            shelves: Vec::new(),
+            entries,
+        },
+    })
+}
+
 impl Library {
+    /// A library file other than this computer's own, such as a backup's.
+    pub fn read(path: &std::path::Path) -> Option<Library> {
+        parse(&std::fs::read_to_string(path).ok()?)
+    }
+
+    /// Take in the documents and shelves of `other` that this library lacks, saving if any;
+    /// returns how many documents were added.
+    pub fn merge_from(&mut self, other: &Library) -> usize {
+        let mut added = 0;
+        for shelf in &other.shelves {
+            if !self.shelves.iter().any(|s| s.eq_ignore_ascii_case(shelf)) {
+                self.shelves.push(shelf.clone());
+            }
+        }
+        for entry in &other.entries {
+            if !self.contains(&entry.hash) {
+                self.entries.push(entry.clone());
+                added += 1;
+            }
+        }
+        self.save();
+        added
+    }
+
     pub fn load() -> Library {
-        let parse = |t: &str| {
-            serde_json::from_str::<OnDisk>(t).ok().map(|d| match d {
-                OnDisk::Current(l) => l,
-                OnDisk::Legacy(entries) => Library {
-                    shelves: Vec::new(),
-                    entries,
-                },
-            })
-        };
         match fsutil::load_checked(&library_path(), parse) {
             Loaded::Ok(l) => l,
             Loaded::Missing => Library::default(),

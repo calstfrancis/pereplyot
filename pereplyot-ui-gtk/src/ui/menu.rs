@@ -145,6 +145,16 @@ pub fn build(widgets: &Rc<Widgets>) -> gtk4::Popover {
         "Markdown notes folder…",
         "win.markdown-notes",
     );
+    rows.append(&popover_separator());
+    activate_row(widgets, &rows, &popover, "Backup…", "win.backup");
+    activate_row(
+        widgets,
+        &rows,
+        &popover,
+        "Earlier versions of notes…",
+        "win.note-versions",
+    );
+    rows.append(&popover_separator());
     activate_row(widgets, &rows, &popover, "What's new…", "win.whats-new");
     activate_row(widgets, &rows, &popover, "About Pereplyot", "win.about");
 

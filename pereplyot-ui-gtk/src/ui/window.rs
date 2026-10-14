@@ -337,6 +337,7 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
     install_drop_target(&widgets);
     rebuild_history(&widgets);
     rebuild_library(&widgets);
+    crate::ui::backups::start_automatic(&widgets);
 
     widgets
 }
@@ -369,6 +370,8 @@ fn show_palette(widgets: &Rc<Widgets>, stack: &adw::ViewStack) {
     list.push(action("Textures on highlights (on/off)", "", "patterns"));
     list.push(action("OCR languages…", "", "ocr-languages"));
     list.push(action("Markdown notes folder…", "", "markdown-notes"));
+    list.push(action("Backup…", "", "backup"));
+    list.push(action("Earlier versions of notes…", "", "note-versions"));
     list.push(action("What's new…", "", "whats-new"));
     list.push(action("About Pereplyot", "", "about"));
     for (label, name) in [("System", "system"), ("Light", "light"), ("Dark", "dark")] {
@@ -534,6 +537,20 @@ fn install_actions(app: &adw::Application, widgets: &Rc<Widgets>) {
             .connect_activate(move |_, _| crate::ui::markdown_notes::show(&widgets.window));
     }
     window.add_action(&markdown_action);
+
+    let backup_action = gio::SimpleAction::new("backup", None);
+    {
+        let widgets = widgets.clone();
+        backup_action.connect_activate(move |_, _| crate::ui::backups::show_backup(&widgets));
+    }
+    window.add_action(&backup_action);
+
+    let versions_action = gio::SimpleAction::new("note-versions", None);
+    {
+        let widgets = widgets.clone();
+        versions_action.connect_activate(move |_, _| crate::ui::backups::show_versions(&widgets));
+    }
+    window.add_action(&versions_action);
 
     let whats_new_action = gio::SimpleAction::new("whats-new", None);
     {
@@ -1041,7 +1058,7 @@ fn current_shelf(widgets: &Rc<Widgets>) -> Option<String> {
         .cloned()
 }
 
-fn rebuild_library(widgets: &Rc<Widgets>) {
+pub fn rebuild_library(widgets: &Rc<Widgets>) {
     rebuild_shelf_bar(widgets);
     rebuild_library_cards(widgets);
 }

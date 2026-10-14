@@ -10,7 +10,7 @@ use crate::ui::Widgets;
 use std::rc::Rc;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub(crate) const RELEASE_NAME: &str = "Loose Leaf";
+pub(crate) const RELEASE_NAME: &str = "Kettle Stitch";
 
 /// Show the window if this version has not been seen: the welcome the first time ever, What's
 /// New after an update. Called when the launcher is actually shown.
@@ -100,10 +100,20 @@ pub fn show(parent: &impl IsA<gtk4::Window>, first_run: bool) {
 }
 
 /// Updated at release time, with `RELEASE_NAME`.
-const NEW: &[(&str, &str)] = &[(
-    "Text for other apps",
-    "Other apps can now ask Pereplyot for a PDF's or EPUB's text without opening a window. Sputnik uses this to read PDF syllabi.",
-)];
+const NEW: &[(&str, &str)] = &[
+    (
+        "Backup",
+        "Choose a folder in the menu's Backup… and your notes, bookmarks, notebooks and Library are copied there once a day.",
+    ),
+    (
+        "Earlier versions",
+        "Every document's notes are kept as you change them. Restore an earlier version from the menu.",
+    ),
+    (
+        "Changes made elsewhere are kept",
+        "Notes added or edited in Kartoteka, Sputnik or another window while a document is open are no longer overwritten.",
+    ),
+];
 
 const TRY: &[(&str, &str)] = &[
     (

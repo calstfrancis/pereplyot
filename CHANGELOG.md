@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.19.0] "Kettle Stitch" — 2026-10-14 — Notes you can't lose
+- **Changes made elsewhere are no longer lost.** If another window or app (Kartoteka, Sputnik, a
+  sync client) added an annotation to a document's notes while it was open here, the next save
+  kept it but the one after that silently dropped it. Saves now merge with what is on disk by
+  annotation id, so additions, edits and deletions made elsewhere are all kept, and they show up in
+  the open document straight away instead of after reopening it.
+- **Earlier versions of notes** (menu → *Earlier versions of notes…*). A copy of a document's notes
+  is kept when you start changing them, then at most once an hour, and before every bulk edit in
+  the Notes tab — the newest 20 plus one a day for 90 days. Restore any of them; the notes it
+  replaces are kept as a version too.
+- **Backup** (menu → *Backup…*). Choose a folder (a synced one, or a backup drive) and Pereplyot
+  copies your notes, bookmarks, reading places, notebooks, Library and earlier versions there once
+  a day as plain files, keeping the last 14. *Restore from a backup…* brings back only what is
+  missing here and never removes or overwrites anything.
+- Bookmarks, pins and reading places are protected the same way notes are: a damaged file is set
+  aside and the previous copy used, instead of being silently reset to empty.
+- A notes file damaged while its document is open is set aside before the next save, rather than
+  overwritten.
+
 ## [0.18.0] "Loose Leaf" — 2026-10-14 — Text extraction for other apps
 - **`--extract-text <file>`** prints a PDF's or EPUB's text and exits without opening a
   window (`-` reads the document from stdin), also installed as the

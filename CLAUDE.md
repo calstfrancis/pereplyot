@@ -55,8 +55,11 @@ Kartoteka's own `docs/READER-EXTRACTION.md` for the `ReaderHost` boundary this a
   hash/title-sniffing/reader-dispatch logic at a new call site.
 
 - Persistence goes through `fond_read_gtk::fsutil` (atomic write + `.bak`, corrupt files set
-  aside) and `store::SidecarSync` (merges annotations added elsewhere). Don't `fs::write`
-  user data directly.
+  aside) and `store::SidecarSync` (three-way merge by annotation id against what it last read;
+  a host must hand `Saved::merged` back from `save_annotations`, or the next save drops outside
+  changes). Earlier versions: `fond_read_gtk::versions`; off-machine backup: `src/backup.rs`
+  (restore only ever adds). Don't `fs::write` user data directly. New user data under the data
+  dir must be added to `backup.rs`'s `DIRS`/`FILES`, or it isn't backed up.
 - Export (`export.rs`) is pure string rendering plus one dialog; Typst output is the house
   format. Its escaping has tests, and Typst output has been compiled against a real
   bibliography — keep it compiling.

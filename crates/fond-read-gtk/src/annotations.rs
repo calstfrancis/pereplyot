@@ -309,7 +309,7 @@ pub fn show_annotations_dialog(
                     host.save_annotations(&sidecar)
                 };
                 match result {
-                    Ok(()) => {
+                    Ok(_) => {
                         list.remove(&row);
                         host.notify("Annotation deleted");
                     }

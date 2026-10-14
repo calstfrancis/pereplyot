@@ -1433,6 +1433,136 @@ PY
 }
 
 # Line order in the fixtures: "Page N", fox, Pack, Sphinx.
+# mark_line SCREENSHOT N: drag across the Nth of the page's four text lines (0-based) and colour it.
+mark_line() {
+    local x0 y0 x1 y1 h sy
+    read -r x0 y0 x1 y1 <<<"$(text_bands "$1")"
+    h=$(( (y1 - y0) / 4 ))
+    sy=$(( y0 + $2 * h + h / 2 ))
+    xdotool mousemove $((x0 - 6)) "$sy" mousedown 1 mousemove $(( (x0 + x1) / 2 )) "$sy" mousemove $((x1 + 6)) "$sy" mouseup 1
+    sleep 1
+    xdotool key 1
+    sleep 1.5
+}
+
+annotation_count() {
+    annotations_json | python3 -c 'import sys,json
+try: print(len(json.load(sys.stdin).get("annotations",[])))
+except Exception: print(0)'
+}
+
+has_outside_note() {
+    annotations_json | python3 -c 'import sys,json
+try: print(1 if any(a.get("note")=="written elsewhere" for a in json.load(sys.stdin)["annotations"]) else 0)
+except Exception: print(0)'
+}
+
+run_outside_case() {
+    start_app "$FX/plain.pdf"
+    local w
+    w="$(reader_window)" || { check "outside: reader opens" 0; stop_app; return; }
+    sleep 2
+    xdotool windowfocus "$w" 2>/dev/null
+    screenshot "$WORK/out-0.png"
+    mark_line "$WORK/out-0.png" 0
+    # Another app adds an annotation to the same file while the document is open.
+    local f
+    f="$(find "$WORK/h/data" -path '*annotations*' -name '*.json' | head -1)"
+    python3 - "$f" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+a = dict(d["annotations"][0])
+a["id"] = "outside-1"
+a["note"] = "written elsewhere"
+d["annotations"].append(a)
+json.dump(d, open(p, "w"))
+PY
+    mark_line "$WORK/out-0.png" 1
+    check "outside: a save keeps an annotation another app added" "$([ "$(has_outside_note)" = 1 ] && [ "$(annotation_count)" = 3 ] && echo 1 || echo 0)" "($(annotation_count) annotations)"
+    mark_line "$WORK/out-0.png" 3
+    check "outside: and so does every save after it" "$([ "$(has_outside_note)" = 1 ] && [ "$(annotation_count)" = 4 ] && echo 1 || echo 0)" "($(annotation_count) annotations)"
+    stop_app
+    start_app "$FX/plain.pdf" keep
+    w="$(reader_window)" || { check "outside: reader reopens" 0; stop_app; return; }
+    sleep 2
+    xdotool windowfocus "$w" 2>/dev/null
+    mark_line "$WORK/out-0.png" 2
+    local newest kept
+    newest="$(find "$WORK/h/data/pereplyot/versions" -name '*Z.json' 2>/dev/null | sort | tail -1)"
+    kept="$([ -n "$newest" ] && python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["annotations"]))' "$newest")"
+    check "outside: the first change of a session keeps the notes as they were as a version" "$([ "$kept" = 4 ] && [ "$(annotation_count)" = 5 ] && echo 1 || echo 0)" "(newest version holds ${kept:-none})"
+    stop_app
+}
+
+run_backup_case() {
+    start_app -
+    stop_app
+    mkdir -p "$WORK/h/config/pereplyot" "$WORK/h/data/pereplyot/annotations" "$WORK/backups"
+    printf '{"backup_folder": "%s"}' "$WORK/backups" >"$WORK/h/config/pereplyot/config.json"
+    printf '{"schema":1,"key":"abc","annotations":[]}' >"$WORK/h/data/pereplyot/annotations/abc.json"
+    start_app - keep
+    launcher_window >/dev/null || { check "backup: launcher opens" 0; stop_app; return; }
+    local m=""
+    for _ in $(seq 40); do
+        m="$(find "$WORK/backups" -maxdepth 2 -name manifest.json 2>/dev/null | head -1)"
+        [ -n "$m" ] && break
+        sleep 1
+    done
+    check "backup: a daily backup is made in the chosen folder soon after start" "$([ -n "$m" ] && [ -f "$(dirname "$m")/annotations/abc.json" ] && echo 1 || echo 0)" "(folder: $(ls "$WORK/backups" 2>/dev/null | tr '\n' ' '))"
+    xdotool windowfocus "$(launcher_window)" 2>/dev/null
+    xdotool key ctrl+k
+    sleep 1
+    xdotool type --delay 40 "Backup"
+    sleep 0.8
+    xdotool key Return
+    sleep 1.5
+    screenshot "$WORK/backup-window.png"
+    check "backup: the Backup window opens from the palette" "$([ -n "$(xdotool search --onlyvisible --name '^Backup$' 2>/dev/null)" ] && echo 1 || echo 0)"
+    stop_app
+}
+
+run_versions_case() {
+    start_app -
+    stop_app
+    mkdir -p "$WORK/h/data/pereplyot/versions/abc" "$WORK/h/data/pereplyot/annotations"
+    printf '{"schema":1,"key":"abc","annotations":[]}' >"$WORK/h/data/pereplyot/annotations/abc.json"
+    printf '{"schema":1,"key":"abc","annotations":[{"id":"x","kind":"highlight","page":1,"snippet":"kept"}]}' \
+        >"$WORK/h/data/pereplyot/versions/abc/2026-10-01T10-00-00Z.json"
+    start_app - keep
+    local w
+    w="$(launcher_window)" || { check "versions: launcher opens" 0; stop_app; return; }
+    sleep 1.5
+    xdotool windowfocus "$w" 2>/dev/null
+    xdotool key ctrl+k
+    sleep 1
+    xdotool type --delay 40 "Earlier versions"
+    sleep 0.8
+    xdotool key Return
+    local found=""
+    for _ in $(seq 20); do
+        found="$(xdotool search --onlyvisible --name '^Earlier versions$' 2>/dev/null | head -1)"
+        [ -n "$found" ] && break
+        sleep 0.3
+    done
+    sleep 1
+    screenshot "$WORK/versions.png"
+    check "versions: Earlier versions opens from the palette" "$([ -n "$found" ] && echo 1 || echo 0)"
+    xdotool key Return
+    sleep 1.2
+    screenshot "$WORK/versions-doc.png"
+    xdotool mousemove 425 138 click 1
+    sleep 1.2
+    xdotool mousemove 274 169 click 1
+    sleep 1.2
+    screenshot "$WORK/versions-restored.png"
+    local now versions
+    now="$(python3 -c 'import json,sys; print(" ".join(a.get("snippet","") for a in json.load(open(sys.argv[1]))["annotations"]))' "$WORK/h/data/pereplyot/annotations/abc.json" 2>/dev/null)"
+    versions="$(ls "$WORK/h/data/pereplyot/versions/abc" | grep -c 'Z.json$')"
+    check "versions: restoring brings the notes back and keeps the replaced ones as a version" "$([ "$now" = kept ] && [ "$versions" = 2 ] && echo 1 || echo 0)" "(now: '$now', versions: $versions)"
+    stop_app
+}
+
 want() { [ -z "${SMOKE_CASES:-}" ] || [[ " $SMOKE_CASES " == *" $1 "* ]]; }
 want plain && run_pdf_case plain plain.pdf y 2 "Pack my box with five dozen liquor jugs."
 want cropbox && run_pdf_case cropbox cropbox.pdf y 2 "Pack my box with five dozen liquor jugs."
@@ -1471,6 +1601,9 @@ want locked && run_locked_case
 want dragout && run_dragout_case
 want dragoutlib && run_dragout_library_case
 want patterns && run_patterns_case
+want outside && run_outside_case
+want backup && run_backup_case
+want versions && run_versions_case
 
 echo
 if [ "$FAILS" -eq 0 ]; then echo "smoke: all passed"; else echo "smoke: $FAILS failed"; exit 1; fi

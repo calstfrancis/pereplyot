@@ -1,6 +1,7 @@
 //! Changes to many annotations at once, from the Notes tab. They are made in each document's
 //! saved annotation file; a document open in a reader holds its own live copy, which a save from
-//! here would be overwritten by, so those are left alone and counted.
+//! here would be overwritten by, so those are left alone and counted. Each document's notes are
+//! kept as an earlier version before they are changed.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -22,20 +23,20 @@ pub struct Report {
     pub failed: usize,
 }
 
-fn sidecar_path(hash: &str) -> PathBuf {
-    glib::user_data_dir()
-        .join("pereplyot")
-        .join("annotations")
-        .join(format!("{hash}.json"))
+fn paths(hash: &str) -> (PathBuf, PathBuf) {
+    (
+        crate::reader_host::annotations_path(hash),
+        crate::reader_host::versions_dir(hash),
+    )
 }
 
 /// Apply `op` to the annotations `(document hash, annotation id)`.
 pub fn apply(targets: &[(String, String)], op: &Op, is_open: &dyn Fn(&str) -> bool) -> Report {
-    apply_in(&sidecar_path, targets, op, is_open)
+    apply_in(&paths, targets, op, is_open)
 }
 
 fn apply_in(
-    path_of: &dyn Fn(&str) -> PathBuf,
+    paths_of: &dyn Fn(&str) -> (PathBuf, PathBuf),
     targets: &[(String, String)],
     op: &Op,
     is_open: &dyn Fn(&str) -> bool,
@@ -50,14 +51,19 @@ fn apply_in(
             report.skipped_open += ids.len();
             continue;
         }
-        let path = path_of(hash);
-        let Some(mut sidecar) = std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|t| fond_annot::AnnotationSidecar::parse(&t, &path).ok())
-        else {
+        let (path, versions) = paths_of(hash);
+        let Some((text, mut sidecar)) = std::fs::read_to_string(&path).ok().and_then(|t| {
+            let s = fond_annot::AnnotationSidecar::parse(&t, &path).ok()?;
+            Some((t, s))
+        }) else {
             report.failed += ids.len();
             continue;
         };
+        if fond_read_gtk::versions::keep(&versions, &text, fond_read_gtk::versions::now()).is_err()
+        {
+            report.failed += ids.len();
+            continue;
+        }
         let mut changed = 0;
         match op {
             Op::Delete => {
@@ -142,7 +148,7 @@ mod tests {
         write(&dir, "d1", &["a", "b"]);
         write(&dir, "d2", &["c"]);
         write(&dir, "open", &["x"]);
-        let path_of = |h: &str| dir.join(format!("{h}.json"));
+        let path_of = |h: &str| (dir.join(format!("{h}.json")), dir.join("v").join(h));
         let is_open = |h: &str| h == "open";
         let targets: Vec<(String, String)> =
             [("d1", "a"), ("d2", "c"), ("open", "x"), ("gone", "z")]
@@ -190,6 +196,12 @@ mod tests {
         assert_eq!(r.changed, 2);
         assert_eq!(read(&dir, "d1").annotations.len(), 1);
         assert_eq!(read(&dir, "d2").annotations.len(), 0);
+        let kept = fond_read_gtk::versions::list(&dir.join("v").join("d2"));
+        let p = &kept[0].path;
+        let before_delete =
+            fond_annot::AnnotationSidecar::parse(&std::fs::read_to_string(p).unwrap(), p).unwrap();
+        assert_eq!(before_delete.annotations.len(), 1);
+        assert!(fond_read_gtk::versions::list(&dir.join("v").join("open")).is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

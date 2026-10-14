@@ -1,3 +1,4 @@
+pub mod backups;
 pub mod highlight_labels;
 pub mod markdown_notes;
 pub mod menu;
