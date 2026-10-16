@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.20.0] "Fair Copy" — 2026-10-16 — Scans you can select, selection that holds
+- **Text selection in an EPUB no longer breaks off.** Dragging across a passage could stop after one
+  letter or one line; the whole drag is selected again. Reading mode on a PDF had the same fault
+  (a drag selected a single word) and is fixed too.
+- **Scanned PDFs are recognised automatically, and their text is selectable in the normal page
+  view.** Opening a scan starts recognising it in the background at once, the page in view first and
+  then outward from it, so the words on the page being read are ready before anyone reaches for
+  them. Selecting, copying, highlighting, underlining and clipping areas work on recognised text,
+  and results are kept for next time. Reading mode recognises on its own too. Before this the first
+  page of a scan counted as content, so the offer to recognise never appeared and a scan stayed a
+  stack of pictures with nothing to select. Two pages are recognised at once without repeating each
+  other's work, and language data added under `~/.local/share/pereplyot/tessdata` no longer gets
+  rebuilt under a recognition in progress.
+- **"Add to Library" and "Add to Kartoteka…" are in the More menu** (⋮) of both readers, not just
+  Ctrl+K, and appear only when they apply. Kartoteka now opens an "Add this file" dialog for the
+  file (needs a Kartoteka with that dialog) instead of adding it unseen.
+
 ## [0.19.0] "Kettle Stitch" — 2026-10-14 — Notes you can't lose
 - **Changes made elsewhere are no longer lost.** If another window or app (Kartoteka, Sputnik, a
   sync client) added an annotation to a document's notes while it was open here, the next save

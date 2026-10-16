@@ -125,6 +125,8 @@ pub struct ReadingView {
     pub figure_source: RefCell<Option<FigureSource>>,
     /// Where the cover and title pages end, in characters: Select All starts after them.
     title_end: Cell<i32>,
+    /// Whether any heading or paragraph has been laid out (a cover picture alone is not text).
+    has_text: Cell<bool>,
 }
 
 fn escape(s: &str) -> String {
@@ -252,6 +254,7 @@ impl ReadingView {
             bubbles: RefCell::new(Vec::new()),
             figure_source: RefCell::new(None),
             title_end: Cell::new(0),
+            has_text: Cell::new(false),
         });
         view.install_signals();
         let weak: Weak<ReadingView> = Rc::downgrade(&view);
@@ -527,7 +530,9 @@ impl ReadingView {
                     Entry::Done => {
                         this.loaded_to.set(this.total);
                         this.content_changed(true);
-                        if this.paras.borrow().is_empty() && this.page_starts.borrow().is_empty() {
+                        // A scan lays out its first page as a cover picture, so "nothing" means
+                        // no text, not no content — or the offer to recognise it never came.
+                        if !this.has_text.get() {
                             let on_no_text = this.on_no_text.borrow().clone();
                             if let Some(f) = on_no_text {
                                 f();
@@ -604,6 +609,7 @@ impl ReadingView {
         let buffer = self.text_view.buffer();
         match item {
             Item::Heading { level, text, page } => {
+                self.has_text.set(true);
                 let start = buffer.char_count();
                 self.note_page_start(start, *page);
                 self.headings.borrow_mut().push(fond_doc::PdfOutlineEntry {
@@ -619,7 +625,10 @@ impl ReadingView {
                 };
                 buffer.insert_with_tags_by_name(&mut end, &format!("{text}\n"), &[tag]);
             }
-            Item::Paragraph(p) => self.append_paragraph(p),
+            Item::Paragraph(p) => {
+                self.has_text.set(true);
+                self.append_paragraph(p)
+            }
             Item::Figure { page, bbox } => self.append_figure(*page, *bbox),
             Item::TitlePage { page, bbox } => {
                 self.append_figure(*page, *bbox);
@@ -753,7 +762,15 @@ impl ReadingView {
 
     /// Forget a finished layout that found nothing, so `load_with` can run again.
     pub fn reset_empty(&self) {
-        if self.paras.borrow().is_empty() {
+        if !self.has_text.get() {
+            // Whatever a text-less layout left (a cover picture) goes too, or laying the
+            // document out again would show it twice.
+            let buffer = self.text_view.buffer();
+            buffer.delete(&mut buffer.start_iter(), &mut buffer.end_iter());
+            self.page_starts.borrow_mut().clear();
+            self.headings.borrow_mut().clear();
+            self.title_end.set(0);
+            self.loaded_to.set(0);
             *self.handle.borrow_mut() = None;
         }
     }

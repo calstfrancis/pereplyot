@@ -252,6 +252,33 @@ pub fn cached_pages(path: &Path) -> usize {
     })
 }
 
+/// Pages being recognised right now, by cache file. The reading view and the page view's
+/// background recogniser can both want the same page; the second waits for the first's result
+/// instead of running Tesseract on it again.
+static IN_FLIGHT: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
+static IN_FLIGHT_DONE: std::sync::Condvar = std::sync::Condvar::new();
+
+struct Claim(PathBuf);
+
+impl Claim {
+    fn take(file: &Path) -> Claim {
+        let mut busy = IN_FLIGHT.lock().unwrap_or_else(|e| e.into_inner());
+        while busy.iter().any(|p| p == file) {
+            busy = IN_FLIGHT_DONE.wait(busy).unwrap_or_else(|e| e.into_inner());
+        }
+        busy.push(file.to_path_buf());
+        Claim(file.to_path_buf())
+    }
+}
+
+impl Drop for Claim {
+    fn drop(&mut self) {
+        let mut busy = IN_FLIGHT.lock().unwrap_or_else(|e| e.into_inner());
+        busy.retain(|p| p != &self.0);
+        IN_FLIGHT_DONE.notify_all();
+    }
+}
+
 /// The words on page `index`, recognised from a 300 dpi render of it. `None` if Tesseract could
 /// not be run or found nothing.
 pub fn ocr_page(
@@ -267,20 +294,27 @@ pub fn ocr_page(
     let tsv = match std::fs::read_to_string(&cached) {
         Ok(tsv) => tsv,
         Err(_) => {
-            let target = (width * DPI / 72.0) as Pixels;
-            let bitmap = page
-                .render_with_config(&PdfRenderConfig::new().set_target_width(target))
-                .ok()?;
-            let rgba = bitmap.as_rgba_bytes();
-            let (w, h) = (bitmap.width() as usize, bitmap.height() as usize);
-            let mut ppm = format!("P6\n{w} {h}\n255\n").into_bytes();
-            for px in rgba.chunks_exact(4) {
-                ppm.extend_from_slice(&px[..3]);
+            let _claim = Claim::take(&cached);
+            match std::fs::read_to_string(&cached) {
+                // Another thread finished this page while we waited.
+                Ok(tsv) => tsv,
+                Err(_) => {
+                    let target = (width * DPI / 72.0) as Pixels;
+                    let bitmap = page
+                        .render_with_config(&PdfRenderConfig::new().set_target_width(target))
+                        .ok()?;
+                    let rgba = bitmap.as_rgba_bytes();
+                    let (w, h) = (bitmap.width() as usize, bitmap.height() as usize);
+                    let mut ppm = format!("P6\n{w} {h}\n255\n").into_bytes();
+                    for px in rgba.chunks_exact(4) {
+                        ppm.extend_from_slice(&px[..3]);
+                    }
+                    let tsv = run(program, &ppm, lang)?;
+                    let _ = std::fs::create_dir_all(cache);
+                    let _ = std::fs::write(&cached, &tsv);
+                    tsv
+                }
             }
-            let tsv = run(program, &ppm, lang)?;
-            let _ = std::fs::create_dir_all(cache);
-            let _ = std::fs::write(&cached, &tsv);
-            tsv
         }
     };
     let words = parse_tsv(&tsv, DPI);
@@ -340,20 +374,42 @@ fn system_tessdata_dirs() -> Vec<PathBuf> {
 /// have been downloaded they are linked together with the installed ones (downloads winning) in a
 /// folder of their own; with none downloaded, the installed ones are used as they are.
 fn tessdata_prefix() -> std::ffi::OsString {
+    // Several pages are recognised at once, so the linked folder is built once and only rebuilt
+    // when the set of language files changes — rebuilding it for every page deleted it under
+    // the Tesseract another page was running.
+    static BUILT: std::sync::Mutex<Option<(Vec<String>, std::ffi::OsString)>> =
+        std::sync::Mutex::new(None);
     let ours = tessdata_dir();
     let system = system_tessdata_dirs();
-    let has_ours = std::fs::read_dir(&ours)
-        .map(|d| {
-            d.flatten()
-                .any(|e| e.path().extension().is_some_and(|x| x == "traineddata"))
-        })
-        .unwrap_or(false);
+    let names_in = |dir: &Path| -> Vec<String> {
+        std::fs::read_dir(dir)
+            .map(|d| {
+                d.flatten()
+                    .map(|e| e.path())
+                    .filter(|p| p.extension().is_some_and(|x| x == "traineddata"))
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let mut key: Vec<String> = std::iter::once(&ours)
+        .chain(system.iter())
+        .flat_map(|d| names_in(d))
+        .collect();
+    key.sort();
+    let has_ours = !names_in(&ours).is_empty();
     if !has_ours {
         return system
             .into_iter()
             .next()
             .unwrap_or_default()
             .into_os_string();
+    }
+    let mut built = BUILT.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((k, prefix)) = built.as_ref() {
+        if *k == key {
+            return prefix.clone();
+        }
     }
     let union = glib::user_cache_dir().join("pereplyot").join("tessdata");
     let _ = std::fs::remove_dir_all(&union);
@@ -371,7 +427,9 @@ fn tessdata_prefix() -> std::ffi::OsString {
             }
         }
     }
-    union.into_os_string()
+    let prefix = union.into_os_string();
+    *built = Some((key, prefix.clone()));
+    prefix
 }
 
 #[cfg(test)]

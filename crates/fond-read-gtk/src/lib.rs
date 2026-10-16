@@ -426,6 +426,52 @@ pub fn popover_button(label: &str, destructive: bool) -> gtk4::Button {
     button
 }
 
+/// "Add to Library" and "Add to Kartoteka…" rows for a reader's More menu — the commands that
+/// used to be reachable only from Ctrl+K. Each row is shown only while the host offers its
+/// action (the document is not already in the library / has no citation key yet), judged each
+/// time the menu opens.
+pub(crate) fn add_handoff_rows(
+    rows: &gtk4::Box,
+    popover: &gtk4::Popover,
+    host: &Rc<dyn ReaderHost>,
+) {
+    type Offer = fn(&dyn ReaderHost) -> Option<Rc<dyn Fn()>>;
+    let offers: [(&str, Offer); 2] = [
+        ("Add to Library", |h| h.library_action()),
+        ("Add to Kartoteka…", |h| h.kartoteka_handoff()),
+    ];
+    let separator = popover_separator();
+    rows.append(&separator);
+    let mut shown: Vec<(gtk4::Button, Offer)> = Vec::new();
+    for (label, offer) in offers {
+        let row = popover_button(label, false);
+        let host_for_click = host.clone();
+        let popover = popover.clone();
+        row.connect_clicked(move |_| {
+            popover.popdown();
+            if let Some(run) = offer(host_for_click.as_ref()) {
+                run();
+            }
+        });
+        rows.append(&row);
+        shown.push((row, offer));
+    }
+    for (row, _) in &shown {
+        row.set_visible(false);
+    }
+    separator.set_visible(false);
+    let host = host.clone();
+    popover.connect_show(move |_| {
+        let mut any = false;
+        for (row, offer) in &shown {
+            let on = offer(host.as_ref()).is_some();
+            row.set_visible(on);
+            any |= on;
+        }
+        separator.set_visible(any);
+    });
+}
+
 /// The margined rule between logical groups of popover rows. Copied for the same reason as
 /// [`popover_button`].
 pub fn popover_separator() -> gtk4::Separator {

@@ -10,7 +10,7 @@ use crate::ui::Widgets;
 use std::rc::Rc;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub(crate) const RELEASE_NAME: &str = "Kettle Stitch";
+pub(crate) const RELEASE_NAME: &str = "Fair Copy";
 
 /// Show the window if this version has not been seen: the welcome the first time ever, What's
 /// New after an update. Called when the launcher is actually shown.
@@ -102,16 +102,16 @@ pub fn show(parent: &impl IsA<gtk4::Window>, first_run: bool) {
 /// Updated at release time, with `RELEASE_NAME`.
 const NEW: &[(&str, &str)] = &[
     (
-        "Backup",
-        "Choose a folder in the menu's Backup… and your notes, bookmarks, notebooks and Library are copied there once a day.",
+        "Scans are readable",
+        "A scanned PDF is recognised in the background as soon as you open it, the page you are on first, and its text can be selected, copied and marked like any other.",
     ),
     (
-        "Earlier versions",
-        "Every document's notes are kept as you change them. Restore an earlier version from the menu.",
+        "Selection that holds",
+        "Dragging across an EPUB passage, or a PDF in Reading mode, no longer stops after a letter or a line.",
     ),
     (
-        "Changes made elsewhere are kept",
-        "Notes added or edited in Kartoteka, Sputnik or another window while a document is open are no longer overwritten.",
+        "Add to Kartoteka, in plain sight",
+        "Add to Library and Add to Kartoteka… are in the ⋮ menu, and Kartoteka now asks you to check the details before it adds the file.",
     ),
 ];
 

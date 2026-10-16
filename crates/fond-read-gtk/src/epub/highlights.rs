@@ -530,9 +530,12 @@ pub(super) fn install_selection_popover(
     reader_window: &crate::reader_host::HostWindow,
 ) {
     {
-        let click = gtk4::GestureDrag::new();
-        click.set_button(gdk::BUTTON_PRIMARY);
+        // Only watches the button: a gesture here (it was a `GestureDrag`) can take the pointer
+        // sequence away from the page mid-drag, which cut a selection off after a letter or a
+        // line. A legacy controller never claims anything.
+        let click = gtk4::EventControllerLegacy::new();
         click.set_propagation_phase(gtk4::PropagationPhase::Capture);
+        let pressed = Rc::new(Cell::new(false));
         let view = web_view.clone();
         let host = host.clone();
         let reader = reader.clone();
@@ -546,7 +549,18 @@ pub(super) fn install_selection_popover(
             motion.connect_motion(move |_, x, y| pointer.set((x, y)));
             web_view.add_controller(motion);
         }
-        click.connect_drag_end(move |_, _, _| {
+        click.connect_event(move |_, event| {
+            let primary = event
+                .downcast_ref::<gdk::ButtonEvent>()
+                .is_some_and(|b| b.button() == gdk::BUTTON_PRIMARY);
+            match event.event_type() {
+                gdk::EventType::ButtonPress if primary => pressed.set(true),
+                gdk::EventType::ButtonRelease if primary && pressed.replace(false) => {}
+                _ => return glib::Propagation::Proceed,
+            }
+            if event.event_type() == gdk::EventType::ButtonPress {
+                return glib::Propagation::Proceed;
+            }
             let (x, y) = pointer.get();
             let view = view.clone();
             let host = host.clone();
@@ -595,6 +609,7 @@ pub(super) fn install_selection_popover(
                     },
                 );
             });
+            glib::Propagation::Proceed
         });
         web_view.add_controller(click);
     }

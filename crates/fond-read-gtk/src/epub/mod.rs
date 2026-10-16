@@ -303,7 +303,7 @@ fn show_epub_reader_prepared(
         popout_button,
         header_start,
         header_end,
-    } = header::build_header(has_toc, &search_toggle, &web_view);
+    } = header::build_header(has_toc, &search_toggle, &web_view, host);
     // Contents sidebar — always built, even for an EPUB with no TOC (an empty, unreachable
     // panel behind a disabled toggle, per the doc comment above).
     let contents_scroll = build_contents_sidebar(

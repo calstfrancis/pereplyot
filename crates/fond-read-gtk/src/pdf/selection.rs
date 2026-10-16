@@ -198,17 +198,7 @@ pub(super) fn select_drag_text(
     };
     let selection = {
         let r = reader.borrow();
-        fond_doc::select_text_range(
-            r.pdfium,
-            r.bytes(),
-            page,
-            start.0 as f32,
-            start.1 as f32,
-            end.0 as f32,
-            end.1 as f32,
-        )
-        .ok()
-        .flatten()
+        scan_text::select_range(&r, page, start, end)
     };
     match selection {
         Some(sel) if !sel.text.trim().is_empty() => {
@@ -217,7 +207,12 @@ pub(super) fn select_drag_text(
             true
         }
         _ => {
-            host.notify("No text found in selection");
+            let waiting = reader.borrow().scan_text.is_pending(page);
+            host.notify(if waiting {
+                "Still recognising this page — try again in a moment"
+            } else {
+                "No text found in selection"
+            });
             false
         }
     }
@@ -436,19 +431,9 @@ fn save_area(
     ];
     let text = {
         let r = reader.borrow();
-        fond_doc::select_text_in_rect(
-            r.pdfium,
-            r.bytes(),
-            page,
-            rect[0] as f32,
-            rect[1] as f32,
-            rect[2] as f32,
-            rect[3] as f32,
-        )
-        .ok()
-        .flatten()
-        .map(|sel| sel.text)
-        .filter(|t| !t.trim().is_empty())
+        scan_text::select_in_rect(&r, page, rect)
+            .map(|sel| sel.text)
+            .filter(|t| !t.trim().is_empty())
     };
     let annotation =
         fond_annot::Annotation::area(page as u32 + 1, rect, text, None, Some(color.to_string()));
@@ -495,17 +480,7 @@ pub(super) fn save_drag_annotation(
     // rectangle when the drag covers no text (a figure, a blank margin).
     let (quads, snippet) = {
         let r = reader.borrow();
-        fond_doc::select_text_range(
-            r.pdfium,
-            r.bytes(),
-            page,
-            start.0 as f32,
-            start.1 as f32,
-            end.0 as f32,
-            end.1 as f32,
-        )
-        .ok()
-        .flatten()
+        scan_text::select_range(&r, page, start, end)
     }
     .map(|sel| {
         let text = selection_text(&reader.borrow(), page, &sel.quads).unwrap_or(sel.text);
@@ -559,14 +534,8 @@ fn add_context(r: &ReaderState, page: u16, annotation: &mut fond_annot::Annotati
     let Some(snippet) = annotation.snippet.clone() else {
         return;
     };
-    let Some(doc) = r.doc.as_ref() else {
-        return;
-    };
-    let Ok(pdf_page) = doc.pages().get(page) else {
-        return;
-    };
     let (before, after) = crate::anchor::context_around(
-        &crate::page_text(&pdf_page),
+        &scan_text::page_text(r, page),
         &snippet,
         crate::anchor::CONTEXT_CHARS,
     );

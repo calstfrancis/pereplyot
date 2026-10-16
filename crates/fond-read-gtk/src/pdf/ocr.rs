@@ -29,6 +29,11 @@ pub(super) fn warn_if_no_text_layer(
     if has_text {
         return;
     }
+    if let Some(program) = crate::reflow::ocr::tesseract() {
+        let path = reader.borrow().path.clone();
+        scan_text::start(host, reader, path, program);
+        return;
+    }
     let Some(ocr) = find_in_path("ocrmypdf") else {
         host.notify(
             "This PDF has no text layer, so highlights can't follow text and search finds nothing. \

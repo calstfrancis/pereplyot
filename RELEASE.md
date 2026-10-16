@@ -1,4 +1,4 @@
-# Pereplyot v0.19.0 "Kettle Stitch"
+# Pereplyot v0.20.0 "Fair Copy"
 
 Install via Flatpak:
 
@@ -18,24 +18,23 @@ flatpak update io.github.calstfrancis.Pereplyot
 
 ### What's new
 
-This release is about keeping your notes and highlights safe.
+This release is about getting text out of what you read, wherever it came from.
 
-**Changes made elsewhere are kept.** If Kartoteka, Sputnik, a sync client or another window
-changed a document's notes while it was open here, an earlier Pereplyot could quietly overwrite
-those changes a save or two later. Each save now merges with what is on disk, annotation by
-annotation, so additions, edits and deletions made elsewhere all survive, and they appear in the
-open document straight away.
+**Scans are recognised as soon as you open them.** A scanned PDF used to be a stack of pictures:
+nothing to select, copy or highlight until you found and used Reading mode's recognise option,
+which in practice never appeared. Now Pereplyot starts recognising a scan the moment it opens, the
+page you are on first and then outward from it, two pages at a time, so the words on the page in
+front of you are ready before you reach for them. Select, copy, highlight, underline and clip an
+area on recognised text in the normal page view, and Reading mode recognises on its own too.
+Results are kept, so a scan you have opened before has its text at once. Selection snaps to whole
+words, since that is what recognition gives.
 
-**Earlier versions.** Pereplyot now keeps a copy of a document's notes when you start changing
-them, then at most once an hour, and before every bulk edit in the Notes tab: the newest 20, plus
-one a day for 90 days. *Earlier versions of notes…* in the menu lists them with how many notes
-each held, and restores any of them. Restoring keeps the notes it replaces as a version too, so
-nothing is lost by trying.
+**Selection that holds.** Dragging across a passage in an EPUB, or in a PDF's Reading mode, could
+stop after a single letter or line. The whole drag is selected again.
 
-**Backup.** Choose a folder under *Backup…* (a synced folder or a backup drive is best) and
-Pereplyot copies your notes, bookmarks, reading places, notebooks, Library and earlier versions
-there once a day, as plain files you can open yourself, keeping the last 14. *Restore from a
-backup…* brings back only what is missing here and never removes or overwrites anything.
+**Add to Library and Add to Kartoteka are in the ⋮ menu** of both readers, not only on Ctrl+K,
+and show only when they apply. With Kartoteka 0.23 or later, adding a file from Pereplyot opens
+an Add this file dialog there to check the details, look it up, or type them in.
 
 ---
 

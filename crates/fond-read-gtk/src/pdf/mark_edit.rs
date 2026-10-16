@@ -169,17 +169,7 @@ fn extent(
     to: (f64, f64),
 ) -> Option<fond_doc::TextSelection> {
     let r = reader.borrow();
-    fond_doc::select_text_range(
-        r.pdfium,
-        r.bytes(),
-        page,
-        anchor.0 as f32,
-        anchor.1 as f32,
-        to.0 as f32,
-        to.1 as f32,
-    )
-    .ok()
-    .flatten()
+    scan_text::select_range(&r, page, anchor, to)
 }
 
 /// Hover outlines, click to select, and drag a selected mark's handles to change how much text
@@ -352,19 +342,9 @@ pub(super) fn install(
                 if rect[2] - rect[0] > 4.0 && rect[3] - rect[1] > 4.0 {
                     let text = {
                         let r = reader.borrow();
-                        fond_doc::select_text_in_rect(
-                            r.pdfium,
-                            r.bytes(),
-                            page,
-                            rect[0] as f32,
-                            rect[1] as f32,
-                            rect[2] as f32,
-                            rect[3] as f32,
-                        )
-                        .ok()
-                        .flatten()
-                        .map(|s| s.text)
-                        .filter(|t| !t.trim().is_empty())
+                        scan_text::select_in_rect(&r, page, rect)
+                            .map(|s| s.text)
+                            .filter(|t| !t.trim().is_empty())
                     };
                     let store = reader.borrow().store.clone();
                     let _ = store.update(&state.id, |a| {

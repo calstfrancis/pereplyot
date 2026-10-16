@@ -21,6 +21,7 @@ pub(super) fn build_header(
     has_toc: bool,
     search_toggle: &gtk4::ToggleButton,
     web_view: &webkit6::WebView,
+    host: &Rc<dyn ReaderHost>,
 ) -> HeaderParts {
     let search_toggle = search_toggle.clone();
     let web_view = web_view.clone();
@@ -155,6 +156,7 @@ pub(super) fn build_header(
             });
             rows.append(&row);
         }
+        crate::add_handoff_rows(&rows, &popover, host);
         popover.set_child(Some(&rows));
         more_button.set_popover(Some(&popover));
     }

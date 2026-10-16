@@ -25,6 +25,7 @@ pub(super) fn build_header_buttons(
     page_num_button: &gtk4::Button,
     palette: &gtk4::Box,
     style_drop: &gtk4::DropDown,
+    host: &Rc<dyn ReaderHost>,
 ) -> HeaderButtonsParts {
     let note_button = note_button.clone();
     let page_num_button = page_num_button.clone();
@@ -169,6 +170,7 @@ pub(super) fn build_header_buttons(
             });
             rows.append(&row);
         }
+        crate::add_handoff_rows(&rows, &more_popover, host);
         more_popover.set_child(Some(&rows));
         more_button.set_popover(Some(&more_popover));
     }

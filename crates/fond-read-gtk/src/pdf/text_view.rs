@@ -195,12 +195,27 @@ pub(super) fn install_text_view(ui: &PdfUi) {
                         }
                         view.text_view.add_controller(motion);
 
-                        let drag = gtk4::GestureDrag::new();
-                        drag.set_button(gdk::BUTTON_PRIMARY);
+                        // Only watches the button: a capture-phase gesture here (it was a
+                        // `GestureDrag`) takes the pointer sequence from the text view mid-drag
+                        // and cuts the selection off after a word. A legacy controller never
+                        // claims anything.
+                        let drag = gtk4::EventControllerLegacy::new();
                         drag.set_propagation_phase(gtk4::PropagationPhase::Capture);
+                        let pressed = Rc::new(Cell::new(false));
                         let make_ctx_drag = make_ctx.clone();
                         let view_drag = view.clone();
-                        drag.connect_drag_end(move |_, _, _| {
+                        drag.connect_event(move |_, event| {
+                            let primary = event
+                                .downcast_ref::<gdk::ButtonEvent>()
+                                .is_some_and(|b| b.button() == gdk::BUTTON_PRIMARY);
+                            match event.event_type() {
+                                gdk::EventType::ButtonPress if primary => {
+                                    pressed.set(true);
+                                    return glib::Propagation::Proceed;
+                                }
+                                gdk::EventType::ButtonRelease if primary && pressed.replace(false) => {}
+                                _ => return glib::Propagation::Proceed,
+                            }
                             let (x, y) = pointer.get();
                             let make_ctx = make_ctx_drag.clone();
                             let view = view_drag.clone();
@@ -218,6 +233,7 @@ pub(super) fn install_text_view(ui: &PdfUi) {
                                     }
                                 },
                             );
+                            glib::Propagation::Proceed
                         });
                         view.text_view.add_controller(drag);
 
@@ -329,21 +345,8 @@ pub(super) fn install_text_view(ui: &PdfUi) {
                         );
                         return;
                     }
-                    let view = view_for_ocr.clone();
-                    let path = path_for_ocr.clone();
-                    let host_progress = host.clone();
-                    host.notify_action(
-                        "This document is a scan with no text layer.",
-                        "Recognise text",
-                        Rc::new(move || {
-                            host_progress.notify(
-                                "Recognising text — pages appear as they are done, and the \
-                                 results are kept for next time",
-                            );
-                            view.reset_empty();
-                            view.load_with(path.clone(), true);
-                        }),
-                    );
+                    view_for_ocr.reset_empty();
+                    view_for_ocr.load_with(path_for_ocr.clone(), true);
                 }));
                 let host_click = host_for_labels.clone();
                 let reader_click = reader.clone();

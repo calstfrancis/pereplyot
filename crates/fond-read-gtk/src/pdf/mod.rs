@@ -33,6 +33,7 @@ mod keys;
 mod mark_edit;
 mod mark_layer;
 mod open_pdf;
+mod scan_text;
 mod scrollbar_ticks;
 mod shapes;
 mod tiles;
@@ -116,6 +117,7 @@ struct ReaderState {
     /// The document, parsed once and kept open for rendering and page geometry, loaded from the
     /// file path so PDFium reads it on demand instead of holding a copy.
     doc: Option<pdfium_render::prelude::PdfDocument<'static>>,
+    scan_text: scan_text::ScanText,
     page: u16,
     count: u16,
     /// Render width in px = `BASE_WIDTH * zoom`.
@@ -516,7 +518,13 @@ fn build_reader(
         more_button,
         split_side_button,
         split_stack_button,
-    } = header_buttons::build_header_buttons(&note_button, &page_num_button, &palette, &style_drop);
+    } = header_buttons::build_header_buttons(
+        &note_button,
+        &page_num_button,
+        &palette,
+        &style_drop,
+        host,
+    );
     header_end.append(&more_button);
     let StatusBarParts {
         statusbar,

@@ -92,6 +92,7 @@ pub(super) fn open_pdf(
         pdfium,
         bytes: std::cell::OnceCell::new(),
         doc: Some(doc),
+        scan_text: Default::default(),
         page: start_page,
         count,
         zoom: 1.0,
