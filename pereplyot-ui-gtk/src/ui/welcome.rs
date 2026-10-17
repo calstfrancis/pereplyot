@@ -10,7 +10,7 @@ use crate::ui::Widgets;
 use std::rc::Rc;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub(crate) const RELEASE_NAME: &str = "Fair Copy";
+pub(crate) const RELEASE_NAME: &str = "Clean Gutter";
 
 /// Show the window if this version has not been seen: the welcome the first time ever, What's
 /// New after an update. Called when the launcher is actually shown.
@@ -101,6 +101,10 @@ pub fn show(parent: &impl IsA<gtk4::Window>, first_run: bool) {
 
 /// Updated at release time, with `RELEASE_NAME`.
 const NEW: &[(&str, &str)] = &[
+    (
+        "Selection respects columns",
+        "On a two-column page, dragging or clipping a rectangle now follows one column and then the next instead of cutting straight across the gutter.",
+    ),
     (
         "Scans are readable",
         "A scanned PDF is recognised in the background as soon as you open it, the page you are on first, and its text can be selected, copied and marked like any other.",

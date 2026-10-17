@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.1] "Clean Gutter" — 2026-10-17 — Selection that respects columns
+- **Selecting text on a multi-column PDF page follows the columns.** Dragging from the bottom of
+  one column into the next used to select a block straight across the gutter, mixing the two
+  columns' lines. It now takes the rest of the first column and then the top of the next, in
+  reading order, and clipping a rectangle that spans columns gives each column its own text and
+  highlight. Single-column pages are unchanged.
+
 ## [0.20.0] "Fair Copy" — 2026-10-16 — Scans you can select, selection that holds
 - **Text selection in an EPUB no longer breaks off.** Dragging across a passage could stop after one
   letter or one line; the whole drag is selected again. Reading mode on a PDF had the same fault

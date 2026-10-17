@@ -59,6 +59,13 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.20.1" date="2026-10-17">
+      <description>
+        <p>0.20.1 "Clean Gutter" — selecting text on a multi-column PDF page now follows one
+        column and then the next instead of cutting across the gutter, for dragging and for
+        clipping a rectangle.</p>
+      </description>
+    </release>
     <release version="0.20.0" date="2026-10-16">
       <description>
         <p>0.20.0 "Fair Copy" — scanned PDFs are recognised in the background as soon as they

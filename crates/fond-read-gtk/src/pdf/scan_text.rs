@@ -20,11 +20,28 @@ pub(super) struct ScanText {
     pages: HashMap<u16, Rc<Vec<Word>>>,
     active: bool,
     remaining: usize,
+    // Text-layer pages laid out in side-by-side columns, as words in reading order; `None` for
+    // pages that aren't, so a plain page keeps PDFium's own selection.
+    columns: RefCell<HashMap<u16, Option<Rc<Vec<Word>>>>>,
 }
 
 impl ScanText {
     pub(super) fn words(&self, page: u16) -> Option<Rc<Vec<Word>>> {
         self.pages.get(&page).cloned()
+    }
+
+    fn column_words(&self, r: &ReaderState, page: u16) -> Option<Rc<Vec<Word>>> {
+        if let Some(hit) = self.columns.borrow().get(&page) {
+            return hit.clone();
+        }
+        let found = r
+            .doc
+            .as_ref()
+            .and_then(|doc| crate::reflow::extract::extract_page(doc, page))
+            .and_then(|raw| column_order(&raw.words))
+            .map(Rc::new);
+        self.columns.borrow_mut().insert(page, found.clone());
+        found
     }
 
     pub(super) fn is_pending(&self, page: u16) -> bool {
@@ -175,6 +192,31 @@ fn worker(
     }
 }
 
+fn column_order(words: &[Word]) -> Option<Vec<Word>> {
+    use crate::reflow::layout::reading_order;
+    let regions = reading_order(words);
+    let boxes: Vec<[f32; 4]> = regions
+        .iter()
+        .map(|lines| {
+            lines.iter().fold([f32::MAX, f32::MAX, f32::MIN, f32::MIN], |b, l| {
+                [b[0].min(l.x0), b[1].min(l.y0), b[2].max(l.x1), b[3].max(l.y1)]
+            })
+        })
+        .collect();
+    let side_by_side = boxes.iter().enumerate().any(|(i, a)| {
+        boxes[i + 1..]
+            .iter()
+            .any(|b| a[1].max(b[1]) < a[3].min(b[3]) && (a[2] <= b[0] || b[2] <= a[0]))
+    });
+    side_by_side.then(|| {
+        regions
+            .into_iter()
+            .flatten()
+            .flat_map(|l| l.words)
+            .collect()
+    })
+}
+
 fn between(words: &[Word], from: (f32, f32), to: (f32, f32)) -> Vec<&Word> {
     let nearest = |(x, y): (f32, f32)| -> Option<usize> {
         // Distance from the point to a word's box; zero inside it. A word on the pointer's line
@@ -256,7 +298,11 @@ pub(super) fn select_range(
     from: (f64, f64),
     to: (f64, f64),
 ) -> Option<fond_doc::TextSelection> {
-    let Some(words) = r.scan_text.words(page) else {
+    let Some(words) = r
+        .scan_text
+        .words(page)
+        .or_else(|| r.scan_text.column_words(r, page))
+    else {
         return fond_doc::select_text_range(
             r.pdfium,
             r.bytes(),
@@ -287,7 +333,11 @@ pub(super) fn select_in_rect(
     page: u16,
     rect: [f64; 4],
 ) -> Option<fond_doc::TextSelection> {
-    let Some(words) = r.scan_text.words(page) else {
+    let Some(words) = r
+        .scan_text
+        .words(page)
+        .or_else(|| r.scan_text.column_words(r, page))
+    else {
         return fond_doc::select_text_in_rect(
             r.pdfium,
             r.bytes(),
@@ -408,5 +458,24 @@ mod tests {
     #[test]
     fn nothing_recognised_selects_nothing() {
         assert!(gather(&between(&[], (0.0, 0.0), (10.0, 10.0))).is_none());
+    }
+
+    #[test]
+    fn two_columns_are_ordered_one_after_the_other_and_one_column_is_not_special() {
+        let mut words = Vec::new();
+        for row in 0..8 {
+            let y = 10.0 + row as f32 * 14.0;
+            words.push(word(&format!("l{row}a"), 10.0, y));
+            words.push(word(&format!("l{row}b"), 55.0, y));
+            words.push(word(&format!("r{row}a"), 300.0, y));
+            words.push(word(&format!("r{row}b"), 345.0, y));
+        }
+        let ordered = column_order(&words).expect("two columns");
+        let texts: Vec<&str> = ordered.iter().map(|w| w.text.as_str()).collect();
+        assert_eq!(texts[0], "l0a");
+        assert_eq!(texts[15], "l7b");
+        assert_eq!(texts[16], "r0a");
+        let single: Vec<Word> = words.iter().filter(|w| w.x0 < 100.0).cloned().collect();
+        assert!(column_order(&single).is_none());
     }
 }
