@@ -198,9 +198,16 @@ fn column_order(words: &[Word]) -> Option<Vec<Word>> {
     let boxes: Vec<[f32; 4]> = regions
         .iter()
         .map(|lines| {
-            lines.iter().fold([f32::MAX, f32::MAX, f32::MIN, f32::MIN], |b, l| {
-                [b[0].min(l.x0), b[1].min(l.y0), b[2].max(l.x1), b[3].max(l.y1)]
-            })
+            lines
+                .iter()
+                .fold([f32::MAX, f32::MAX, f32::MIN, f32::MIN], |b, l| {
+                    [
+                        b[0].min(l.x0),
+                        b[1].min(l.y0),
+                        b[2].max(l.x1),
+                        b[3].max(l.y1),
+                    ]
+                })
         })
         .collect();
     let side_by_side = boxes.iter().enumerate().any(|(i, a)| {
