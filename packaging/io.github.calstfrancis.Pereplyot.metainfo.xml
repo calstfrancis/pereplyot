@@ -59,6 +59,13 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.20.2" date="2026-10-18">
+      <description>
+        <p>0.20.2 "Facing Leaf" — in Two-page view you can now select, highlight, underline, clip
+        and right-click on the right-hand page of a spread, not just the left; the hover preview
+        of links and citations works on both.</p>
+      </description>
+    </release>
     <release version="0.20.1" date="2026-10-17">
       <description>
         <p>0.20.1 "Clean Gutter" — selecting text on a multi-column PDF page now follows one

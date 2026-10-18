@@ -10,7 +10,7 @@ use crate::ui::Widgets;
 use std::rc::Rc;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub(crate) const RELEASE_NAME: &str = "Clean Gutter";
+pub(crate) const RELEASE_NAME: &str = "Facing Leaf";
 
 /// Show the window if this version has not been seen: the welcome the first time ever, What's
 /// New after an update. Called when the launcher is actually shown.
@@ -101,6 +101,10 @@ pub fn show(parent: &impl IsA<gtk4::Window>, first_run: bool) {
 
 /// Updated at release time, with `RELEASE_NAME`.
 const NEW: &[(&str, &str)] = &[
+    (
+        "Two-page view works on both pages",
+        "Select, highlight, underline, clip and right-click on the right-hand page of a spread, not just the left.",
+    ),
     (
         "Selection respects columns",
         "On a two-column page, dragging or clipping a rectangle now follows one column and then the next instead of cutting straight across the gutter.",

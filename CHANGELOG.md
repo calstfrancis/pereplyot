@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.20.2] "Facing Leaf" — 2026-10-18 — Two-page view works on both pages
 - **Two-page view: select, highlight, underline and clip on the right-hand page.** Only the left
   page of a spread took a drag; the facing page was view-only. Dragging, the live selection
   preview, right-click (edit a mark, add a note) and the hover preview of links and citations now

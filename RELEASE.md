@@ -1,4 +1,4 @@
-# Pereplyot v0.20.1 "Clean Gutter"
+# Pereplyot v0.20.2 "Facing Leaf"
 
 Install via Flatpak:
 
@@ -18,11 +18,14 @@ flatpak update io.github.calstfrancis.Pereplyot
 
 ### What's new
 
-**Selection respects columns.** On a two-column page, dragging from the bottom of one column into
-the next used to select a block straight across the gutter, mixing both columns' lines. Pereplyot
-now reads the page's columns: a drag takes the rest of the first column and then the top of the
-next, and clipping a rectangle that spans columns gives each column its own text and highlight.
-Single-column pages behave as before.
+**Two-page view works on both pages.** The right-hand page of a spread used to be view-only: a drag
+there did nothing, so selecting, highlighting and clipping meant switching to single-page view.
+Now the facing page takes everything the left one does: drag to select, highlight, underline,
+strike out or clip an area, right-click a mark to edit it or add a note, and rest the pointer on a
+link or citation for its preview.
+
+**Selection respects columns** (from 0.20.1). On a two-column page a drag follows one column and
+then the next instead of cutting across the gutter.
 
 ---
 
