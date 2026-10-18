@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+- **Two-page view: select, highlight, underline and clip on the right-hand page.** Only the left
+  page of a spread took a drag; the facing page was view-only. Dragging, the live selection
+  preview, right-click (edit a mark, add a note) and the hover preview of links and citations now
+  work on both pages.
+
 ## [0.20.1] "Clean Gutter" — 2026-10-17 — Selection that respects columns
 - **Selecting text on a multi-column PDF page follows the columns.** Dragging from the bottom of
   one column into the next used to select a block straight across the gutter, mixing the two

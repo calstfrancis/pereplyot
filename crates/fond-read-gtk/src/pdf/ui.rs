@@ -66,6 +66,9 @@ pub(super) struct PdfUi {
     pub(super) window: adw::ApplicationWindow,
     pub(super) drag_preview: gtk4::DrawingArea,
     pub(super) drag_live_rect: DragRectCell,
+    pub(super) right_picture: gtk4::Picture,
+    pub(super) right_drag_preview: gtk4::DrawingArea,
+    pub(super) right_drag_live_rect: DragRectCell,
     pub(super) sidebar_box: gtk4::Box,
     pub(super) outline: Rc<RefCell<Vec<fond_doc::PdfOutlineEntry>>>,
 }

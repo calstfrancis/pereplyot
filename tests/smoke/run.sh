@@ -1563,6 +1563,36 @@ run_versions_case() {
     stop_app
 }
 
+run_twopage_case() {
+    start_app "$FX/plain.pdf"
+    local w
+    w="$(reader_window)" || { check "twopage: reader window opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
+    sleep 2
+    xdotool windowsize "$w" 1360 820 2>/dev/null
+    sleep 1
+    xdotool windowfocus "$w" 2>/dev/null
+    xdotool key ctrl+k
+    sleep 1.2
+    xdotool type --delay 40 "two"
+    sleep 0.8
+    xdotool key Return
+    sleep 2.5
+    screenshot "$WORK/two.png"
+    local geom
+    geom="$(python3 "$HERE/text_bands.py" "$WORK/two.png" --ink-box 840 150 1340 700)"
+    read -r x0 y0 x1 y1 <<<"$geom"
+    local h=$(( (y1 - y0) / 4 ))
+    local y=$(( y0 + 2 * h + h / 2 ))
+    xdotool mousemove $((x0 - 6)) "$y" mousedown 1 mousemove $(( (x0 + x1) / 2 )) "$y" mousemove $((x1 + 6)) "$y" mouseup 1
+    sleep 1
+    xdotool key 1
+    sleep 1.5
+    local saved
+    saved="$(annotations_json | python3 "$HERE/page_snippets.py")"
+    check "twopage: a drag on the facing page highlights text on that page" "$(echo "$saved" | grep -q '^2:Pack' && echo 1 || echo 0)" "(saved: $saved; box $geom)"
+    stop_app
+}
+
 want() { [ -z "${SMOKE_CASES:-}" ] || [[ " $SMOKE_CASES " == *" $1 "* ]]; }
 want plain && run_pdf_case plain plain.pdf y 2 "Pack my box with five dozen liquor jugs."
 want cropbox && run_pdf_case cropbox cropbox.pdf y 2 "Pack my box with five dozen liquor jugs."
@@ -1572,6 +1602,7 @@ want split && run_split_case
 want resume && run_resume_case
 want pin && run_pin_case
 want hover && run_hover_case
+want twopage && run_twopage_case
 want thumbs && run_thumbs_case
 want reading && run_reading_case
 want figures && run_figures_case

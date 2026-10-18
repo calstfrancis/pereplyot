@@ -1,16 +1,36 @@
 use super::*;
 
 pub(super) fn install_drag_gesture(ui: &PdfUi) {
+    install_page_drag(ui, &ui.picture, &ui.drag_preview, &ui.drag_live_rect, 0);
+    install_page_drag(
+        ui,
+        &ui.right_picture,
+        &ui.right_drag_preview,
+        &ui.right_drag_live_rect,
+        1,
+    );
+}
+
+/// `page_offset` is 0 for the page the reader is on and 1 for the facing page of a spread.
+fn install_page_drag(
+    ui: &PdfUi,
+    picture: &gtk4::Picture,
+    drag_preview: &gtk4::DrawingArea,
+    drag_live_rect: &DragRectCell,
+    page_offset: u16,
+) {
     let PdfUi {
         host,
         reader,
         reader_window,
         render,
-        picture,
-        drag_preview,
-        drag_live_rect,
         ..
     } = ui.clone();
+    let (picture, drag_preview, drag_live_rect) = (
+        picture.clone(),
+        drag_preview.clone(),
+        drag_live_rect.clone(),
+    );
     // Click-drag on the page creates a highlight: the dragged rectangle (in the render's own
     // pixel grid — the Picture is size-requested to exactly that, so widget-local coordinates
     // from the gesture already are that grid) converts to PDF-space quadpoints via the current
@@ -21,6 +41,7 @@ pub(super) fn install_drag_gesture(ui: &PdfUi) {
         let render = render.clone();
         let reader_window_for_drag = reader_window.clone();
         let picture_for_popover = picture.clone();
+        let picture_for_size = picture.clone();
         let host = host.clone();
         {
             let live_rect = drag_live_rect.clone();
@@ -59,7 +80,8 @@ pub(super) fn install_drag_gesture(ui: &PdfUi) {
                     if let Some((sx, sy)) = gesture.start_point() {
                         let (page, w, h) = {
                             let r = reader.borrow();
-                            (r.page, r.render_px.0 as f64, r.render_px.1 as f64)
+                            let (w, h) = picture_for_size.size_request();
+                            (r.page + page_offset, w as f64, h as f64)
                         };
                         pin::finish(&reader, page, (sx, sy, sx + offset_x, sy + offset_y), w, h);
                     }
@@ -82,7 +104,9 @@ pub(super) fn install_drag_gesture(ui: &PdfUi) {
 
                 let (page, render_w, render_h, page_geom) = {
                     let r = reader.borrow();
-                    (r.page, r.render_px.0, r.render_px.1, r.geom(r.page))
+                    let page = r.page + page_offset;
+                    let (w, h) = picture_for_size.size_request();
+                    (page, w.max(0) as u32, h.max(0) as u32, r.geom(page))
                 };
                 let geom = DragGeometry {
                     render_w,

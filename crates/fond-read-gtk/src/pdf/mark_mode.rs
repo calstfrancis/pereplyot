@@ -8,12 +8,14 @@ pub(super) fn install_mark_mode(ui: &PdfUi) {
         style_drop,
         hint,
         picture,
+        right_picture,
         ..
     } = ui.clone();
     {
         let reader = reader.clone();
         let hint = hint.clone();
         let picture = picture.clone();
+        let right_picture = right_picture.clone();
         let style_drop_for_mode = style_drop.clone();
         let palette_choice = palette_choice.clone();
         let apply_mode: Rc<dyn Fn()> = Rc::new(move || {
@@ -35,6 +37,7 @@ pub(super) fn install_mark_mode(ui: &PdfUi) {
             }
             let cursor = cursor_for_select_mode(kind.is_none());
             picture.set_cursor(cursor.as_ref());
+            right_picture.set_cursor(cursor.as_ref());
             if let Some(pages) = &reader.borrow().continuous {
                 for (_, picture) in pages.live.values() {
                     picture.set_cursor(cursor.as_ref());

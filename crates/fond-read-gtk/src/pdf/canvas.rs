@@ -7,6 +7,8 @@ pub(super) struct CanvasParts {
     pub(super) drag_preview: gtk4::DrawingArea,
     pub(super) drag_live_rect: DragRectCell,
     pub(super) right_picture: gtk4::Picture,
+    pub(super) right_drag_preview: gtk4::DrawingArea,
+    pub(super) right_drag_live_rect: DragRectCell,
     pub(super) scroll: gtk4::ScrolledWindow,
     pub(super) continuous_box: gtk4::Box,
     pub(super) continuous_scroll: gtk4::ScrolledWindow,
@@ -38,25 +40,23 @@ pub(super) fn build_canvas(reader: &Rc<RefCell<ReaderState>>) -> CanvasParts {
     };
     picture_overlay.set_halign(gtk4::Align::Center);
     picture_overlay.set_valign(gtk4::Align::Start);
-    // "Two-page" mode's facing page — sits beside `picture_overlay` in `spread_box`, hidden
-    // (and left unrendered) outside that mode. View-only for now: no drag/click gesture
-    // controllers of its own, so a highlight/note is still made via the left page (or by
-    // switching to single-page/Continuous) — `render()` below is what actually keeps this in
-    // sync with `picture`, so both stay one page apart with no separate render path to drift.
+    // "Two-page" mode's facing page, beside `picture_overlay` in `spread_box`; hidden (and left
+    // unrendered) outside that mode. It is the page after the reader's current one, with the
+    // same drag, preview and hover overlay as the left page.
     let right_picture = gtk4::Picture::new();
     right_picture.set_halign(gtk4::Align::Center);
     right_picture.set_valign(gtk4::Align::Start);
-    right_picture.set_visible(false);
+    right_picture.set_can_target(true);
+    right_picture.set_cursor(cursor_for_select_mode(true).as_ref());
     let spread_box = gtk4::Box::new(Orientation::Horizontal, 12);
     spread_box.set_halign(gtk4::Align::Center);
     spread_box.append(&picture_overlay);
-    let right_overlay = gtk4::Overlay::new();
-    right_overlay.set_child(Some(&right_picture));
-    right_overlay.add_overlay(&tiles::build_tile_layer());
-    right_overlay.add_overlay(&mark_layer::build_mark_layer(&reader, {
-        let reader = reader.clone();
-        move || reader.borrow().page + 1
-    }));
+    let (right_overlay, right_drag_preview, right_drag_live_rect) = {
+        let reader_for_page = reader.clone();
+        build_drag_preview_overlay(&right_picture, &reader, move || {
+            reader_for_page.borrow().page + 1
+        })
+    };
     right_overlay.set_halign(gtk4::Align::Center);
     right_overlay.set_valign(gtk4::Align::Start);
     right_overlay.set_visible(false);
@@ -111,6 +111,8 @@ pub(super) fn build_canvas(reader: &Rc<RefCell<ReaderState>>) -> CanvasParts {
         drag_preview,
         drag_live_rect,
         right_picture,
+        right_drag_preview,
+        right_drag_live_rect,
         scroll,
         continuous_box,
         continuous_scroll,

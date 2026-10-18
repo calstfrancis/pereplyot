@@ -566,6 +566,8 @@ fn build_reader(
         drag_preview,
         drag_live_rect,
         right_picture,
+        right_drag_preview,
+        right_drag_live_rect,
         scroll,
         continuous_box,
         continuous_scroll,
@@ -809,6 +811,9 @@ fn build_reader(
         outline: outline_for_ui.clone(),
         drag_preview: drag_preview.clone(),
         drag_live_rect: drag_live_rect.clone(),
+        right_picture: right_picture.clone(),
+        right_drag_preview: right_drag_preview.clone(),
+        right_drag_live_rect: right_drag_live_rect.clone(),
         window: window.clone(),
     };
     keys::install_keys(&ui);
