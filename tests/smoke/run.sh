@@ -700,7 +700,7 @@ run_notebook_case() {
     xdotool mousemove 971 72 click 1
     sleep 1
     screenshot "$WORK/nb-more.png"
-    xdotool mousemove 879 236 click 1
+    xdotool mousemove 879 283 click 1
     sleep 1.5
     screenshot "$WORK/nb-export.png"
     xdotool mousemove 403 27 click 1
@@ -1593,6 +1593,34 @@ run_twopage_case() {
     stop_app
 }
 
+run_autoadd_case() {
+    start_app "$FX/plain.pdf"
+    local w
+    w="$(reader_window)" || { check "autoadd: reader window opens" 0 "(log: $(head -c 300 "$WORK/app.log"))"; stop_app; return; }
+    sleep 2
+    xdotool windowfocus "$w" 2>/dev/null
+    xdotool key ctrl+k
+    sleep 1.2
+    xdotool type --delay 40 "notebook"
+    sleep 0.8
+    xdotool key Return
+    sleep 2
+    screenshot "$WORK/auto-0.png"
+    local geom
+    geom="$(python3 "$HERE/text_bands.py" "$WORK/auto-0.png" --ink-box 20 150 600 700)"
+    read -r x0 y0 x1 y1 <<<"$geom"
+    local h=$(( (y1 - y0) / 4 ))
+    local y=$(( y0 + 2 * h + h / 2 ))
+    xdotool mousemove $((x0 - 6)) "$y" mousedown 1 mousemove $(( (x0 + x1) / 2 )) "$y" mousemove $((x1 + 6)) "$y" mouseup 1
+    sleep 1
+    xdotool key 1
+    sleep 4
+    local nb
+    nb="$(notebook_file)"
+    check "autoadd: a highlight made beside the open notebook is in it, without being dragged" "$([ -n "$nb" ] && grep -q "Pack my box" "$nb" && echo 1 || echo 0)" "(notebook file: '$nb'; box $geom)"
+    stop_app
+}
+
 want() { [ -z "${SMOKE_CASES:-}" ] || [[ " $SMOKE_CASES " == *" $1 "* ]]; }
 want plain && run_pdf_case plain plain.pdf y 2 "Pack my box with five dozen liquor jugs."
 want cropbox && run_pdf_case cropbox cropbox.pdf y 2 "Pack my box with five dozen liquor jugs."
@@ -1603,6 +1631,7 @@ want resume && run_resume_case
 want pin && run_pin_case
 want hover && run_hover_case
 want twopage && run_twopage_case
+want autoadd && run_autoadd_case
 want thumbs && run_thumbs_case
 want reading && run_reading_case
 want figures && run_figures_case

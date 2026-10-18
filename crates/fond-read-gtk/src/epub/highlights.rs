@@ -511,8 +511,18 @@ pub(super) fn build_apply_mark(
                     crate::set_page_label(&mut annotation, label.as_deref());
                 }
                 let store = reader.borrow().store.clone();
-                match store.add(annotation) {
-                    Ok(()) => host.notify("Added"),
+                match store.add(annotation.clone()) {
+                    Ok(()) => {
+                        let (doc, label) = {
+                            let r = reader.borrow();
+                            let label = crate::page_label_of(&annotation).unwrap_or_default();
+                            (r.doc_ref.clone(), label)
+                        };
+                        crate::notebook_ui::auto_add(&doc, &label, &annotation, &|m| {
+                            host.notify(m)
+                        });
+                        host.notify("Added");
+                    }
                     Err(e) => host.notify(&e),
                 }
             },

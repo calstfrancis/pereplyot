@@ -58,6 +58,7 @@ use search::*;
 /// added — the same "hold it in memory, don't re-read the library each time" approach the
 /// PDF reader's `ReaderState` uses).
 struct EpubReaderState {
+    doc_ref: crate::notebook_ui::DocRef,
     /// Where this EPUB's contents were extracted to (content-addressed by attachment hash,
     /// so a repeat "Read" reuses the extraction rather than re-unzipping every time).
     cache_dir: PathBuf,
@@ -219,6 +220,10 @@ fn show_epub_reader_prepared(
 
     let printed_pages = pages::read(&cache_dir, &book.spine);
     let reader = Rc::new(RefCell::new(EpubReaderState {
+        doc_ref: crate::notebook_ui::DocRef {
+            hash: hash.to_string(),
+            title: title.to_string(),
+        },
         cache_dir,
         pages: printed_pages,
         lost: Vec::new(),

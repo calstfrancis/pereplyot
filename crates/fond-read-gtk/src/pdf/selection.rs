@@ -176,6 +176,28 @@ pub(super) fn selection_text(r: &ReaderState, page: u16, quads: &[[f64; 8]]) -> 
     (!lines.is_empty()).then(|| lines.join(" "))
 }
 
+/// A mark just saved goes into the notebook beside the reader, if one is showing.
+pub(super) fn auto_notebook(
+    host: &Rc<dyn ReaderHost>,
+    reader: &Rc<RefCell<ReaderState>>,
+    annotation: &fond_annot::Annotation,
+) {
+    let (doc, label) = {
+        let r = reader.borrow();
+        let Some(doc) = r.doc_ref.clone() else {
+            return;
+        };
+        let page = annotation.page.unwrap_or(1);
+        let label = r
+            .page_labels
+            .get((page as usize).saturating_sub(1))
+            .and_then(|l| l.clone())
+            .unwrap_or_else(|| page.to_string());
+        (doc, label)
+    };
+    crate::notebook_ui::auto_add(&doc, &label, annotation, &|m| host.notify(m));
+}
+
 pub(super) fn copy_to_clipboard(host: &Rc<dyn ReaderHost>, text: &str) {
     if let Some(display) = gdk::Display::default() {
         display.clipboard().set_text(text);
@@ -256,8 +278,9 @@ pub(super) fn apply_selection_mark(
     );
     add_context(&ctx.reader.borrow(), page, &mut annotation);
     let store = ctx.reader.borrow().store.clone();
-    match store.add(annotation) {
+    match store.add(annotation.clone()) {
         Ok(()) => {
+            auto_notebook(&ctx.host, &ctx.reader, &annotation);
             ctx.host.notify(match kind {
                 fond_annot::AnnotationKind::Underline => "Underline added",
                 fond_annot::AnnotationKind::Strikeout => "Strikeout added",
@@ -438,8 +461,9 @@ fn save_area(
     let annotation =
         fond_annot::Annotation::area(page as u32 + 1, rect, text, None, Some(color.to_string()));
     let store = reader.borrow().store.clone();
-    match store.add(annotation) {
+    match store.add(annotation.clone()) {
         Ok(()) => {
+            auto_notebook(host, reader, &annotation);
             host.notify("Area clipped — right-click it to add a note");
             true
         }
@@ -508,8 +532,9 @@ pub(super) fn save_drag_annotation(
     add_context(&reader.borrow(), page, &mut annotation);
 
     let store = reader.borrow().store.clone();
-    match store.add(annotation) {
+    match store.add(annotation.clone()) {
         Ok(()) => {
+            auto_notebook(host, reader, &annotation);
             let label = match draw_kind {
                 fond_annot::AnnotationKind::Highlight => "Highlight added",
                 fond_annot::AnnotationKind::Underline => "Underline added",

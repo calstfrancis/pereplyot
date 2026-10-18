@@ -192,6 +192,38 @@ pub fn add_to_notebook(quote: Quote, notify: &dyn Fn(&str)) {
     }
 }
 
+fn auto_add_off_marker() -> PathBuf {
+    crate::notebook::dir().join(".no-auto-add")
+}
+
+/// Whether a mark made while a notebook is showing goes into it by itself (on unless turned off).
+pub fn auto_add_enabled() -> bool {
+    !auto_add_off_marker().exists()
+}
+
+pub(crate) fn set_auto_add(on: bool) {
+    let marker = auto_add_off_marker();
+    if on {
+        let _ = std::fs::remove_file(&marker);
+    } else if std::fs::create_dir_all(crate::notebook::dir()).is_ok() {
+        let _ = std::fs::write(&marker, "");
+    }
+}
+
+/// A mark just made goes to the end of the notebook beside the reader, when one is showing and
+/// the setting is on; with no notebook showing nothing is opened or created.
+pub fn auto_add(doc: &DocRef, label: &str, a: &fond_annot::Annotation, notify: &dyn Fn(&str)) {
+    if !auto_add_enabled() {
+        return;
+    }
+    let s = session();
+    let showing = !matches!(*s.place.borrow(), Place::Nowhere) && s.view.has_notebook();
+    if showing {
+        s.view.add_quote(quote_of(doc, label, a));
+        notify(&format!("Added to “{}”", s.view.title()));
+    }
+}
+
 /// Show the notebook in `paned`'s end child, taking it from wherever it was. `hidden` runs when
 /// it is later taken away, so the toggle that showed it can let go.
 pub fn show_in_pane(paned: &gtk4::Paned, hidden: Rc<dyn Fn()>) {

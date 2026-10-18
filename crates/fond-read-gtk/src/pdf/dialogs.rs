@@ -274,8 +274,11 @@ pub(super) fn show_pdf_note_dialog(
                 ));
             }
             let store = reader.borrow().store.clone();
-            match store.add(annotation) {
+            match store.add(annotation.clone()) {
                 Ok(()) => {
+                    if annotation.snippet.is_some() {
+                        auto_notebook(&host, &reader, &annotation);
+                    }
                     host.notify("Note added");
                     dialog.close();
                 }

@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+- **Marks go into the notebook by themselves.** With a notebook showing beside the document, every
+  new highlight, underline, strike-out, clipped area and note on a selection is added to the end of
+  it as a cited quote card, in the PDF and EPUB readers alike — no drag, no + button. With no
+  notebook showing nothing is added (and none is created). Turn it off with *Add new marks
+  automatically* in the notebook's ⋮ menu.
+
 ## [0.20.2] "Facing Leaf" — 2026-10-18 — Two-page view works on both pages
 - **Two-page view: select, highlight, underline and clip on the right-hand page.** Only the left
   page of a spread took a drag; the facing page was view-only. Dragging, the live selection

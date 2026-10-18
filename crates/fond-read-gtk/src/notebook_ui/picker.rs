@@ -181,6 +181,26 @@ pub(super) fn fill_more(view: &Rc<NotebookView>) {
         list.append(&row);
     }
     list.append(&popover_separator());
+    let auto = popover_button(
+        &format!(
+            "{}Add new marks automatically",
+            if super::auto_add_enabled() {
+                "● "
+            } else {
+                ""
+            }
+        ),
+        false,
+    );
+    {
+        let view = view.clone();
+        auto.connect_clicked(move |_| {
+            view.more.popdown();
+            super::set_auto_add(!super::auto_add_enabled());
+        });
+    }
+    list.append(&auto);
+    list.append(&popover_separator());
     list.append(&export);
     list.append(&zerkalo);
     list.append(&popover_separator());

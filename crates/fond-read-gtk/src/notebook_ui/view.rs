@@ -136,6 +136,10 @@ impl NotebookView {
         &self.root
     }
 
+    pub(super) fn has_notebook(&self) -> bool {
+        self.state.borrow().nb.is_some()
+    }
+
     pub fn title(&self) -> String {
         self.state
             .borrow()
