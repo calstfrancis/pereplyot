@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.21.0] "Open Folio" — 2026-10-18 — Marks fill the notebook
 - **Marks go into the notebook by themselves.** With a notebook showing beside the document, every
   new highlight, underline, strike-out, clipped area and note on a selection is added to the end of
   it as a cited quote card, in the PDF and EPUB readers alike — no drag, no + button. With no

@@ -10,7 +10,7 @@ use crate::ui::Widgets;
 use std::rc::Rc;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub(crate) const RELEASE_NAME: &str = "Facing Leaf";
+pub(crate) const RELEASE_NAME: &str = "Open Folio";
 
 /// Show the window if this version has not been seen: the welcome the first time ever, What's
 /// New after an update. Called when the launcher is actually shown.
@@ -101,6 +101,10 @@ pub fn show(parent: &impl IsA<gtk4::Window>, first_run: bool) {
 
 /// Updated at release time, with `RELEASE_NAME`.
 const NEW: &[(&str, &str)] = &[
+    (
+        "Marks fill the notebook",
+        "With a notebook open beside the document, each new highlight, underline, strike-out, clipped area or note on a selection is added to it as a cited quote. Turn it off in the notebook's ⋮ menu.",
+    ),
     (
         "Two-page view works on both pages",
         "Select, highlight, underline, clip and right-click on the right-hand page of a spread, not just the left.",

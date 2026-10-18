@@ -59,6 +59,13 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.21.0" date="2026-10-18">
+      <description>
+        <p>0.21.0 "Open Folio" — with a notebook open beside the document, every new highlight,
+        underline, strike-out, clipped area and note on a selection is added to it as a cited
+        quote, in the PDF and EPUB readers; a toggle in the notebook's menu turns it off.</p>
+      </description>
+    </release>
     <release version="0.20.2" date="2026-10-18">
       <description>
         <p>0.20.2 "Facing Leaf" — in Two-page view you can now select, highlight, underline, clip
