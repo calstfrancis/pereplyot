@@ -73,13 +73,24 @@ pub(super) fn show_pdf_context_menu(
         .map(|(_, text, _)| text.clone());
     if let Some(text) = selection_here.clone() {
         let copy = popover_button("Copy selected text", false);
-        let host = host.clone();
-        let popover = popover.clone();
-        copy.connect_clicked(move |_| {
-            copy_to_clipboard(&host, &text);
-            popover.popdown();
-        });
+        {
+            let host = host.clone();
+            let popover = popover.clone();
+            copy.connect_clicked(move |_| {
+                copy_to_clipboard(&host, &text);
+                popover.popdown();
+            });
+        }
         rows.append(&copy);
+        let print = popover_button("Print selected text…", false);
+        let reader = reader.clone();
+        let popover = popover.clone();
+        let reader_window = reader_window.clone();
+        print.connect_clicked(move |_| {
+            popover.popdown();
+            selection::open_print(&reader, &reader_window);
+        });
+        rows.append(&print);
     }
 
     match hit_id {

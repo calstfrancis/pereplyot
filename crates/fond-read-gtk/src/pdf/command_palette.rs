@@ -55,6 +55,10 @@ pub(super) fn open(ui: &PdfUi) {
             Rc::new(move || caret::toggle(&ui))
         },
     );
+    add("Print…", "Ctrl+P", {
+        let ui = ui.clone();
+        Rc::new(move || selection::open_print(&ui.reader, &ui.reader_tab.window_handle()))
+    });
     add("Reading mode", "T", Rc::new(toggled(&ui.text_toggle)));
     add("Notebook", "N", Rc::new(toggled(&ui.notebook_toggle)));
     add("Notes sidebar", "", Rc::new(toggled(&ui.notes_toggle)));

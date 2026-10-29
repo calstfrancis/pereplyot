@@ -1,4 +1,4 @@
-# Pereplyot v0.21.0 "Open Folio"
+# Pereplyot v0.22.0 "Pressed Sheet"
 
 Install via Flatpak:
 
@@ -18,11 +18,12 @@ flatpak update io.github.calstfrancis.Pereplyot
 
 ### What's new
 
-**Marks fill the notebook.** With a notebook open beside the document, each new highlight,
-underline, strike-out, clipped area, or note on a selection is added to the end of it as a cited
-quote card, in PDFs and EPUBs alike: no dragging, no + button. With no notebook showing nothing is
-added, and none is created behind your back. *Add new marks automatically* in the notebook's ⋮
-menu turns it off.
+**Print.** Press Ctrl+P (or pick *Print…* in the Ctrl+K palette, or *Print selection…* in the
+selection popover). Choose the selected text, this page, a page range or the whole document for a
+PDF, or the selection or current chapter for an EPUB. Selected text is re-set rather than copied
+off the page, in the typeface, size, line spacing and margins you pick, with an optional title,
+page numbers and a "title, p. 42" source line. PDF pages print as they are, fitted or at actual
+size. Preview shows the result first, and your choices are remembered.
 
 ---
 

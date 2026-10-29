@@ -45,6 +45,7 @@ pub mod pdfium;
 mod pdfium_lock;
 pub mod perf;
 pub mod posture;
+pub mod print;
 pub mod reader_host;
 pub mod reflow;
 pub mod store;

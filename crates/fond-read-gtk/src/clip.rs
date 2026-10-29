@@ -109,3 +109,30 @@ pub fn save_png(clip: &Clip, out: &Path) -> Result<(), String> {
     );
     texture.save_to_png(out).map_err(|e| e.to_string())
 }
+
+/// Page `page` (1-based) of the PDF at `path`, whole, at `per_pt` pixels per point, with its
+/// on-screen size in points. Blocking: call it off the main thread where it can be.
+pub fn render_page(path: &Path, page: u32, per_pt: f64) -> Option<(Clip, f64, f64)> {
+    let pdfium = crate::pdfium::get().ok()?;
+    let doc = pdfium.load_pdf_from_file(path, None).ok()?;
+    let index = page.checked_sub(1)? as u16;
+    let (dw, dh) = PageGeom::read_doc(&doc, index)?.display_size();
+    let scale = per_pt.min(MAX_SIDE_PX / (dw.max(dh) as f64).max(1.0));
+    let (w, h) = (
+        (dw as f64 * scale).round().max(1.0) as u32,
+        (dh as f64 * scale).round().max(1.0) as u32,
+    );
+    let pdf_page = doc.pages().get(index).ok()?;
+    let bitmap = pdf_page
+        .render_with_config(&PdfRenderConfig::new().set_target_size(w as Pixels, h as Pixels))
+        .ok()?;
+    Some((
+        Clip {
+            rgba: bitmap.as_rgba_bytes(),
+            width: bitmap.width() as u32,
+            height: bitmap.height() as u32,
+        },
+        dw as f64,
+        dh as f64,
+    ))
+}

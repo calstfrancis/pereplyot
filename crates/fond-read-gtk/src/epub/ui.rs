@@ -7,6 +7,7 @@ pub(super) struct EpubUi {
     pub(super) host: Rc<dyn ReaderHost>,
     pub(super) reader: Rc<RefCell<EpubReaderState>>,
     pub(super) web_view: webkit6::WebView,
+    pub(super) title: String,
     pub(super) prev: gtk4::Button,
     pub(super) next: gtk4::Button,
     pub(super) chapter_label: gtk4::Label,

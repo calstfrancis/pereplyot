@@ -66,7 +66,7 @@ numbers, note popovers, a paginated mode and clipped images; all set by default 
 `ACADEMIC-READER-PLAN.md`.
 
 **Also since 0.11.0:** tabs you can drag out into their own window, password-protected PDFs (asked for, then read from an unlocked cached copy), the library as a pinned first tab of the one reader window, a Welcome / What's New window, a real app icon, EPUB covers on Library cards,
-a Ctrl+K command palette, caret browsing (F7) and optional textures on highlights. The screenshots
+printing (Ctrl+P: the selection re-set with your typeface, size and margins, or whole pages), a Ctrl+K command palette, caret browsing (F7) and optional textures on highlights. The screenshots
 here come from `capture-screenshots.sh` (a fictional document in a throwaway profile; light and
 dark variants live in `screenshots/`), and `release-preflight.sh` checks that a release's version,
 changelog, metainfo, release name and CI-equivalent checks all agree before it is published.

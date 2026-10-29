@@ -311,6 +311,58 @@ pub(super) struct EpubSelection {
     pub(super) page: Option<String>,
 }
 
+/// Opens the print dialog with whatever is selected in the chapter (read through the web view),
+/// or just the chapter if nothing is.
+pub(super) fn open_print(
+    view: &webkit6::WebView,
+    reader: &Rc<RefCell<EpubReaderState>>,
+    title: &str,
+    reader_window: &crate::reader_host::HostWindow,
+) {
+    let view = view.clone();
+    let reader = reader.clone();
+    let title = title.to_string();
+    let reader_window = reader_window.clone();
+    let source = view.clone();
+    source.evaluate_javascript(
+        &epub_selection_js(false),
+        None,
+        None,
+        gio::Cancellable::NONE,
+        move |result| {
+            let capture = result
+                .ok()
+                .and_then(|v| serde_json::from_str::<EpubSelectionCapture>(&v.to_str()).ok());
+            let selection = capture.and_then(|c| {
+                let text = c.text.filter(|t| !c.empty && !t.trim().is_empty())?;
+                let r = reader.borrow();
+                let chapter = r.spine.get(r.index).cloned().unwrap_or_default();
+                let locator = match page_label::label_for(&r, &chapter, c.page.clone()) {
+                    Some(page) => format!("p. {page}"),
+                    None => format!("chapter {}", r.index + 1),
+                };
+                Some(crate::print::Selection {
+                    text,
+                    locator: Some(locator),
+                })
+            });
+            let chapter_view = view.clone();
+            crate::print::show(
+                &reader_window.get(),
+                crate::print::Request {
+                    title,
+                    selection,
+                    pages: None,
+                    chapter: Some(Rc::new(move |parent| {
+                        webkit6::PrintOperation::new(&chapter_view).run_dialog(Some(parent));
+                    })),
+                },
+            );
+        },
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(super) fn show_epub_selection_popover(
     view: &webkit6::WebView,
     at: (f64, f64),
@@ -318,6 +370,8 @@ pub(super) fn show_epub_selection_popover(
     host: &Rc<dyn ReaderHost>,
     apply_mark: &EpubMarkFn,
     reader_window: &crate::reader_host::HostWindow,
+    reader: &Rc<RefCell<EpubReaderState>>,
+    title: &str,
 ) {
     let popover = gtk4::Popover::new();
     popover.set_parent(view);
@@ -435,6 +489,17 @@ pub(super) fn show_epub_selection_popover(
         );
     }
 
+    {
+        let view = view.clone();
+        let reader = reader.clone();
+        let title = title.to_string();
+        let reader_window = reader_window.clone();
+        row(
+            "Print selection…",
+            Rc::new(move || open_print(&view, &reader, &title, &reader_window)),
+        );
+    }
+
     popover.set_child(Some(&rows));
     let view = view.clone();
     popover.connect_closed(move |p| {
@@ -538,7 +603,9 @@ pub(super) fn install_selection_popover(
     web_view: &webkit6::WebView,
     apply_mark: &EpubMarkFn,
     reader_window: &crate::reader_host::HostWindow,
+    title: &str,
 ) {
+    let title = title.to_string();
     {
         // Only watches the button: a gesture here (it was a `GestureDrag`) can take the pointer
         // sequence away from the page mid-drag, which cut a selection off after a letter or a
@@ -577,6 +644,7 @@ pub(super) fn install_selection_popover(
             let reader = reader.clone();
             let apply_mark = apply_mark.clone();
             let reader_window = reader_window.clone();
+            let title = title.clone();
             glib::timeout_add_local_once(std::time::Duration::from_millis(80), move || {
                 let view_for_popover = view.clone();
                 view.evaluate_javascript(
@@ -615,6 +683,8 @@ pub(super) fn install_selection_popover(
                             &host,
                             &apply_mark,
                             &reader_window,
+                            &reader,
+                            &title,
                         );
                     },
                 );

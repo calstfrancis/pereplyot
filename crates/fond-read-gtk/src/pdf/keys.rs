@@ -72,6 +72,15 @@ pub(super) fn install_keys(ui: &PdfUi) {
                 command_palette::open(&ui_for_palette);
                 return glib::Propagation::Stop;
             }
+            if matches!(keyval, gdk::Key::p | gdk::Key::P)
+                && modifiers.contains(gdk::ModifierType::CONTROL_MASK)
+            {
+                selection::open_print(
+                    &ui_for_palette.reader,
+                    &ui_for_palette.reader_tab.window_handle(),
+                );
+                return glib::Propagation::Stop;
+            }
             if (keyval == gdk::Key::z || keyval == gdk::Key::Z)
                 && modifiers.contains(gdk::ModifierType::CONTROL_MASK)
             {

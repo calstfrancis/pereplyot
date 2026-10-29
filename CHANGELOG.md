@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.22.0] "Pressed Sheet" — 2026-10-29 — Print
+- **Print, from the PDF and EPUB readers (Ctrl+P, or *Print…* in the Ctrl+K palette).** A dialog asks
+  what to print: the **selected text** (also in the selection popover and the right-click menu as
+  *Print selection…*), **this page**, a **page range** ("1-5, 8, 11-") or the **whole document** for
+  a PDF; the current chapter for an EPUB. Selected text is re-set rather than copied off the page —
+  line breaks the page imposed are removed — in a typeface (serif, sans, monospace), size, line
+  spacing and margin you choose, optionally justified, with the document title at the top, page
+  numbers, and a "title, p. 42" source line at the bottom. PDF pages print as they are, fitted to
+  the paper or at actual size, with your margins. *Preview* shows the result before it goes to the
+  printer, and your choices are remembered.
+
 ## [0.21.0] "Open Folio" — 2026-10-18 — Marks fill the notebook
 - **Marks go into the notebook by themselves.** With a notebook showing beside the document, every
   new highlight, underline, strike-out, clipped area and note on a selection is added to the end of

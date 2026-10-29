@@ -59,6 +59,13 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.22.0" date="2026-10-29">
+      <description>
+        <p>0.22.0 "Pressed Sheet" — print from the PDF and EPUB readers: the selected text re-set
+        in a typeface, size, spacing and margins you choose, or whole pages of a PDF, a page
+        range, or an EPUB chapter; with a preview first.</p>
+      </description>
+    </release>
     <release version="0.21.0" date="2026-10-18">
       <description>
         <p>0.21.0 "Open Folio" — with a notebook open beside the document, every new highlight,

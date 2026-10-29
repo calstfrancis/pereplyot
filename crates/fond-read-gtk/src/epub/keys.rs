@@ -48,6 +48,17 @@ pub(super) fn install_keys(ui: &EpubUi) {
                 }
                 return glib::Propagation::Stop;
             }
+            if matches!(keyval, gdk::Key::p | gdk::Key::P)
+                && modifiers.contains(gdk::ModifierType::CONTROL_MASK)
+            {
+                highlights::open_print(
+                    &ui_for_palette.web_view,
+                    &ui_for_palette.reader,
+                    &ui_for_palette.title,
+                    &ui_for_palette.reader_tab.window_handle(),
+                );
+                return glib::Propagation::Stop;
+            }
             if keyval == gdk::Key::f && modifiers.contains(gdk::ModifierType::CONTROL_MASK) {
                 search_toggle.set_active(!search_toggle.is_active());
                 return glib::Propagation::Stop;

@@ -51,6 +51,17 @@ pub(super) fn open(ui: &EpubUi) {
     if let Some(run) = ui.host.kartoteka_handoff() {
         add("Add to Kartoteka", "", run);
     }
+    add("Print…", "Ctrl+P", {
+        let ui = ui.clone();
+        Rc::new(move || {
+            highlights::open_print(
+                &ui.web_view,
+                &ui.reader,
+                &ui.title,
+                &ui.reader_tab.window_handle(),
+            )
+        })
+    });
     add("Contents", "", toggle(&ui.sidebar_toggle));
     add("Notes sidebar", "", toggle(&ui.notes_toggle));
     add("Notebook", "N", toggle(&ui.notebook_toggle));

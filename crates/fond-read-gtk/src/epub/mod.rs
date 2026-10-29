@@ -514,6 +514,7 @@ fn show_epub_reader_prepared(
         undo_redo::build_undo_redo(host, &reader, &undo_button, &redo_button);
 
     let ui = ui::EpubUi {
+        title: title.to_string(),
         host: host.clone(),
         reader: reader.clone(),
         web_view: web_view.clone(),
@@ -630,7 +631,7 @@ fn show_epub_reader_prepared(
         });
     }
 
-    install_selection_popover(host, &reader, &web_view, &apply_mark, &reader_window);
+    install_selection_popover(host, &reader, &web_view, &apply_mark, &reader_window, title);
 
     session::install_progress_saving(host, hash, &reader, &web_view, &reader_tab, start_percent);
 

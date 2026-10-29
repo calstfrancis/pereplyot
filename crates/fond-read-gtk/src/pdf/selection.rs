@@ -297,6 +297,47 @@ pub(super) fn apply_selection_mark(
 
 /// Copy the current selection, optionally as a quotation with its citation in the format last
 /// used for export (Typst by default).
+/// Opens the print dialog for this reader: the selection if there is one, and the pages.
+pub(super) fn open_print(
+    reader: &Rc<RefCell<ReaderState>>,
+    reader_window: &crate::reader_host::HostWindow,
+) {
+    let (title, selection, pages) = {
+        let r = reader.borrow();
+        let title = r
+            .path
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "Document".to_string());
+        let selection = r.last_selection.as_ref().map(|(page, text, _)| {
+            let label = r
+                .page_labels
+                .get(*page as usize)
+                .and_then(|l| l.clone())
+                .unwrap_or_else(|| (page + 1).to_string());
+            crate::print::Selection {
+                text: text.clone(),
+                locator: Some(format!("p. {label}")),
+            }
+        });
+        let pages = crate::print::Pages {
+            path: r.path.clone(),
+            current: r.page as u32 + 1,
+            count: r.count as u32,
+        };
+        (title, selection, pages)
+    };
+    crate::print::show(
+        &reader_window.get(),
+        crate::print::Request {
+            title,
+            selection,
+            pages: Some(pages),
+            chapter: None,
+        },
+    );
+}
+
 pub(super) fn copy_selection(ctx: &MarkCtx, with_citation: bool) {
     let (page, text) = {
         let r = ctx.reader.borrow();
@@ -425,6 +466,17 @@ pub(super) fn show_selection_popover(
         rows.append(&action(
             "Copy with citation",
             Rc::new(move || copy_selection(&ctx, true)),
+        ));
+    }
+    {
+        let ctx = ctx.clone();
+        let popover = popover.clone();
+        rows.append(&action(
+            "Print selection…",
+            Rc::new(move || {
+                popover.popdown();
+                open_print(&ctx.reader, &ctx.reader_window);
+            }),
         ));
     }
     let _ = page;
