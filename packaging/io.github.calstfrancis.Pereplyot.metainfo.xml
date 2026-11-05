@@ -59,6 +59,12 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.22.1" date="2026-11-05">
+      <description>
+        <p>0.22.1 "Full Measure" — Zoom to fit width fills the window's width in the continuous
+        view and on rotated pages, instead of shrinking the page to fit the window.</p>
+      </description>
+    </release>
     <release version="0.22.0" date="2026-10-29">
       <description>
         <p>0.22.0 "Pressed Sheet" — print from the PDF and EPUB readers: the selected text re-set

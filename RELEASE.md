@@ -1,4 +1,4 @@
-# Pereplyot v0.22.0 "Pressed Sheet"
+# Pereplyot v0.22.1 "Full Measure"
 
 Install via Flatpak:
 
@@ -18,12 +18,10 @@ flatpak update io.github.calstfrancis.Pereplyot
 
 ### What's new
 
-**Print.** Press Ctrl+P (or pick *Print…* in the Ctrl+K palette, or *Print selection…* in the
-selection popover). Choose the selected text, this page, a page range or the whole document for a
-PDF, or the selection or current chapter for an EPUB. Selected text is re-set rather than copied
-off the page, in the typeface, size, line spacing and margins you pick, with an optional title,
-page numbers and a "title, p. 42" source line. PDF pages print as they are, fitted or at actual
-size. Preview shows the result first, and your choices are remembered.
+**Zoom to fit width fits the width.** In the continuous view the button measured the wrong pane,
+and on a rotated page it ignored that the page's width is its height, so the page could shrink to
+fit the window rather than fill its width. It now measures the pane you're looking at and the
+rotated page.
 
 ---
 

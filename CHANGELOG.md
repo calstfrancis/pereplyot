@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.22.1] "Full Measure" — 2026-11-05 — Zoom to fit width
+- **Zoom to fit width fits the width.** In the continuous view it measured the wrong pane, and on a
+  rotated page it ignored that the page's width is its height, so the page could shrink to fit the
+  window instead of filling its width. It now measures the pane in view and the rotated page.
+
 ## [0.22.0] "Pressed Sheet" — 2026-10-29 — Print
 - **Print, from the PDF and EPUB readers (Ctrl+P, or *Print…* in the Ctrl+K palette).** A dialog asks
   what to print: the **selected text** (also in the selection popover and the right-click menu as

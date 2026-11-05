@@ -185,10 +185,25 @@ pub(super) fn install_zoom(ui: &PdfUi) {
     }
     {
         let request_zoom = request_zoom.clone();
+        let reader = reader.clone();
         let scroll = scroll.clone();
+        let continuous_scroll = continuous_scroll.clone();
+        let continuous_toggle = continuous_toggle.clone();
         zoom_fit_width.connect_clicked(move |_| {
-            let viewport_width = scroll.width().max(1) as f64;
-            request_zoom(viewport_width / READER_BASE_WIDTH);
+            let viewport = if continuous_toggle.is_active() {
+                &continuous_scroll
+            } else {
+                &scroll
+            };
+            let viewport_width = viewport.width().max(1) as f64;
+            let r = reader.borrow();
+            let (pw, ph) = r.display_size(r.page);
+            let width_ratio = if r.rotation % 180 == 90 && pw > 0.0 {
+                ph as f64 / pw as f64
+            } else {
+                1.0
+            };
+            request_zoom(viewport_width / (READER_BASE_WIDTH * width_ratio));
         });
     }
     {

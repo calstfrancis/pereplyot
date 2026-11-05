@@ -882,3 +882,20 @@ fn build_reader(
     reader_tab.present();
     Some(BuiltReader { view, reader })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MAX_HEADER_CHOICE_CHARS: usize = 10;
+
+    #[test]
+    fn mark_kind_choices_fit_the_header_dropdowns() {
+        for (label, _) in MARK_KIND_OPTIONS {
+            assert!(
+                label.chars().count() <= MAX_HEADER_CHOICE_CHARS,
+                "{label:?} is too long for the header drop-down: the status bar and header sit at the 1000 px default width"
+            );
+        }
+    }
+}

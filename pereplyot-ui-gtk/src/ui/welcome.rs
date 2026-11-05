@@ -10,7 +10,7 @@ use crate::ui::Widgets;
 use std::rc::Rc;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub(crate) const RELEASE_NAME: &str = "Pressed Sheet";
+pub(crate) const RELEASE_NAME: &str = "Full Measure";
 
 /// Show the window if this version has not been seen: the welcome the first time ever, What's
 /// New after an update. Called when the launcher is actually shown.
@@ -101,6 +101,10 @@ pub fn show(parent: &impl IsA<gtk4::Window>, first_run: bool) {
 
 /// Updated at release time, with `RELEASE_NAME`.
 const NEW: &[(&str, &str)] = &[
+    (
+        "Fit width fits the width",
+        "Zoom to fit width now uses the continuous view's own width and accounts for rotated pages, instead of shrinking the page to fit the window.",
+    ),
     (
         "Print",
         "Ctrl+P prints the selected text re-set in a typeface, size and margins you choose, or whole pages of a PDF, a range, or an EPUB chapter. Preview before it goes to the printer.",
