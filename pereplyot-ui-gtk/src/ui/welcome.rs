@@ -10,7 +10,7 @@ use crate::ui::Widgets;
 use std::rc::Rc;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub(crate) const RELEASE_NAME: &str = "Full Measure";
+pub(crate) const RELEASE_NAME: &str = "Woven Margin";
 
 /// Show the window if this version has not been seen: the welcome the first time ever, What's
 /// New after an update. Called when the launcher is actually shown.
@@ -82,6 +82,21 @@ pub fn show(parent: &impl IsA<gtk4::Window>, first_run: bool) {
             body.append(&bullet(headline, detail));
         }
     }
+    if first_run {
+        let sample = gtk4::Button::with_label("Open the sample document");
+        sample.add_css_class("pill");
+        sample.set_halign(gtk4::Align::Center);
+        sample.set_margin_top(8);
+        sample.set_tooltip_text(Some(
+            "A short fictional essay, already marked in the four colours, with a reference list",
+        ));
+        let (window, parent) = (window.clone(), parent.clone().upcast::<gtk4::Window>());
+        sample.connect_clicked(move |_| {
+            window.close();
+            let _ = parent.activate_action("win.sample", None);
+        });
+        body.append(&sample);
+    }
     let close = gtk4::Button::with_label("Get started");
     close.add_css_class("suggested-action");
     close.set_halign(gtk4::Align::Center);
@@ -102,36 +117,32 @@ pub fn show(parent: &impl IsA<gtk4::Window>, first_run: bool) {
 /// Updated at release time, with `RELEASE_NAME`.
 const NEW: &[(&str, &str)] = &[
     (
-        "Fit width fits the width",
-        "Zoom to fit width now uses the continuous view's own width and accounts for rotated pages, instead of shrinking the page to fit the window.",
+        "What this cites, and whether you own it",
+        "The sidebar's More tab lists a document's references with where each is cited, marks the ones in your library, and opens your copy at the page the citation names.",
     ),
     (
-        "Print",
-        "Ctrl+P prints the selected text re-set in a typeface, size and margins you choose, or whole pages of a PDF, a range, or an EPUB chapter. Preview before it goes to the printer.",
+        "A record for every document",
+        "Document details (Ctrl+K) holds title, authors, year and more, filled from the file, with an optional look-up that you press yourself. Copy a selection as a footnote or reference in SBL, Chicago, APA, MLA and more.",
     ),
     (
-        "Marks fill the notebook",
-        "With a notebook open beside the document, each new highlight, underline, strike-out, clipped area or note on a selection is added to it as a cited quote. Turn it off in the notebook's ⋮ menu.",
+        "Marks that follow the document",
+        "Open another edition, a preprint or an OCR'd copy and your notes are found again by their words, with any that are uncertain flagged, never deleted.",
     ),
     (
-        "Two-page view works on both pages",
-        "Select, highlight, underline, clip and right-click on the right-hand page of a spread, not just the left.",
+        "Matrix and annotated bibliography",
+        "Lay sources against your questions, see what each says nothing about, and export a table or an annotated bibliography that compiles.",
     ),
     (
-        "Selection respects columns",
-        "On a two-column page, dragging or clipping a rectangle now follows one column and then the next instead of cutting straight across the gutter.",
+        "Index, figures and tables",
+        "The back-of-book index becomes links, and figures and tables are listed; a table can be copied as cells.",
     ),
     (
-        "Scans are readable",
-        "A scanned PDF is recognised in the background as soon as you open it, the page you are on first, and its text can be selected, copied and marked like any other.",
+        "Review, sync and layers",
+        "Opt in to spaced review of what you tag #remember; keep your notes in a Syncthing, Nextcloud or Dropbox folder; read a supervisor's notes as a layer beside yours.",
     ),
     (
-        "Selection that holds",
-        "Dragging across an EPUB passage, or a PDF in Reading mode, no longer stops after a letter or a line.",
-    ),
-    (
-        "Add to Kartoteka, in plain sight",
-        "Add to Library and Add to Kartoteka… are in the ⋮ menu, and Kartoteka now asks you to check the details before it adds the file.",
+        "Look up, and a sample",
+        "Look up… on a selection opens a web search you set up. First-run now offers a sample document, already marked, to try everything on.",
     ),
 ];
 

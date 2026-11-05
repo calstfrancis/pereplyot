@@ -330,6 +330,34 @@ run_history_case() {
     stop_app
 }
 
+# On a failed hover check, say what the app and the display looked like, so a CI-only failure
+# explains itself: the app log, the windows, and a copy of the screenshot kept for upload.
+hover_diagnostics() {
+    echo "--- hover diagnostics ($1) ---"
+    tail -n 20 "$WORK/app.log"
+    xdotool search --onlyvisible --name '' 2>/dev/null | while read -r w; do
+        echo "window $w: $(xdotool getwindowname "$w" 2>/dev/null) $(xdotool getwindowgeometry "$w" 2>/dev/null | tr '\n' ' ')"
+    done
+    xdotool getmouselocation 2>/dev/null
+    [ -n "${SMOKE_ARTIFACTS:-}" ] && mkdir -p "$SMOKE_ARTIFACTS" && cp "$WORK/$1.png" "$SMOKE_ARTIFACTS/" 2>/dev/null
+    echo "--- end diagnostics ---"
+}
+
+# wait_ink_gain SHOT REGION_ARGS... : with BEFORE_INK and MIN_GAIN set, polls (up to 8 s) until the
+# region's ink beats the baseline by MIN_GAIN; prints the last reading. Slow runners show the
+# preview late, and a fixed sleep turned that into a permanent failure.
+wait_ink_gain() {
+    local shot="$1"; shift
+    local ink=0
+    for _ in $(seq 16); do
+        screenshot "$shot"
+        ink="$(python3 "$HERE/text_bands.py" "$shot" --ink-in "$@")"
+        [ "${ink:-0}" -gt $(( ${BEFORE_INK:-0} + MIN_GAIN )) ] && break
+        sleep 0.5
+    done
+    echo "${ink:-0}"
+}
+
 run_hover_case() {
     start_app "$FX/cite-authoryear.pdf"
     local w
@@ -345,11 +373,10 @@ run_hover_case() {
     xdotool mousemove 606 235
     sleep 0.3
     xdotool mousemove 608 236
-    sleep 2
-    screenshot "$WORK/hover-after.png"
     local before after
     before="$(python3 "$HERE/text_bands.py" "$WORK/hover-before.png" --ink-in 370 250 850 345)"
-    after="$(python3 "$HERE/text_bands.py" "$WORK/hover-after.png" --ink-in 370 250 850 345)"
+    after="$(BEFORE_INK="$before" MIN_GAIN=150 wait_ink_gain "$WORK/hover-after.png" 370 250 850 345)"
+    [ "${after:-0}" -gt $(( ${before:-0} + 150 )) ] || hover_diagnostics hover-after
     check "hover: resting on an unlinked citation previews its bibliography entry" "$([ "${after:-0}" -gt $(( ${before:-0} + 150 )) ] && echo 1 || echo 0)" "(ink before $before, after $after)"
     xdotool mousemove 700 600
     sleep 1
@@ -368,10 +395,9 @@ run_hover_case() {
     xdotool mousemove 580 236
     sleep 0.3
     xdotool mousemove 585 235
-    sleep 2
-    screenshot "$WORK/link-after.png"
     before="$(python3 "$HERE/text_bands.py" "$WORK/link-before.png" --ink-in 345 250 830 530)"
-    after="$(python3 "$HERE/text_bands.py" "$WORK/link-after.png" --ink-in 345 250 830 530)"
+    after="$(BEFORE_INK="$before" MIN_GAIN=120 wait_ink_gain "$WORK/link-after.png" 345 250 830 530)"
+    [ "${after:-0}" -gt $(( ${before:-0} + 120 )) ] || hover_diagnostics link-after
     check "hover: resting on a link previews where it leads" "$([ "${after:-0}" -gt $(( ${before:-0} + 120 )) ] && echo 1 || echo 0)" "(ink before $before, after $after)"
     stop_app
 }

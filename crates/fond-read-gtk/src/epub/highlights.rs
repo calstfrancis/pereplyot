@@ -489,6 +489,39 @@ pub(super) fn show_epub_selection_popover(
         );
     }
 
+    if !host.lookup_templates().is_empty() {
+        let (host, text) = (host.clone(), selection.text.clone());
+        let view = view.clone();
+        row(
+            "Look up…",
+            Rc::new(move || crate::lookup::show_menu(view.upcast_ref(), &host, &text)),
+        );
+    }
+    if host.cite_text(crate::CiteForm::Footnote, "").is_some() {
+        for (label, form) in [
+            ("Copy as footnote", crate::CiteForm::Footnote),
+            ("Copy as reference", crate::CiteForm::Reference),
+        ] {
+            let host = host.clone();
+            let page = selection.page.clone();
+            row(
+                label,
+                Rc::new(move || {
+                    let locator = page.clone().unwrap_or_default();
+                    match host.cite_text(form, &locator) {
+                        Some(out) => {
+                            if let Some(display) = gdk::Display::default() {
+                                display.clipboard().set_text(&out);
+                            }
+                            host.notify("Copied to clipboard");
+                        }
+                        None => host.notify("Add the document's details first"),
+                    }
+                }),
+            );
+        }
+    }
+
     {
         let view = view.clone();
         let reader = reader.clone();

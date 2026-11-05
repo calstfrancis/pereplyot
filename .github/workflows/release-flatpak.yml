@@ -36,22 +36,23 @@ jobs:
           # the main push — so ci.yml is often still running (conclusion "") when this step
           # first checks, not actually failed. Poll instead of checking once: up to 60
           # attempts, 15s apart (15 minutes).
-          JOB="build & test"
-          CONCLUSION=""
-          for attempt in $(seq 1 60); do
-            CONCLUSION=$(gh api "repos/${{ github.repository }}/commits/$SHA/check-runs" \
-              --jq ".check_runs[] | select(.name == \"$JOB\") | .conclusion")
-            if [[ -n "$CONCLUSION" ]]; then
-              break
+          for JOB in "build & test" "headless smoke test"; do
+            CONCLUSION=""
+            for attempt in $(seq 1 60); do
+              CONCLUSION=$(gh api "repos/${{ github.repository }}/commits/$SHA/check-runs" \
+                --jq ".check_runs[] | select(.name == \"$JOB\") | .conclusion")
+              if [[ -n "$CONCLUSION" ]]; then
+                break
+              fi
+              echo "ci.yml '$JOB' for $SHA hasn't finished yet (attempt $attempt/60) — waiting..."
+              sleep 15
+            done
+            if [[ "$CONCLUSION" != "success" ]]; then
+              echo "ERROR: ci.yml's '$JOB' job for commit $SHA is '$CONCLUSION', not 'success' — refusing to publish."
+              exit 1
             fi
-            echo "ci.yml '$JOB' for $SHA hasn't finished yet (attempt $attempt/60) — waiting..."
-            sleep 15
+            echo "ci.yml '$JOB' for $SHA: $CONCLUSION"
           done
-          if [[ "$CONCLUSION" != "success" ]]; then
-            echo "ERROR: ci.yml's '$JOB' job for commit $SHA is '$CONCLUSION', not 'success' — refusing to publish."
-            exit 1
-          fi
-          echo "ci.yml '$JOB' for $SHA: $CONCLUSION"
 
       # Mirrors publish-flatpak.sh's own sanity check.
       - name: Verify version matches pereplyot-ui-gtk/Cargo.toml

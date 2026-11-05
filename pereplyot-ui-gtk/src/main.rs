@@ -5,18 +5,26 @@
 
 mod about;
 mod backup;
+mod bib_store;
 mod changelog;
+mod cite;
 mod config;
 mod kartoteka;
+mod layers_store;
 mod library;
+mod lookup;
 mod markdown_sync;
+mod matrix_store;
 mod notes_edit;
 mod notes_export;
 mod notes_index;
 mod notes_versions;
 mod paths;
 mod reader_host;
+mod review_store;
+mod sample;
 mod search_index;
+mod sync_folder;
 mod thumbnail;
 mod ui;
 
@@ -173,6 +181,7 @@ fn parse_args(args: &[std::ffi::OsString]) -> Result<ParsedArgs, String> {
             start_annotation,
             start_page,
             search,
+            similar: None,
         }),
     })
 }

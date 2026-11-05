@@ -14,6 +14,7 @@ repository.workspace = true
 [dependencies]
 fond-annot = { workspace = true }
 fond-doc = { workspace = true }
+pereplyot-core = { path = "../pereplyot-core" }
 pdfium-render = { workspace = true }
 gtk4 = { version = "0.11", features = ["v4_10"] }
 libadwaita = { version = "0.9", features = ["v1_4"] }

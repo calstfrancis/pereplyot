@@ -261,20 +261,86 @@ impl ReaderHost for LocalReaderHost {
     }
 
     fn citation_key(&self) -> Option<String> {
-        LocalMeta::load(&self.hash).citation_key
+        citation_key_of(&self.hash)
     }
 
     fn set_citation_key(&self, key: Option<String>) {
         let mut meta = LocalMeta::load(&self.hash);
-        meta.citation_key = key;
+        meta.citation_key = key.clone();
         meta.save(&self.hash);
+        if let Some(mut record) = crate::bib_store::load(&self.hash) {
+            record.key = key.unwrap_or_default();
+            crate::bib_store::save(&self.hash, &record);
+        }
+    }
+
+    fn cite_text(&self, form: fond_read_gtk::CiteForm, locator: &str) -> Option<String> {
+        let record = crate::bib_store::load(&self.hash).filter(|r| !r.title.is_empty())?;
+        let style = crate::config::Config::load().citation_style;
+        match form {
+            fond_read_gtk::CiteForm::Footnote => {
+                crate::cite::footnote(&record, &style, Some(locator).filter(|l| !l.is_empty())).ok()
+            }
+            fond_read_gtk::CiteForm::Reference => crate::cite::reference(&record, &style).ok(),
+        }
+    }
+
+    fn bibliography_yaml(&self, hashes: &[String]) -> Option<String> {
+        crate::bib_store::yaml_for(hashes)
+    }
+
+    fn lookup_templates(&self) -> Vec<(String, String)> {
+        crate::config::Config::load().lookup_templates
+    }
+
+    fn layers(&self) -> Vec<fond_read_gtk::layer::LayerFile> {
+        crate::layers_store::load(&self.hash)
+    }
+
+    fn add_layer(&self, layer: &fond_read_gtk::layer::LayerFile) -> Result<(), String> {
+        crate::layers_store::save(&self.hash, layer)
+    }
+
+    fn remove_layer(&self, name: &str) {
+        crate::layers_store::remove(&self.hash, name);
+    }
+
+    fn person_name(&self) -> String {
+        let real = glib::real_name().to_string_lossy().into_owned();
+        if real.trim().is_empty() || real == "Unknown" {
+            glib::user_name().to_string_lossy().into_owned()
+        } else {
+            real
+        }
+    }
+
+    fn find_owned(
+        &self,
+        entry: &pereplyot_core::refs::ParsedRef,
+    ) -> Option<fond_read_gtk::OwnedCopy> {
+        crate::bib_store::find_owned(entry, &self.hash)
+            .map(|(hash, title)| fond_read_gtk::OwnedCopy { hash, title })
+    }
+
+    fn open_owned(&self, copy: &fond_read_gtk::OwnedCopy, locator: Option<&str>) {
+        crate::ui::window::open_cited(&self.widgets, &copy.hash, locator);
+    }
+
+    fn details_action(&self) -> Option<fond_read_gtk::WindowAction> {
+        let hash = self.hash.clone();
+        Some(Rc::new(move |parent| {
+            crate::ui::details::show(parent, &hash)
+        }))
     }
 }
 
 /// How many annotations are stored locally for a content hash.
 /// The bibliography key a document is cited by, wherever Pereplyot keeps its own record of it.
 pub fn citation_key_of(hash: &str) -> Option<String> {
-    LocalMeta::load(hash).citation_key
+    crate::bib_store::load(hash)
+        .map(|r| r.key)
+        .filter(|k| !k.is_empty())
+        .or_else(|| LocalMeta::load(hash).citation_key)
 }
 
 pub fn local_annotation_count(hash: &str) -> usize {
@@ -315,6 +381,39 @@ pub fn reattach_local(old_hash: &str, new_hash: &str) -> Result<(), String> {
         meta.save(new_hash);
     }
     Ok(())
+}
+
+/// The notes stored for `hash`, if any.
+fn local_sidecar(hash: &str) -> Option<fond_annot::AnnotationSidecar> {
+    let path = data_dir().join("annotations").join(format!("{hash}.json"));
+    let text = fs::read_to_string(&path).ok()?;
+    fond_annot::AnnotationSidecar::parse(&text, &path).ok()
+}
+
+/// Brings the notes made on another version of a PDF onto `new_path`: each is found again by its
+/// words, and the ones that could not be placed with certainty are marked as such, never dropped.
+/// Blocking. Bookmarks and the reading position are not carried, since their pages no longer mean
+/// the same thing.
+pub fn reattach_reanchored(
+    old_hash: &str,
+    new_hash: &str,
+    new_path: &std::path::Path,
+) -> Result<fond_read_gtk::carry::Summary, String> {
+    let old = local_sidecar(old_hash).ok_or("the earlier version's notes can't be read")?;
+    let old_pages = old
+        .annotations
+        .iter()
+        .filter_map(|a| a.page)
+        .max()
+        .unwrap_or(1);
+    let (sidecar, summary) = fond_read_gtk::carry::carry(&old, old_pages, new_path, new_hash)
+        .ok_or("the new file couldn't be read")?;
+    let json = sidecar.to_json().map_err(|e| e.to_string())?;
+    let target = data_dir()
+        .join("annotations")
+        .join(format!("{new_hash}.json"));
+    fsutil::write_atomic(&target, json.as_bytes()).map_err(|e| e.to_string())?;
+    Ok(summary)
 }
 
 /// The saved progress/page for a document, if any — used to pick `show_pdf_reader`'s

@@ -19,7 +19,16 @@ pub const KEEP: usize = 14;
 pub const EVERY_SECS: i64 = 24 * 60 * 60;
 const PREFIX: &str = "Pereplyot backup ";
 const MANIFEST: &str = "manifest.json";
-const DIRS: [&str; 4] = ["annotations", "meta", "notebooks", "versions"];
+const DIRS: &[&str] = &[
+    "annotations",
+    "bib",
+    "layers",
+    "matrices",
+    "meta",
+    "notebooks",
+    "review",
+    "versions",
+];
 const FILES: [&str; 4] = [
     "library.json",
     "paths.json",
@@ -140,7 +149,7 @@ pub fn back_up(data: &Path, dest: &Path, now: i64) -> Result<Backup, String> {
     let _ = fs::remove_dir_all(&staging);
     let result = (|| {
         let mut files = 0;
-        for dir in DIRS {
+        for dir in DIRS.iter().copied() {
             copy_tree(&data.join(dir), &staging.join(dir), &mut files)?;
         }
         for file in FILES {

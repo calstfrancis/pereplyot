@@ -35,6 +35,23 @@ pub(super) fn build(
     whence.add_css_class("dim-label");
     whence.set_tooltip_text(Some("Open this passage"));
     head.append(&whence);
+    for (icon, tip, delta) in [
+        ("go-up-symbolic", "Move this quote up", -1),
+        ("go-down-symbolic", "Move this quote down", 1),
+    ] {
+        let b = gtk4::Button::from_icon_name(icon);
+        b.add_css_class("flat");
+        b.add_css_class("circular");
+        b.set_tooltip_text(Some(tip));
+        b.update_property(&[gtk4::accessible::Property::Label(tip)]);
+        let (view, anchor) = (Rc::downgrade(view), anchor.clone());
+        b.connect_clicked(move |_| {
+            if let Some(view) = view.upgrade() {
+                view.move_card(&anchor, delta);
+            }
+        });
+        head.append(&b);
+    }
     let remove = gtk4::Button::from_icon_name("window-close-symbolic");
     remove.add_css_class("flat");
     remove.add_css_class("circular");

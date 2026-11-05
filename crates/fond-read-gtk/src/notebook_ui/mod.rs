@@ -24,6 +24,8 @@ pub use view::NotebookView;
 pub type OpenSource = Rc<dyn Fn(&str, &str, u32)>;
 pub type CiteKey = Rc<dyn Fn(&str) -> Option<String>>;
 pub type Shelves = Rc<dyn Fn() -> Vec<String>>;
+/// Hayagriva YAML for the given document hashes.
+pub type Bibliography = Rc<dyn Fn(&[String]) -> Option<String>>;
 
 /// What the notebook needs to know that only the embedding app does.
 #[derive(Default, Clone)]
@@ -34,6 +36,8 @@ pub struct Hooks {
     pub cite_key: Option<CiteKey>,
     /// The Library's shelves, which a notebook can belong to.
     pub shelves: Option<Shelves>,
+    /// The bibliography an export carries so its citations resolve on their own.
+    pub bibliography: Option<Bibliography>,
 }
 
 /// A document, as far as a quote needs to name it.
@@ -82,6 +86,10 @@ pub fn set_hooks(hooks: Hooks) {
 
 pub(crate) fn hooks() -> Hooks {
     session().hooks.borrow().clone()
+}
+
+pub fn bibliography_for(hashes: &[String]) -> Option<String> {
+    hooks().bibliography.and_then(|f| f(hashes))
 }
 
 pub fn cite_key_for(hash: &str) -> Option<String> {

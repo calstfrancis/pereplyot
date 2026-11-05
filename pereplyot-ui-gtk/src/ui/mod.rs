@@ -1,13 +1,17 @@
 pub mod backups;
+pub mod details;
 pub mod highlight_labels;
 pub mod markdown_notes;
+pub mod matrix;
 pub mod menu;
 pub mod notebooks_page;
 pub mod notes_page;
 pub mod ocr_languages;
 pub mod resurface;
+pub mod review;
 pub mod search_page;
 pub mod styles;
+pub mod sync;
 pub mod welcome;
 pub mod window;
 

@@ -9,6 +9,9 @@ command: pereplyot
 finish-args:
   - --share=ipc
   - --socket=fallback-x11
+  # Only for "Look up online" on a document's details (CrossRef / arXiv / Open Library), which is a
+  # button the person presses; Preferences can hide it. Nothing else here goes online.
+  - --share=network
   - --socket=wayland
   - --device=dri
   - --talk-name=org.freedesktop.portal.Desktop

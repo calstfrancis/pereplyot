@@ -142,6 +142,7 @@ pub(super) fn install_notes_sidebar(
                 return;
             }
             let last = all.len().saturating_sub(1);
+            let quoted_in = crate::notebook::quoted_in(&crate::notebook::dir(), &doc.hash);
             for (i, annotation) in all.into_iter().enumerate() {
                 let page_num = annotation.page.unwrap_or(1);
                 // Same printed-label lookup the page-number entry itself uses (`page_labels`
@@ -156,8 +157,14 @@ pub(super) fn install_notes_sidebar(
                 outer.set_hexpand(true);
 
                 let header_box = gtk4::Box::new(Orientation::Horizontal, 6);
+                let state = match crate::carry::state_of(&annotation) {
+                    Some("uncertain") => " · uncertain place",
+                    Some("orphaned") => " · not found in this version",
+                    Some("unchecked") => " · check its place",
+                    _ => "",
+                };
                 let header_label = gtk4::Label::new(Some(&format!(
-                    "p.{page_label} — {}",
+                    "p.{page_label} — {}{state}",
                     kind_name(&annotation)
                 )));
                 header_label.set_xalign(0.0);
@@ -196,6 +203,23 @@ pub(super) fn install_notes_sidebar(
                     )
                 };
                 header_box.add_controller(crate::notebook_ui::drag_source(quote_now.clone()));
+                if crate::carry::state_of(&annotation).is_some() {
+                    let confirm = gtk4::Button::from_icon_name("object-select-symbolic");
+                    confirm.add_css_class("flat");
+                    confirm.set_tooltip_text(Some("Its place is right: stop flagging it"));
+                    confirm.update_property(&[gtk4::accessible::Property::Label(
+                        "Confirm this annotation's place",
+                    )]);
+                    let reader = reader.clone();
+                    let id = annotation.id.clone();
+                    confirm.connect_clicked(move |_| {
+                        let store = reader.borrow().store.clone();
+                        let _ = store.update(&id, |a| {
+                            a.extra.remove(crate::carry::STATE_KEY);
+                        });
+                    });
+                    header_box.append(&confirm);
+                }
                 let delete_button = gtk4::Button::from_icon_name("user-trash-symbolic");
                 delete_button.add_css_class("flat");
                 delete_button.set_tooltip_text(Some("Delete this annotation"));
@@ -233,6 +257,14 @@ pub(super) fn install_notes_sidebar(
                             picture,
                         );
                     }
+                }
+                if let Some(titles) = quoted_in.get(&annotation.id) {
+                    let l = gtk4::Label::new(Some(&format!("Quoted in {}", titles.join(", "))));
+                    l.set_xalign(0.0);
+                    l.set_wrap(true);
+                    l.add_css_class("caption");
+                    l.add_css_class("accent");
+                    outer.append(&l);
                 }
                 if let Some(snippet) = &annotation.snippet {
                     let snippet_label = gtk4::Label::new(Some(snippet));

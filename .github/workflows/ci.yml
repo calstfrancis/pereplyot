@@ -61,4 +61,13 @@ jobs:
       - name: Tests that need PDFium
         run: cargo test -p fond-read-gtk
       - name: Smoke test
+        env:
+          SMOKE_ARTIFACTS: ${{ runner.temp }}/smoke-artifacts
         run: tests/smoke/run.sh
+      - name: Keep failure screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-screenshots
+          path: ${{ runner.temp }}/smoke-artifacts
+          if-no-files-found: ignore

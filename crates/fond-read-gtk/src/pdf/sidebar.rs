@@ -46,6 +46,7 @@ fn fill_outline(
 pub(super) fn build_sidebar(
     outline_entries: &[fond_doc::PdfOutlineEntry],
     reader: &Rc<RefCell<ReaderState>>,
+    host: &Rc<dyn ReaderHost>,
 ) -> SidebarParts {
     let reader = reader.clone();
     // Contents/Notes sidebar: persistent (not a popover) so it stays visible while
@@ -87,14 +88,38 @@ pub(super) fn build_sidebar(
     sidebar_tabs_row.set_margin_bottom(6);
     sidebar_tabs_row.set_margin_start(6);
     sidebar_tabs_row.set_margin_end(6);
-    sidebar_tabs_row.set_halign(gtk4::Align::Center);
+    sidebar_tabs_row.set_halign(gtk4::Align::Fill);
+    sidebar_tabs_row.set_homogeneous(true);
     sidebar_tabs_row.append(&outline_tab_toggle);
     sidebar_tabs_row.append(&thumbnails_tab_toggle);
+    let references_tab_toggle = gtk4::ToggleButton::with_label("More");
+    references_tab_toggle.set_tooltip_text(Some(
+        "References (what this cites, and which you own), the back-of-book index, and figures and tables",
+    ));
+    references_tab_toggle.set_group(Some(&outline_tab_toggle));
+    sidebar_tabs_row.append(&references_tab_toggle);
+    // Three tabs share the sidebar's width; a narrow sidebar shortens the labels rather than clipping.
+    for toggle in [
+        &outline_tab_toggle,
+        &thumbnails_tab_toggle,
+        &references_tab_toggle,
+    ] {
+        toggle.set_hexpand(true);
+        toggle.add_css_class("sidebar-tab");
+        if let Some(label) = toggle
+            .child()
+            .and_then(|w| w.downcast::<gtk4::Label>().ok())
+        {
+            label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+        }
+    }
+    let (references_page, trigger_references) = super::references::build_more_tab(&reader, host);
 
     let sidebar_tab_stack = gtk4::Stack::new();
     sidebar_tab_stack.set_vexpand(true);
     sidebar_tab_stack.add_named(&contents_scroll, Some("outline"));
     sidebar_tab_stack.add_named(&thumbnails_scroll, Some("thumbnails"));
+    sidebar_tab_stack.add_named(&references_page, Some("references"));
 
     if outline_entries.is_empty() {
         outline_tab_toggle.set_sensitive(false);
@@ -120,6 +145,16 @@ pub(super) fn build_sidebar(
             if btn.is_active() {
                 sidebar_tab_stack.set_visible_child_name("thumbnails");
                 trigger_thumbnails();
+            }
+        });
+    }
+
+    {
+        let sidebar_tab_stack = sidebar_tab_stack.clone();
+        references_tab_toggle.connect_toggled(move |btn| {
+            if btn.is_active() {
+                sidebar_tab_stack.set_visible_child_name("references");
+                trigger_references();
             }
         });
     }

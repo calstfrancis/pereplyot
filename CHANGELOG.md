@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.23.0] "Woven Margin" — 2026-11-05 — From reading to writing
+Plan II (`READING-TO-WRITING-PLAN.md`), phases 10–14 and 16–19. Scripture references (Phase 15) were left
+out on purpose.
+
+- **A bibliographic record for every document (Phase 11).** *Document details…* (Ctrl+K) holds a document's
+  type, title, authors, year, journal or book, pages, publisher, DOI/ISBN and citation key. It is filled
+  from the file first (PDF and EPUB metadata, a DOI, ISBN or arXiv id found on the first pages, a © year), and each
+  field says where it came from. *Look up online* fills the rest from CrossRef, arXiv or Open Library, **only
+  when you press it**, and sends only the identifier; *Never go online* hides the button. Citation styles come
+  from hayagriva's CSL: **SBL** (second edition: full note, then short, then *ibid.* handled), Chicago notes and
+  author–date, Turabian, APA, MLA and the rest. The selection menu gains **Copy as footnote** and **Copy as
+  reference** at the printed page. Notebook exports now write a `…-refs.yml` beside them so `@key` citations
+  compile on their own. The flatpak gains `--share=network` for that one button.
+- **The reference list (Phase 12).** A new sidebar tab, **More → References**, parses the bibliography (APA,
+  Harvard, Chicago notes and author–date, IEEE, MLA, SBL, and footnote-only books) and shows where each entry is
+  cited, with the sentence around it. Entries you already own are marked ●, and **Open your copy** opens it at the
+  printed page the citation names ("Kloppenborg 1987, 41"). *Ibid.* and short notes resolve to their source.
+- **Marks that survive a new version (Phase 13).** Open a preprint after annotating its published form (or
+  another edition, or an OCR'd copy) and Pereplyot offers to find your notes again **by their words**, not their
+  coordinates. Each is exact, moved, uncertain or not found; uncertain and not-found marks are flagged in the Notes
+  list, never deleted, and a ✓ confirms one. Document fingerprints (trailer id, DOI, ISBN, title and first words)
+  are kept in `documents/`.
+- **Synthesis matrix, précis, annotated bibliography (Phase 14).** *Matrix & annotated bibliography…* lays
+  sources against your questions (tags), with empty cells shown empty; export as a Typst table, Markdown or CSV, or as
+  a Typst annotated bibliography (reference, your summary, then marks under their four meanings). Notebooks: ↑↓ to
+  move a quote, a word count, and "Quoted in …" on the Notes list.
+- **Index, figures, tables (Phase 16).** **More → Index** reads the back-of-book index (terms, sub-entries,
+  ranges, `203n4`, *passim*, *see*) and each locator jumps to its printed page; **More → Figures and tables**
+  lists them with captions, and a table can be copied as tab-separated text, CSV or a Typst table.
+- **Review (Phase 17).** Opt in (*Review…*), tag a mark `#remember`, and it is asked back as a cloze or as your own
+  `Q: … A: …`, at the pace of the FSRS-4.5 memory model; Space shows the answer and 1–4 rate it. Cards live in
+  their own files and turning review off removes them.
+- **Sync folder and layers (Phase 18).** *Sync folder…* moves your data into a folder Syncthing, Nextcloud or
+  Dropbox shares and merges the conflict copies they leave (every mark kept, the later edit wins, nothing deleted).
+  *Share my notes on this document…* writes your marks as a layer; *Add a layer…* shows someone else's beside yours,
+  outlined with their name, to hide, remove, or take into your own notes.
+- **Finishing (Phase 19).** *Look up…* on a selection (Wikipedia, Logeion, PhilPapers, Scholar, Bible Gateway;
+  edit `lookup_templates` in the config); a sample document on the Welcome window; the reader's CI now includes the
+  smoke test, and it prints the app log and keeps screenshots when a check fails.
+- Not done: windowed Reading mode (a far jump in a very long book still stalls), Compare versions, the Info
+  sidebar tab and per-shelf styles, thumbnails for figures, hover previews of owned copies, Zerkalo/Iskra
+  hand-off, the reading log, and the narrow-window layout.
+
 ## [0.22.1] "Full Measure" — 2026-11-05 — Zoom to fit width
 - **Zoom to fit width fits the width.** In the continuous view it measured the wrong pane, and on a
   rotated page it ignored that the page's width is its height, so the page could shrink to fit the

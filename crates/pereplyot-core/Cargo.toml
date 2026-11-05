@@ -1,0 +1,14 @@
+[package]
+name = "pereplyot-core"
+version = "0.1.0"
+description = "Pure, GTK-free logic for Pereplyot: document identity, references, re-anchoring, review scheduling"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+fond-annot = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

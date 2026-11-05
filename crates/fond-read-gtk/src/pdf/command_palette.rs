@@ -55,6 +55,48 @@ pub(super) fn open(ui: &PdfUi) {
             Rc::new(move || caret::toggle(&ui))
         },
     );
+    if let Some(run) = ui.host.details_action() {
+        let window = ui.reader_window.clone();
+        add(
+            "Document details (title, authors, citation style)…",
+            "Citation",
+            Rc::new(move || run(&window.get())),
+        );
+    }
+    add("Share my notes on this document…", "Layers", {
+        let ui = ui.clone();
+        Rc::new(move || super::layers_ui::share(&ui))
+    });
+    add("Add a layer: someone else's notes…", "Layers", {
+        let ui = ui.clone();
+        Rc::new(move || super::layers_ui::add(&ui))
+    });
+    for (layer, on) in ui.reader.borrow().layers.iter() {
+        let name = layer.name.clone();
+        let ui2 = ui.clone();
+        add(
+            &format!("{} {name}'s notes", if *on { "Hide" } else { "Show" }),
+            "Layers",
+            {
+                let name = name.clone();
+                Rc::new(move || super::layers_ui::toggle(&ui2, &name))
+            },
+        );
+        let ui3 = ui.clone();
+        add(
+            &format!("Take {name}'s marks on this page into my notes"),
+            "Layers",
+            {
+                let name = name.clone();
+                Rc::new(move || super::layers_ui::adopt_page(&ui3, &name))
+            },
+        );
+        let ui4 = ui.clone();
+        add(&format!("Remove {name}'s layer"), "Layers", {
+            let name = name.clone();
+            Rc::new(move || super::layers_ui::remove(&ui4, &name))
+        });
+    }
     add("Print…", "Ctrl+P", {
         let ui = ui.clone();
         Rc::new(move || selection::open_print(&ui.reader, &ui.reader_tab.window_handle()))

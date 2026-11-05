@@ -25,6 +25,9 @@ pub struct NoteHit {
     pub annotation_id: String,
     pub color: Option<String>,
     pub snippet: Option<String>,
+    /// The words just before and after the snippet, as the sidecar remembers them.
+    pub prefix: Option<String>,
+    pub suffix: Option<String>,
     pub note: Option<String>,
 }
 
@@ -72,6 +75,8 @@ pub struct Filter {
     pub hash: Option<String>,
     /// Only annotations made on or after this date (`YYYY-MM-DD`).
     pub since: Option<String>,
+    /// How many to return; the launcher's list stops at [`MAX_HITS`].
+    pub limit: Option<usize>,
 }
 
 pub fn search_with(library: &Library, filter: &Filter) -> Vec<NoteHit> {
@@ -155,6 +160,8 @@ pub fn search_with(library: &Library, filter: &Filter) -> Vec<NoteHit> {
                 annotation_id: a.id,
                 color: a.color,
                 snippet: a.snippet,
+                prefix: a.snippet_prefix,
+                suffix: a.snippet_suffix,
                 note: a.note,
             };
             if matches(&hit, &needle) {
@@ -168,7 +175,7 @@ pub fn search_with(library: &Library, filter: &Filter) -> Vec<NoteHit> {
             .cmp(&b.doc_title.to_lowercase())
             .then(a.page.cmp(&b.page))
     });
-    hits.truncate(MAX_HITS);
+    hits.truncate(filter.limit.unwrap_or(MAX_HITS));
     hits
 }
 

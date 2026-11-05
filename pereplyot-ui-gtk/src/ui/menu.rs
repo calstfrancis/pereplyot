@@ -146,7 +146,17 @@ pub fn build(widgets: &Rc<Widgets>) -> gtk4::Popover {
         "win.markdown-notes",
     );
     rows.append(&popover_separator());
+    activate_row(
+        widgets,
+        &rows,
+        &popover,
+        "Matrix & annotated bibliography…",
+        "win.matrix",
+    );
+    activate_row(widgets, &rows, &popover, "Review…", "win.review");
+    rows.append(&popover_separator());
     activate_row(widgets, &rows, &popover, "Backup…", "win.backup");
+    activate_row(widgets, &rows, &popover, "Sync folder…", "win.sync-folder");
     activate_row(
         widgets,
         &rows,
@@ -155,6 +165,13 @@ pub fn build(widgets: &Rc<Widgets>) -> gtk4::Popover {
         "win.note-versions",
     );
     rows.append(&popover_separator());
+    activate_row(
+        widgets,
+        &rows,
+        &popover,
+        "Open the sample document",
+        "win.sample",
+    );
     activate_row(widgets, &rows, &popover, "What's new…", "win.whats-new");
     activate_row(widgets, &rows, &popover, "About Pereplyot", "win.about");
 

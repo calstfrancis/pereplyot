@@ -34,6 +34,34 @@ pub struct Config {
     pub last_seen_version: String,
     /// Folder that receives a daily backup; empty means off.
     pub backup_folder: String,
+    /// The citation style notes and references are worded in (a `cite::styles()` name).
+    pub citation_style: String,
+    /// Hide every button that would send a request to an online service.
+    pub never_online: bool,
+    /// Spaced review of what is tagged `#remember`; off until asked for.
+    pub review: bool,
+    /// "Look up…" on a selection: a name and a web address with `{q}` where the words go. Edit the list
+    /// in `config.json` to add a library catalogue or take a site away.
+    pub lookup_templates: Vec<(String, String)>,
+}
+
+fn default_lookups() -> Vec<(String, String)> {
+    [
+        (
+            "Wikipedia",
+            "https://en.wikipedia.org/wiki/Special:Search?search={q}",
+        ),
+        ("Logeion (Greek, Latin)", "https://logeion.uchicago.edu/{q}"),
+        ("PhilPapers", "https://philpapers.org/s/{q}"),
+        ("Google Scholar", "https://scholar.google.com/scholar?q={q}"),
+        (
+            "Bible Gateway",
+            "https://www.biblegateway.com/passage/?search={q}",
+        ),
+    ]
+    .iter()
+    .map(|(n, u)| (n.to_string(), u.to_string()))
+    .collect()
 }
 
 pub const LIBRARY_SIZE_MIN: u32 = 80;
@@ -52,6 +80,10 @@ impl Default for Config {
             markdown_folder: String::new(),
             last_seen_version: String::new(),
             backup_folder: String::new(),
+            citation_style: crate::cite::DEFAULT_STYLE.to_string(),
+            never_online: false,
+            review: false,
+            lookup_templates: default_lookups(),
         }
     }
 }

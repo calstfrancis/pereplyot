@@ -116,6 +116,42 @@ pub(super) fn build_mark_layer(
                 }
             }
         }
+        // Other people's marks: outlined, never filled, in a colour of their own.
+        for (layer, showing) in r.layers.iter().filter(|(_, on)| *on) {
+            let _ = showing;
+            let [red, green, blue] = crate::layer::colour_of(&layer.name);
+            cr.set_source_rgba(
+                red as f64 / 255.0,
+                green as f64 / 255.0,
+                blue as f64 / 255.0,
+                0.95,
+            );
+            cr.set_line_width(1.6);
+            let mut first: Option<(f64, f64)> = None;
+            for a in layer
+                .annotations
+                .iter()
+                .filter(|a| a.page == Some(page as u32 + 1))
+            {
+                for quad in shapes::anchor_quads(a) {
+                    let (x0, y0, x1, y1) =
+                        rotate_rect(quad_rect(&quad, geom, uw, uh), rotation, uw, uh);
+                    cr.rectangle(x0, y0, x1 - x0, y1 - y0);
+                    first.get_or_insert((x0, y0));
+                }
+            }
+            let _ = cr.stroke();
+            if let Some((x, y)) = first {
+                cr.select_font_face(
+                    "sans",
+                    gtk4::cairo::FontSlant::Normal,
+                    gtk4::cairo::FontWeight::Bold,
+                );
+                cr.set_font_size(9.0);
+                cr.move_to(x, (y - 2.0).max(9.0));
+                let _ = cr.show_text(&layer.name);
+            }
+        }
         if rotation == 0 {
             draw_edit_chrome(cr, &r, page, geom, &marks_for(&r, page, geom), w, h);
         }

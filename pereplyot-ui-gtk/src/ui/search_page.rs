@@ -314,6 +314,7 @@ pub fn build(widgets: &Rc<Widgets>) -> SearchPage {
                             .map(|s| s.to_string())
                     }
                 },
+                limit: None,
             };
             let want_notes = scope_i != 1
                 && (colour_hex.is_some()

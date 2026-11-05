@@ -197,6 +197,22 @@ fn save(
                     })
                     .collect()
             };
+            // With no bibliography of the user's own, write the ones Pereplyot knows beside the export
+            // so its @key citations compile on their own.
+            let mut bibliography = bibliography.clone();
+            if bibliography.is_empty() && format == Format::Typst {
+                let mut hashes: Vec<String> = nb.quotes().map(|q| q.hash.clone()).collect();
+                hashes.sort();
+                hashes.dedup();
+                if let Some(yaml) = super::bibliography_for(&hashes) {
+                    let name = format!("{}-refs.yml", safe_stem(&path));
+                    if let Some(dir) = path.parent() {
+                        if crate::fsutil::write_atomic(&dir.join(&name), yaml.as_bytes()).is_ok() {
+                            bibliography = name;
+                        }
+                    }
+                }
+            }
             let key_for = |q: &Quote| cite_key_for(&q.hash);
             let options = ExportOptions {
                 format,

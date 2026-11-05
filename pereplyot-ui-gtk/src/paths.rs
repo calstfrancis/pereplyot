@@ -11,8 +11,12 @@ const KEEP_PER_PATH: usize = 8;
 
 type Index = HashMap<String, Vec<String>>;
 
+pub fn data_dir() -> PathBuf {
+    glib::user_data_dir().join("pereplyot")
+}
+
 fn index_path() -> PathBuf {
-    glib::user_data_dir().join("pereplyot").join("paths.json")
+    data_dir().join("paths.json")
 }
 
 fn load() -> Index {

@@ -41,6 +41,8 @@ mod unlock;
 use open_pdf::OpenedPdf;
 mod render_actions;
 use render_actions::*;
+mod layers_ui;
+mod references;
 mod sidebar;
 use sidebar::*;
 mod page_nav;
@@ -213,6 +215,8 @@ struct ReaderState {
     mark_edit: mark_edit::MarkEdit,
     /// Every page's mark layer, so a change of hover or selection can repaint them all.
     mark_layers: Vec<glib::WeakRef<gtk4::DrawingArea>>,
+    /// Other people's notes on this document, and whether each is showing.
+    layers: Vec<(crate::layer::LayerFile, bool)>,
     /// This reader is the second pane of a split view: it shares the first's annotations, and
     /// leaves the tab's header, keys, progress and window registration to the first.
     is_pane: bool,
@@ -633,7 +637,7 @@ fn build_reader(
         outline_rows,
         outline_scroll,
         set_outline,
-    } = sidebar::build_sidebar(&outline_entries, &reader);
+    } = sidebar::build_sidebar(&outline_entries, &reader, host);
     let has_outline = !outline_entries.is_empty();
     let outline_entries = Rc::new(RefCell::new(outline_entries));
     let outline_for_ui = outline_entries.clone();

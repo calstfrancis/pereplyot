@@ -371,6 +371,72 @@ pub fn list(dir: &Path) -> Vec<Summary> {
     out
 }
 
+/// Moves the `nth` quote (in the order they appear) one block towards the start (`delta` < 0) or the
+/// end past whatever is next to it, text or quote. Whether it moved.
+pub fn move_quote(blocks: &mut [Block], nth: usize, delta: i32) -> bool {
+    let Some(at) = blocks
+        .iter()
+        .enumerate()
+        .filter(|(_, b)| matches!(b, Block::Quote(_)))
+        .map(|(i, _)| i)
+        .nth(nth)
+    else {
+        return false;
+    };
+    let to = if delta < 0 {
+        match at.checked_sub(1) {
+            Some(t) => t,
+            None => return false,
+        }
+    } else {
+        if at + 1 >= blocks.len() {
+            return false;
+        }
+        at + 1
+    };
+    blocks.swap(at, to);
+    true
+}
+
+/// Words the person wrote (everything but the quote blocks).
+pub fn words_written(nb: &Notebook) -> usize {
+    nb.blocks
+        .iter()
+        .filter_map(|b| match b {
+            Block::Text(t) => Some(t),
+            Block::Quote(_) => None,
+        })
+        .flat_map(|t| t.lines())
+        // Typst headings and comments are markup, not words.
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .map(|l| {
+            l.split_whitespace()
+                .filter(|w| w.chars().any(char::is_alphanumeric))
+                .count()
+        })
+        .sum()
+}
+
+/// For each annotation of document `hash`: the titles of the notebooks that quote it.
+pub fn quoted_in(dir: &Path, hash: &str) -> std::collections::HashMap<String, Vec<String>> {
+    let mut out: std::collections::HashMap<String, Vec<String>> = Default::default();
+    for summary in list(dir) {
+        if summary.quotes == 0 {
+            continue;
+        }
+        let Some(nb) = load(dir, &summary.stem) else {
+            continue;
+        };
+        for q in nb.quotes().filter(|q| q.hash == hash) {
+            let titles = out.entry(q.id.clone()).or_default();
+            if !titles.contains(&nb.title) {
+                titles.push(nb.title.clone());
+            }
+        }
+    }
+    out
+}
+
 pub fn load(dir: &Path, stem: &str) -> Option<Notebook> {
     let text = std::fs::read_to_string(path_of(dir, stem)).ok()?;
     Some(Notebook::parse(stem, &text))
@@ -921,6 +987,75 @@ mod tests {
             connections_of: &|_| Vec::new(),
             links: false,
         }
+    }
+
+    #[test]
+    fn a_quote_moves_past_its_neighbour_either_way() {
+        let t = |s: &str| Block::Text(s.into());
+        let mut blocks = vec![
+            t("= One\n"),
+            Block::Quote(quote("a", 1, "first")),
+            t("middle\n"),
+            Block::Quote(quote("b", 2, "second")),
+        ];
+        assert!(
+            move_quote(&mut blocks, 1, -1),
+            "second quote up past the text"
+        );
+        assert!(matches!(&blocks[2], Block::Quote(q) if q.id == "b"));
+        assert!(matches!(&blocks[3], Block::Text(x) if x == "middle\n"));
+        assert!(
+            move_quote(&mut blocks, 0, 1),
+            "first quote down past the second"
+        );
+        assert!(matches!(&blocks[2], Block::Quote(q) if q.id == "a"));
+        assert!(!move_quote(&mut blocks, 0, -1) || matches!(&blocks[0], Block::Quote(_)));
+        let mut one = vec![Block::Quote(quote("z", 1, "x"))];
+        assert!(!move_quote(&mut one, 0, -1), "nothing before it");
+        assert!(!move_quote(&mut one, 0, 1), "nothing after it");
+        assert!(!move_quote(&mut one, 3, 1), "no such quote");
+    }
+
+    #[test]
+    fn only_your_own_words_are_counted() {
+        let mut nb = Notebook::new("n", "N", None);
+        nb.blocks.push(Block::Text(
+            "= A heading\nTwo words // not counted\n".into(),
+        ));
+        nb.blocks.push(Block::Quote(quote(
+            "a",
+            1,
+            "many many many many words here",
+        )));
+        nb.blocks
+            .push(Block::Text("\n— and — three more.\n".into()));
+        // "A heading" (2) + "Two words not counted" (4) + "and three more" (3); the quote's six words are not.
+        assert_eq!(words_written(&nb), 2 + 4 + 3);
+    }
+
+    #[test]
+    fn backlinks_name_every_notebook_that_quotes_a_passage() {
+        let dir = std::env::temp_dir().join(format!("pereplyot-backlinks-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for (title, ids) in [
+            ("Essay 2", vec!["a", "b"]),
+            ("Seminar 5", vec!["a"]),
+            ("Empty", vec![]),
+        ] {
+            let mut nb = Notebook::new(&title.to_lowercase().replace(' ', "-"), title, None);
+            for id in ids {
+                nb.blocks.push(Block::Quote(quote(id, 1, "x")));
+            }
+            save(&dir, &nb).unwrap();
+        }
+        let found = quoted_in(&dir, "abc123");
+        let mut a = found["a"].clone();
+        a.sort();
+        assert_eq!(a, ["Essay 2", "Seminar 5"]);
+        assert_eq!(found["b"], ["Essay 2"]);
+        assert!(quoted_in(&dir, "other").is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

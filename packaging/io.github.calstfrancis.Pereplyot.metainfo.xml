@@ -59,6 +59,15 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.23.0" date="2026-11-05">
+      <description>
+        <p>0.23.0 "Woven Margin" — from reading to writing: a bibliographic record for every document with
+        SBL, Chicago, APA and MLA citations; a reference list that shows where each work is cited and opens
+        your own copy at the cited page; marks that follow a document to another edition; a synthesis matrix
+        and annotated bibliography; the back-of-book index, figures and tables; opt-in spaced review; a sync
+        folder and shared layers; Look up on a selection; and a sample document.</p>
+      </description>
+    </release>
     <release version="0.22.1" date="2026-11-05">
       <description>
         <p>0.22.1 "Full Measure" — Zoom to fit width fills the window's width in the continuous

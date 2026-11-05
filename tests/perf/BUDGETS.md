@@ -113,3 +113,19 @@ instead of one 0.85 s freeze: the window answers between slices, but GTK still h
 everything above the target. Windowing the text (only the pages near the view in the buffer) is
 the real fix for that and still touches every offset-keyed feature.
 
+
+## Plan II additions — 2026-11-05 (not yet measured with `run.sh`)
+
+New work and where it runs; none of it is on the render path.
+
+- **First open of a document** now fingerprints it before the reader appears (`doc_identity::probe`: the last
+  64 KB of the file for its trailer id, and the text of about six pages). Timed with the `probe_timing` test:
+  paper-50 62 ms, book-600 75 ms, scan-600 88 ms, on a warm machine. It runs once per document (the record is kept),
+  so a reopen costs nothing, and it reads no more of a scan than before.
+- **References, index, figures** are built the first time their tab is shown, on a worker, and cached
+  (`~/.cache/pereplyot/refs/`); the reference list needs the last 60 pages' words and the text of every page.
+- **Notes sidebar** now reads the notebooks directory when it rebuilds, to say what quotes each mark.
+- **Re-anchoring** (opening another version) reads every page's characters once; the matching is bounded by the
+  rarest three words of each mark.
+
+Still open from before: the Reading-mode far jump (OPEN-ITEMS §1; windowed text was not done).

@@ -34,42 +34,51 @@ matches.
 
 ## Status
 
-**v0.11.0 "Gilt Spine", released 2026-10-09** (the paragraph below was v0.10.0 "Fair Copy"; the one after it is what 0.11.0 added). Opening a PDF or EPUB (via Open,
-drag-and-drop, a file manager's "Open With", or **launched by Kartoteka/Sputnik** — see
-below); a Library (cover-grid, opt-in, with named shelves, adjustable card size and sorting), a Notes tab that searches every annotation across documents, and History (every document opened, automatic,
-**shared across Kartoteka and Sputnik too**) shelf; and the reader itself —
-highlighting/underline/strike/multi-line notes in a four-colour reading scheme (key idea,
-evidence, connection, problem — labels editable under "Highlight labels…"; colour swatches
-and a search field in the Annotations dialog) with export to Markdown, bookmarks, in-document search, continuous
-scroll and facing-pages view, zoom-to-fit-width/page, rotate and invert-colours for PDF,
-reading themes (Light/Sepia/Dark) and font choice for EPUB, a page-thumbnail grid,
-click-to-turn page zones, right-click copying of selected or highlighted PDF text,
-keyboard/mouse page and chapter navigation (from anywhere in the reader window), a Contents outline and
-a Notes list, and tabs for reading more than one document at once. No Welcome window, no
-screenshot automation, and EPUB cover art yet (all three have since been added — see below).
+**v0.22.1 "Full Measure"** is the latest release (`CHANGELOG.md` has every release's notes;
+`ACADEMIC-READER-PLAN.md` and `READING-TO-WRITING-PLAN.md` are the two plans it follows).
 
-**Since then (unreleased, see `CHANGELOG.md`):** a much faster reader (page rendering and search on
-background threads, sharp on HiDPI, tiles at high zoom, smooth zoom, a virtual scroll view);
-**Reading mode** — a PDF re-set as restylable text (cover and title pages kept as pictures and left out of Select All; note markers the scan mangled are matched to their notes, endnotes gathered at the back of the book included; single line spacing available) with printed page numbers in a left margin and
-footnotes beside the lines that cite them, figures and tables as pictures, search hits marked in
-the text, one typography panel shared with the EPUB reader, and Tesseract OCR for scans, run automatically in the background when a scan opens and used for selecting text in the page view too (English
-bundled in the Flatpak; other languages are `.traineddata` files you add yourself, never downloaded); area capture of figures and equations that export as Typst figures, sticky
-notes (a ✎ beside them in Reading mode), tags and a richer Notes list; vector highlights you can select, resize and delete, dark and sepia page
-tones, scrollbar ticks; and navigation that keeps your place — Back/Forward through every jump,
-an optional **Markdown notes folder** (one file per document with `^annot-…` block ids, for Obsidian or Logseq), *Add to Kartoteka* from the palette (needs a newer Kartoteka), hover previews of links and (unlinked) citations, pinned figures, split view of one document, the
-Contents following you with a breadcrumb, and a "Continue here" marker on reopening; marks from
-other readers brought in and a copy saved with annotations; and a **Notebook** — a Typst page you
-write in beside the document, with annotations from any document dragged in as cited quote blocks (or added by themselves as you mark, while it is showing),
-connections between annotations, and export to Typst, Markdown or LaTeX; EPUBs with printed page
-numbers, note popovers, a paginated mode and clipped images; all set by default in Zerkalo's
-"LaTeX Look". The plan is in
-`ACADEMIC-READER-PLAN.md`.
+What it does today, in brief:
 
-**Also since 0.11.0:** tabs you can drag out into their own window, password-protected PDFs (asked for, then read from an unlocked cached copy), the library as a pinned first tab of the one reader window, a Welcome / What's New window, a real app icon, EPUB covers on Library cards,
-printing (Ctrl+P: the selection re-set with your typeface, size and margins, or whole pages), a Ctrl+K command palette, caret browsing (F7) and optional textures on highlights. The screenshots
-here come from `capture-screenshots.sh` (a fictional document in a throwaway profile; light and
-dark variants live in `screenshots/`), and `release-preflight.sh` checks that a release's version,
-changelog, metainfo, release name and CI-equivalent checks all agree before it is published.
+- **Opening and finding.** PDF and EPUB, by Open, drag-and-drop, "Open With" or launched by
+  Kartoteka/Sputnik (see below). A Library with named shelves, a History shelf shared with Kartoteka
+  and Sputnik, a Notes tab that searches every annotation across documents, and a text index over
+  everything you have opened. Tabs that drag out into their own windows; password-protected PDFs.
+- **Reading.** Continuous, facing-pages and split views; **Reading mode** re-sets a PDF as
+  restylable text with printed page numbers in the margin and footnotes beside the lines that cite
+  them; Tesseract OCR for scans (English bundled; other languages are `.traineddata` files you
+  add); hover previews of links and citations; pinned figures; Back/Forward through every jump; a
+  Ctrl+K palette; caret browsing; print (Ctrl+P). EPUBs get printed page numbers, note popovers and
+  a paginated mode. System / Light / Dark, with sepia and dark page tones.
+- **Marking.** Highlight, underline, strike-out, notes and clipped areas in a four-colour reading
+  scheme (key idea, evidence, connection, problem), tags, sticky notes, and import of marks from
+  other readers.
+- **Writing.** A **Notebook** (a Typst page beside the document) takes marks as cited quote blocks,
+  keeps connections between them, and exports to Typst, Markdown or LaTeX; an optional Markdown
+  notes folder for Obsidian or Logseq; *Open in Zerkalo*.
+- **Keeping it safe.** Plain files keyed by content hash, three-way merged saves, earlier versions
+  of every document's notes, and off-machine backup.
+
+**Since 0.22.1 (unreleased; `CHANGELOG.md` has the detail):** the first stage of *from reading to writing*, per
+`READING-TO-WRITING-PLAN.md`.
+
+- **Every document knows what it is.** *Document details…* holds a bibliographic record, filled from the file and,
+  only if you press *Look up online*, from CrossRef, arXiv or Open Library. Notes and references can be copied as
+  footnotes or reference-list entries in SBL, Chicago, Turabian, APA, MLA and the rest, and notebook exports carry
+  the bibliography their `@key` citations need.
+- **What this cites, and whether you own it.** The sidebar's **More** tab lists the document's references with
+  where each is cited, opens your copy at the page a citation names, and reads the back-of-book index and the figure
+  and table list (a table can be copied as cells).
+- **Marks that follow a document** to a preprint, another edition or an OCR'd copy, found again by their words
+  and flagged when they are not certain. **Layers** let you read someone else's notes beside yours.
+- **Writing.** A synthesis matrix (sources against your questions, with the gaps showing), an annotated bibliography
+  built from your summaries and marks, and a notebook you can reorder.
+- **Remembering.** Opt-in spaced review of what you tag `#remember` (FSRS-4.5, in files of its own).
+- **More than one computer.** *Sync folder…* keeps your data in a Syncthing, Nextcloud or Dropbox folder and merges
+  the conflict copies they leave, keeping every mark.
+- *Look up…* on a selection opens a web search you configured (`lookup_templates` in `~/.config/pereplyot/config.json`);
+  the Welcome window offers a sample document.
+
+Network use is only ever a button you press and it names the service; *Never go online* removes it.
 
 ## Building
 

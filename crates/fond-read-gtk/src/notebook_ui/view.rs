@@ -174,6 +174,7 @@ impl NotebookView {
                 me.hint.set_visible(b.char_count() == 0);
                 if !me.loading.get() {
                     me.schedule_save();
+                    me.refresh_header();
                 }
             });
         }
@@ -333,9 +334,23 @@ impl NotebookView {
             .shelf
             .as_deref()
             .map_or("Stand-alone".to_string(), |s| format!("Shelf: {s}"));
+        let buffer = self.text.buffer();
+        let (start, end) = buffer.bounds();
+        // Child anchors are left out of the text, so these are the words typed, not the quotes'.
+        let words = buffer
+            .text(&start, &end, false)
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .map(|l| {
+                l.split_whitespace()
+                    .filter(|w| w.chars().any(char::is_alphanumeric))
+                    .count()
+            })
+            .sum::<usize>();
         self.subtitle.set_text(&format!(
-            "{shelf} · {quotes} quote{}",
-            if quotes == 1 { "" } else { "s" }
+            "{shelf} · {quotes} quote{} · {words} word{}",
+            if quotes == 1 { "" } else { "s" },
+            if words == 1 { "" } else { "s" }
         ));
     }
 
@@ -378,6 +393,32 @@ impl NotebookView {
         let mut end = buffer.end_iter();
         self.insert_quote_at(&mut end, quote);
         self.flush();
+    }
+
+    /// Moves a quote one block up or down, past whatever it sits beside.
+    pub(super) fn move_card(self: &Rc<Self>, anchor: &gtk4::TextChildAnchor, delta: i32) {
+        let buffer = self.text.buffer();
+        let (start, end) = buffer.bounds();
+        let slice = buffer.slice(&start, &end, true);
+        let mut nth = None;
+        let mut seen = 0;
+        for (offset, ch) in slice.chars().enumerate() {
+            if ch != OBJECT {
+                continue;
+            }
+            if buffer.iter_at_offset(offset as i32).child_anchor().as_ref() == Some(anchor) {
+                nth = Some(seen);
+                break;
+            }
+            seen += 1;
+        }
+        let (Some(nth), Some(mut nb)) = (nth, self.snapshot()) else {
+            return;
+        };
+        if crate::notebook::move_quote(&mut nb.blocks, nth, delta) {
+            self.populate(nb);
+            self.flush();
+        }
     }
 
     pub(super) fn remove_card(&self, anchor: &gtk4::TextChildAnchor) {

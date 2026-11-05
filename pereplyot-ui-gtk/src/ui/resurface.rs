@@ -132,6 +132,8 @@ mod tests {
             annotation_id: id.into(),
             color: None,
             snippet: Some(text.into()),
+            prefix: None,
+            suffix: None,
             note: None,
         }
     }

@@ -378,6 +378,21 @@ fn bibliography_start(pages: &[RawPage]) -> usize {
     pages.len().saturating_sub((pages.len() / 4).max(2))
 }
 
+/// Every entry of the bibliography at the end of `pages`, in order, with where it sits.
+pub fn all_entries(pages: &[RawPage]) -> Vec<EntryLocation> {
+    let start = bibliography_start(pages);
+    pages[start..]
+        .iter()
+        .flat_map(|page| {
+            entries_of(page).into_iter().map(|draft| EntryLocation {
+                page: page.page,
+                bbox: draft.bbox(),
+                text: draft.text(),
+            })
+        })
+        .collect()
+}
+
 /// The bibliography entry that `citation` points to, searched for among `pages` — the last pages
 /// of the document, in order.
 pub fn find_entry(pages: &[RawPage], citation: &Citation) -> Option<EntryLocation> {

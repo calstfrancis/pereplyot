@@ -338,6 +338,14 @@ pub fn build(app: &adw::Application, config: Config) -> Rc<Widgets> {
     rebuild_history(&widgets);
     rebuild_library(&widgets);
     crate::ui::backups::start_automatic(&widgets);
+    // Another device may have left conflicting copies of notes in a shared folder: merge them quietly.
+    glib::spawn_future_local(async {
+        let _ =
+            gio::spawn_blocking(
+                || crate::sync_folder::resolve_conflicts(&crate::paths::data_dir()),
+            )
+            .await;
+    });
 
     widgets
 }
@@ -476,6 +484,7 @@ fn install_notebook_hooks(widgets: &Rc<Widgets>) {
             }
         })),
         cite_key: Some(Rc::new(reader_host::citation_key_of)),
+        bibliography: Some(Rc::new(crate::bib_store::yaml_for)),
         shelves: Some(Rc::new(move || {
             shelf_widgets.library.borrow().shelves().to_vec()
         })),
@@ -537,6 +546,43 @@ fn install_actions(app: &adw::Application, widgets: &Rc<Widgets>) {
             .connect_activate(move |_, _| crate::ui::markdown_notes::show(&widgets.window));
     }
     window.add_action(&markdown_action);
+
+    let sample_action = gio::SimpleAction::new("sample", None);
+    {
+        let widgets = widgets.clone();
+        sample_action.connect_activate(move |_, _| {
+            let widgets = widgets.clone();
+            glib::spawn_future_local(async move {
+                match gio::spawn_blocking(crate::sample::ensure).await {
+                    Ok(Ok(path)) => open_path(&widgets, path),
+                    Ok(Err(e)) => toast(&widgets, &format!("Couldn't write the sample: {e}")),
+                    Err(_) => toast(&widgets, "Couldn't write the sample"),
+                }
+            });
+        });
+    }
+    window.add_action(&sample_action);
+
+    let sync_action = gio::SimpleAction::new("sync-folder", None);
+    {
+        let widgets = widgets.clone();
+        sync_action.connect_activate(move |_, _| crate::ui::sync::show(&widgets));
+    }
+    window.add_action(&sync_action);
+
+    let review_action = gio::SimpleAction::new("review", None);
+    {
+        let widgets = widgets.clone();
+        review_action.connect_activate(move |_, _| crate::ui::review::show(&widgets));
+    }
+    window.add_action(&review_action);
+
+    let matrix_action = gio::SimpleAction::new("matrix", None);
+    {
+        let widgets = widgets.clone();
+        matrix_action.connect_activate(move |_, _| crate::ui::matrix::show(&widgets));
+    }
+    window.add_action(&matrix_action);
 
     let backup_action = gio::SimpleAction::new("backup", None);
     {
@@ -701,6 +747,8 @@ pub struct LaunchOptions {
     pub start_annotation: Option<String>,
     /// Mark this text in the document on arrival (the words a search hit was found by).
     pub search: Option<String>,
+    /// Another version of this document the person has annotated: its hash and how many notes.
+    pub similar: Option<(String, usize)>,
 }
 
 /// [`open_path`], but for a document Pereplyot was launched to open on another app's
@@ -750,10 +798,17 @@ pub fn open_path_with_host(
         glib::spawn_future_local(async move {
             let hashed = {
                 let path = path.clone();
-                gio::spawn_blocking(move || crate::paths::hash_file(&path)).await
+                gio::spawn_blocking(move || {
+                    let hash = crate::paths::hash_file(&path)?;
+                    let similar = find_similar(&path, kind, &hash);
+                    Ok::<_, std::io::Error>((hash, similar))
+                })
+                .await
             };
             match hashed {
-                Ok(Ok(hash)) => {
+                Ok(Ok((hash, similar))) => {
+                    let mut options = options;
+                    options.similar = similar;
                     open_with_hash(&widgets, path, kind, hash, options);
                 }
                 Ok(Err(e)) => toast(&widgets, &format!("Couldn't read file: {e}")),
@@ -772,6 +827,180 @@ pub fn open_path_with_host(
     open_with_hash(widgets, path, kind, hash, options)
 }
 
+/// Another version of a document the person has annotated: its hash and how many notes, found by
+/// matching what the file says about itself (its DOI, ISBN, id, title, or the words of its first pages).
+fn find_similar(path: &std::path::Path, kind: DocKind, hash: &str) -> Option<(String, usize)> {
+    if reader_host::local_annotation_count(hash) > 0
+        || crate::paths::data_dir()
+            .join("declined")
+            .join(hash)
+            .exists()
+    {
+        return None;
+    }
+    crate::bib_store::record_document(path, kind, hash, reader_host::citation_key_of(hash));
+    let data = crate::paths::data_dir();
+    let mine = fond_read_gtk::doc_identity::load(&data, hash)?;
+    fond_read_gtk::doc_identity::load_all(&data)
+        .into_iter()
+        .filter(|other| other.hash != hash && mine.same_work(other).is_some())
+        .map(|other| {
+            let n = reader_host::local_annotation_count(&other.hash);
+            (other.hash, n)
+        })
+        .filter(|(_, n)| *n > 0)
+        .max_by_key(|(_, n)| *n)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn offer_other_version(
+    widgets: &Rc<Widgets>,
+    path: PathBuf,
+    kind: DocKind,
+    hash: String,
+    old: String,
+    count: usize,
+    title: Option<String>,
+    annotations_only: bool,
+) {
+    let dialog = adw::MessageDialog::new(
+        Some(&widgets.window),
+        Some("You have notes on another version"),
+        Some(&format!(
+            "This looks like another version of a document you annotated (a preprint and its published form, \
+             or another edition). Find its {count} note(s) again in this one? Each is located by its words; \
+             any that can't be placed with certainty are marked, and nothing is deleted."
+        )),
+    );
+    dialog.add_responses(&[("fresh", "Start fresh"), ("carry", "Find them again")]);
+    dialog.set_response_appearance("carry", adw::ResponseAppearance::Suggested);
+    dialog.set_default_response(Some("carry"));
+    dialog.set_close_response("fresh");
+    let widgets = widgets.clone();
+    dialog.connect_response(None, move |_, id| {
+        let reopen = {
+            let (widgets, path, title) = (widgets.clone(), path.clone(), title.clone());
+            move || {
+                open_path_with_host(
+                    &widgets,
+                    path.clone(),
+                    LaunchOptions {
+                        title: title.clone(),
+                        annotations_only,
+                        ..LaunchOptions::default()
+                    },
+                );
+            }
+        };
+        if id != "carry" {
+            // Don't ask again for this file.
+            crate::paths::record(&path, &hash);
+            let _ = fond_read_gtk::fsutil::write_atomic(
+                &crate::paths::data_dir().join("declined").join(&hash),
+                b"",
+            );
+            reopen();
+            return;
+        }
+        let (widgets, path, hash, old) = (widgets.clone(), path.clone(), hash.clone(), old.clone());
+        glib::spawn_future_local(async move {
+            let carried = {
+                let (path, hash, old) = (path.clone(), hash.clone(), old.clone());
+                gio::spawn_blocking(move || match kind {
+                    DocKind::Pdf => reader_host::reattach_reanchored(&old, &hash, &path)
+                        .map(|s| Some(s.describe())),
+                    DocKind::Epub => reader_host::reattach_local(&old, &hash).map(|()| None),
+                })
+                .await
+            };
+            match carried {
+                Ok(Ok(summary)) => {
+                    reopen();
+                    if let Some(summary) = summary {
+                        toast(&widgets, &format!("Notes: {summary}"));
+                    }
+                }
+                Ok(Err(e)) => {
+                    toast(&widgets, &format!("Couldn't bring the notes over: {e}"));
+                    reopen();
+                }
+                Err(_) => reopen(),
+            }
+        });
+    });
+    dialog.present();
+}
+
+/// Opens the owned document `hash` at the printed page `locator` ("41", "xii"), when the citation named one.
+pub fn open_cited(widgets: &Rc<Widgets>, hash: &str, locator: Option<&str>) {
+    let Some(entry) = fond_read_gtk::history::load()
+        .into_iter()
+        .find(|e| e.hash == hash)
+    else {
+        toast(widgets, "That document is no longer in your history");
+        return;
+    };
+    if !entry.path.is_file() {
+        toast(
+            widgets,
+            "That document is no longer at its recorded location",
+        );
+        return;
+    }
+    let (widgets, path, kind) = (widgets.clone(), entry.path, entry.kind);
+    let locator = locator.map(str::to_string);
+    glib::spawn_future_local(async move {
+        let start_page = match (kind, locator) {
+            (DocKind::Pdf, Some(locator)) => {
+                let path = path.clone();
+                gio::spawn_blocking(move || page_for_label(&path, &locator))
+                    .await
+                    .ok()
+                    .flatten()
+            }
+            _ => None,
+        };
+        open_path_with_host(
+            &widgets,
+            path,
+            LaunchOptions {
+                start_page,
+                ..LaunchOptions::default()
+            },
+        );
+    });
+}
+
+/// The 1-based page whose printed label is `label`; with no printed labels, the number itself.
+fn page_for_label(path: &std::path::Path, label: &str) -> Option<u32> {
+    let label = label.split(['–', '-']).next()?.trim();
+    let pdfium = fond_read_gtk::pdfium::get().ok()?;
+    let bytes = std::fs::read(path).ok()?;
+    let labels = fond_doc::page_labels(pdfium, &bytes).unwrap_or_default();
+    if let Some(i) = labels
+        .iter()
+        .position(|l| l.as_deref().is_some_and(|l| l.eq_ignore_ascii_case(label)))
+    {
+        return Some(i as u32 + 1);
+    }
+    let count = fond_doc::page_count(pdfium, &bytes).ok()? as u32;
+    let n: u32 = label.parse().ok()?;
+    (labels.iter().all(Option::is_none) && (1..=count).contains(&n)).then_some(n)
+}
+
+/// Fingerprints the document for later matching and fills its bibliographic record, off the GTK
+/// thread; a failure only costs the match.
+fn record_identity(path: &std::path::Path, kind: DocKind, hash: &str) {
+    let (path, hash) = (path.to_path_buf(), hash.to_string());
+    let legacy_key = reader_host::citation_key_of(&hash);
+    glib::spawn_future_local(async move {
+        let _ = gio::spawn_blocking(move || {
+            crate::bib_store::record_document(&path, kind, &hash, legacy_key)
+        })
+        .await;
+    });
+}
+
 /// The rest of opening a document once its content hash is known.
 fn open_with_hash(
     widgets: &Rc<Widgets>,
@@ -787,6 +1016,7 @@ fn open_with_hash(
         start_page,
         start_annotation,
         search,
+        similar,
     } = options;
 
     // The same path now has different contents than when it was last opened (re-saved, OCR'd,
@@ -834,7 +1064,24 @@ fn open_with_hash(
                 return None;
             }
         }
+        if let Some((old, count)) =
+            similar.filter(|_| reader_host::local_annotation_count(&hash) == 0)
+        {
+            crate::paths::record(&path, &hash);
+            offer_other_version(
+                widgets,
+                path,
+                kind,
+                hash,
+                old,
+                count,
+                title_override,
+                annotations_only,
+            );
+            return None;
+        }
         crate::paths::record(&path, &hash);
+        record_identity(&path, kind, &hash);
     }
     let title = title_override
         .filter(|t| !t.trim().is_empty())
@@ -1500,4 +1747,24 @@ fn build_library_card(widgets: &Rc<Widgets>, entry: &LibraryEntry) -> gtk4::Widg
     button.add_controller(keys);
 
     button.upcast()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::page_for_label;
+
+    #[test]
+    fn a_printed_page_maps_to_its_pdf_page() {
+        if fond_read_gtk::pdfium::get().is_err() {
+            eprintln!("no PDFium library; skipping");
+            return;
+        }
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/fixtures/mixed.pdf");
+        assert_eq!(page_for_label(&path, "ii"), Some(2));
+        assert_eq!(page_for_label(&path, "2"), Some(4));
+        assert_eq!(page_for_label(&path, "II"), Some(2));
+        assert_eq!(page_for_label(&path, "41"), None);
+        assert_eq!(page_for_label(&path, "2-4"), Some(4));
+    }
 }

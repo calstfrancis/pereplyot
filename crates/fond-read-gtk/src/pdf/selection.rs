@@ -338,6 +338,27 @@ pub(super) fn open_print(
     );
 }
 
+/// The footnote or reference-list entry for this document at the selection's printed page.
+pub(super) fn copy_citation(ctx: &MarkCtx, form: crate::CiteForm) {
+    let page = match &ctx.reader.borrow().last_selection {
+        Some((p, _, _)) => *p,
+        None => return,
+    };
+    let locator = {
+        let r = ctx.reader.borrow();
+        r.page_labels
+            .get(page as usize)
+            .and_then(|l| l.clone())
+            .unwrap_or_else(|| (page + 1).to_string())
+    };
+    match ctx.host.cite_text(form, &locator) {
+        Some(text) => copy_to_clipboard(&ctx.host, &text),
+        None => ctx
+            .host
+            .notify("Add the document's details first (Ctrl+K, Document details)"),
+    }
+}
+
 pub(super) fn copy_selection(ctx: &MarkCtx, with_citation: bool) {
     let (page, text) = {
         let r = ctx.reader.borrow();
@@ -467,6 +488,33 @@ pub(super) fn show_selection_popover(
             "Copy with citation",
             Rc::new(move || copy_selection(&ctx, true)),
         ));
+    }
+    if !ctx.host.lookup_templates().is_empty() {
+        let ctx = ctx.clone();
+        let (popover, parent) = (popover.clone(), parent.clone());
+        rows.append(&action(
+            "Look up…",
+            Rc::new(move || {
+                let text = ctx
+                    .reader
+                    .borrow()
+                    .last_selection
+                    .as_ref()
+                    .map(|(_, t, _)| t.clone())
+                    .unwrap_or_default();
+                popover.popdown();
+                crate::lookup::show_menu(&parent, &ctx.host, &text);
+            }),
+        ));
+    }
+    if ctx.host.cite_text(crate::CiteForm::Footnote, "").is_some() {
+        for (label, form) in [
+            ("Copy as footnote", crate::CiteForm::Footnote),
+            ("Copy as reference", crate::CiteForm::Reference),
+        ] {
+            let ctx = ctx.clone();
+            rows.append(&action(label, Rc::new(move || copy_citation(&ctx, form))));
+        }
     }
     {
         let ctx = ctx.clone();

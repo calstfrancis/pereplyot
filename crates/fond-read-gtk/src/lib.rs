@@ -23,10 +23,13 @@ use gtk4::Orientation;
 mod anchor;
 pub mod annotation_store;
 pub mod annotations;
+pub mod bookaids;
+pub mod carry;
 pub mod clip;
 pub mod commands;
 pub mod connections;
 pub mod deeplink;
+pub mod doc_identity;
 pub mod epub;
 pub mod epub_cover;
 pub mod export;
@@ -36,6 +39,8 @@ mod fuzz_tests;
 pub mod history;
 pub mod index;
 pub mod interop;
+pub mod layer;
+pub mod lookup;
 pub mod notebook;
 pub mod notebook_ui;
 mod page_geom;
@@ -47,9 +52,11 @@ pub mod perf;
 pub mod posture;
 pub mod print;
 pub mod reader_host;
+pub mod refindex;
 pub mod reflow;
 pub mod store;
 mod style;
+pub use style::ensure_public as install_styles;
 pub mod typography;
 pub mod versions;
 
@@ -112,6 +119,23 @@ pub fn set_text_position(a: &mut fond_annot::Annotation, position: Option<(usize
 /// exist. Shared by both readers' notes sidebars.
 pub type RebuildCell = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 
+/// Something done over a given window.
+pub type WindowAction = Rc<dyn Fn(&gtk4::Window)>;
+
+/// A document the person already owns that a reference in the open one points to.
+#[derive(Debug, Clone)]
+pub struct OwnedCopy {
+    pub hash: String,
+    pub title: String,
+}
+
+/// How [`ReaderHost::cite_text`] words a citation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CiteForm {
+    Footnote,
+    Reference,
+}
+
 /// Everything the reader needs from whoever embedded it.
 ///
 /// One instance per open document, constructed by the host. That is what lets the reader
@@ -172,6 +196,54 @@ pub trait ReaderHost {
     }
 
     fn set_citation_key(&self, _key: Option<String>) {}
+
+    /// This document cited for the clipboard as a footnote or a reference-list entry, at the
+    /// printed page `locator`, in the user's chosen citation style. `None` when the host holds no
+    /// bibliographic record for it.
+    fn cite_text(&self, _form: CiteForm, _locator: &str) -> Option<String> {
+        None
+    }
+
+    /// Hayagriva YAML for the documents `hashes`, so an export can carry the bibliography its
+    /// `@key` citations resolve against.
+    fn bibliography_yaml(&self, _hashes: &[String]) -> Option<String> {
+        None
+    }
+
+    /// The document in the person's own library that this reference is, if there is one.
+    fn find_owned(&self, _entry: &pereplyot_core::refs::ParsedRef) -> Option<OwnedCopy> {
+        None
+    }
+
+    /// Opens `copy`, at the printed page `locator` when the citation named one.
+    fn open_owned(&self, _copy: &OwnedCopy, _locator: Option<&str>) {}
+
+    /// Web searches to offer on a selection: a name and a URL with `{q}` where the words go.
+    fn lookup_templates(&self) -> Vec<(String, String)> {
+        Vec::new()
+    }
+
+    /// Other people's notes on this document, shown beside your own.
+    fn layers(&self) -> Vec<layer::LayerFile> {
+        Vec::new()
+    }
+
+    /// Keeps `layer` for this document.
+    fn add_layer(&self, _layer: &layer::LayerFile) -> Result<(), String> {
+        Err("this host keeps no layers".to_string())
+    }
+
+    fn remove_layer(&self, _name: &str) {}
+
+    /// The name to put on notes you share.
+    fn person_name(&self) -> String {
+        String::new()
+    }
+
+    /// Opens the editor for this document's bibliographic record over the given window.
+    fn details_action(&self) -> Option<WindowAction> {
+        None
+    }
 
     /// Whether this document was last left in Reading mode, so it reopens that way.
     fn reading_mode(&self) -> bool {

@@ -128,6 +128,7 @@ pub(super) fn open_pdf(
         close_hooks: Vec::new(),
         doc_ref: None,
         mark_layers: Vec::new(),
+        layers: host.layers().into_iter().map(|l| (l, true)).collect(),
         thumbnail_pictures: Vec::new(),
         scanned: false,
         layout_page: start_page,

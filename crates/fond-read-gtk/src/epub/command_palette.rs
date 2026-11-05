@@ -51,6 +51,14 @@ pub(super) fn open(ui: &EpubUi) {
     if let Some(run) = ui.host.kartoteka_handoff() {
         add("Add to Kartoteka", "", run);
     }
+    if let Some(run) = ui.host.details_action() {
+        let window = ui.reader_tab.window_handle();
+        add(
+            "Document details (title, authors, citation style)…",
+            "Citation",
+            Rc::new(move || run(&window.get())),
+        );
+    }
     add("Print…", "Ctrl+P", {
         let ui = ui.clone();
         Rc::new(move || {
