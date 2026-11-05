@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+- **Fixed: hover previews on GTK 4.14.** The reference preview card is now drawn over the page instead of in a
+  popover, which GTK 4.14 on X11 never sized or showed without grabbing input.
+
 ## [0.23.0] "Woven Margin" — 2026-11-05 — From reading to writing
 Plan II (`READING-TO-WRITING-PLAN.md`), phases 10–14 and 16–19. Scripture references (Phase 15) were left
 out on purpose.

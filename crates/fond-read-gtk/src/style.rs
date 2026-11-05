@@ -26,6 +26,9 @@ pub(crate) fn ensure() {
          .pinned-figure { background-color: @card_bg_color; border-radius: 8px; \
                           box-shadow: 0 2px 10px alpha(black, 0.35); } \
          .figure-grip { background-color: alpha(@window_fg_color, 0.06); border-radius: 8px 8px 0 0; } \
+         .hover-preview { background-color: @popover_bg_color; color: @popover_fg_color; \
+                          border: 1px solid @borders; border-radius: 8px; padding: 6px; \
+                          box-shadow: 0 2px 10px alpha(black, 0.35); } \
          .matrix-empty { background-color: alpha(@window_fg_color, 0.06); border-radius: 6px; } \
          .matrix-cell { border-radius: 6px; padding: 4px; } \
          .sidebar-tab { padding-left: 4px; padding-right: 4px; min-width: 0; } \

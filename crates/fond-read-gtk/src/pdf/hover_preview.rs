@@ -30,7 +30,8 @@ struct Pending {
 pub(super) struct PreviewState {
     token: u64,
     pending: Option<Pending>,
-    popover: Option<gtk4::Popover>,
+    /// The card showing, and the overlay it sits in.
+    card: Option<(gtk4::Overlay, gtk4::Widget)>,
     shown_at: Option<(f64, f64)>,
     words: Vec<(u16, Rc<RawPage>)>,
     bibliography: Bibliography,
@@ -41,7 +42,7 @@ impl Default for PreviewState {
         PreviewState {
             token: 0,
             pending: None,
-            popover: None,
+            card: None,
             shown_at: None,
             words: Vec::new(),
             bibliography: Bibliography::NotStarted,
@@ -57,16 +58,15 @@ struct Target {
 }
 
 fn hide(reader: &Rc<RefCell<ReaderState>>) {
-    let popover = {
+    let card = {
         let mut r = reader.borrow_mut();
         r.previews.token += 1;
         r.previews.pending = None;
         r.previews.shown_at = None;
-        r.previews.popover.take()
+        r.previews.card.take()
     };
-    if let Some(popover) = popover {
-        popover.popdown();
-        glib::idle_add_local_once(move || popover.unparent());
+    if let Some((overlay, card)) = card {
+        overlay.remove_overlay(&card);
     }
 }
 
@@ -290,33 +290,40 @@ pub(super) fn deliver(reader: &Rc<RefCell<ReaderState>>, done: Rendered) {
     caption.add_css_class("dim-label");
     caption.set_xalign(0.0);
     let column = gtk4::Box::new(Orientation::Vertical, 4);
-    column.set_margin_top(6);
-    column.set_margin_bottom(6);
-    column.set_margin_start(6);
-    column.set_margin_end(6);
     column.append(&picture);
     column.append(&caption);
-    let popover = gtk4::Popover::new();
-    popover.set_child(Some(&column));
-    popover.set_autohide(false);
-    popover.set_can_target(false);
-    popover.set_position(gtk4::PositionType::Bottom);
-    popover.set_parent(&pending.parent);
-    popover.set_pointing_to(Some(&gdk::Rectangle::new(
-        pending.at.0.round() as i32,
-        pending.at.1.round() as i32 + 6,
-        1,
-        1,
-    )));
-    popover.popup();
+    // A card laid over the page, not a popover: a popover is its own window, and GTK 4.14 on X11 never
+    // sizes or maps one that doesn't grab input (it stays 1×1), so the preview never appeared there.
+    let Some(overlay) = pending.parent.clone().downcast::<gtk4::Overlay>().ok() else {
+        return;
+    };
+    column.add_css_class("hover-preview");
+    column.set_halign(gtk4::Align::Start);
+    column.set_valign(gtk4::Align::Start);
+    column.set_can_target(false);
+    let (card_w, card_h) = (
+        (width / scale + 12) as f64,
+        (height / scale + 12 + 22) as f64,
+    );
+    let (ow, oh) = (overlay.width() as f64, overlay.height() as f64);
+    let x = (pending.at.0 - card_w / 2.0).clamp(4.0, (ow - card_w - 4.0).max(4.0));
+    let below = pending.at.1 + 14.0;
+    let y = if below + card_h <= oh - 4.0 {
+        below
+    } else {
+        (pending.at.1 - card_h - 10.0).max(4.0)
+    };
+    column.set_margin_start(x.round() as i32);
+    column.set_margin_top(y.round() as i32);
+    overlay.add_overlay(&column);
+    overlay.set_measure_overlay(&column, false);
     let old = {
         let mut r = reader.borrow_mut();
         r.previews.shown_at = Some(pending.at);
-        r.previews.popover.replace(popover)
+        r.previews.card.replace((overlay, column.upcast()))
     };
-    if let Some(old) = old {
-        old.popdown();
-        glib::idle_add_local_once(move || old.unparent());
+    if let Some((overlay, card)) = old {
+        overlay.remove_overlay(&card);
     }
 }
 
