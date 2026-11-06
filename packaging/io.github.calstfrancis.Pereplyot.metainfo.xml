@@ -59,6 +59,12 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.23.1" date="2026-11-06">
+      <description>
+        <p>0.23.1 "Clear Glass" — the reference preview card shown when you hover a citation now appears on
+        GTK 4.14 (Ubuntu 24.04 and similar), where it never showed before.</p>
+      </description>
+    </release>
     <release version="0.23.0" date="2026-11-05">
       <description>
         <p>0.23.0 "Woven Margin" — from reading to writing: a bibliographic record for every document with

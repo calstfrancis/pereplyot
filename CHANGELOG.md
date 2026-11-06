@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.23.1] "Clear Glass" — 2026-11-06 — Hover previews on GTK 4.14
 
 - **Fixed: hover previews on GTK 4.14.** The reference preview card is now drawn over the page instead of in a
   popover, which GTK 4.14 on X11 never sized or showed without grabbing input.

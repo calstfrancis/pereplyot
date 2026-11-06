@@ -10,7 +10,7 @@ use crate::ui::Widgets;
 use std::rc::Rc;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub(crate) const RELEASE_NAME: &str = "Woven Margin";
+pub(crate) const RELEASE_NAME: &str = "Clear Glass";
 
 /// Show the window if this version has not been seen: the welcome the first time ever, What's
 /// New after an update. Called when the launcher is actually shown.
@@ -116,6 +116,10 @@ pub fn show(parent: &impl IsA<gtk4::Window>, first_run: bool) {
 
 /// Updated at release time, with `RELEASE_NAME`.
 const NEW: &[(&str, &str)] = &[
+    (
+        "Reference previews on every system",
+        "Hovering a citation now shows its preview card on GTK 4.14, where it never appeared before.",
+    ),
     (
         "What this cites, and whether you own it",
         "The sidebar's More tab lists a document's references with where each is cited, marks the ones in your library, and opens your copy at the page the citation names.",
