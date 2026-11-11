@@ -149,6 +149,7 @@ impl ReaderHost for LocalReaderHost {
     }
 
     fn save_progress(&self, progress: fond_annot::Progress) {
+        crate::porog_status::progress(&self.hash, progress);
         let mut meta = LocalMeta::load(&self.hash);
         meta.progress = Some(progress);
         meta.save(&self.hash);
@@ -575,6 +576,7 @@ impl ReaderHost for VaultReaderHost {
     }
 
     fn save_progress(&self, progress: fond_annot::Progress) {
+        crate::porog_status::progress(&self.hash, progress);
         self.edit_note(|note| note.frontmatter.progress = Some(progress));
     }
 
@@ -727,6 +729,7 @@ impl ReaderHost for ExternalPathReaderHost {
     }
 
     fn save_progress(&self, progress: fond_annot::Progress) {
+        crate::porog_status::progress(&self.hash, progress);
         let Some(path) = &self.progress_path else {
             return;
         };

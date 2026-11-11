@@ -156,6 +156,15 @@ documents through Pereplyot, what's read from either lands there too. See that m
 doc comment for why it resolves a real home-relative path rather than the usual
 sandbox-relative one.
 
+## Porog status file
+
+Pereplyot writes `~/.local/share/fond/status/pereplyot.json` (the `fond-status` format from
+`fond-core`) each time a document is opened or its reading position changes: the last three
+documents, newest first, each with its position and the exact command-line arguments that
+reopen it. Porog, the Fond suite launcher, reads that file to offer *Resume* and hands the
+arguments straight back to `flatpak run`. The code is `pereplyot-ui-gtk/src/porog_status.rs`;
+all of its disk access is on one worker thread.
+
 ## License
 
 Proprietary — see `LICENSE`.

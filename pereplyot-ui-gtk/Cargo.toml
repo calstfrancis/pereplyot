@@ -17,6 +17,7 @@ fond-read-gtk = { path = "../crates/fond-read-gtk" }
 fond-bib = { workspace = true }
 fond-annot = { workspace = true }
 fond-doc = { workspace = true }
+fond-status = { workspace = true }
 pereplyot-core = { path = "../crates/pereplyot-core" }
 hayagriva = "0.10"
 gtk4 = { version = "0.11", features = ["v4_10"] }

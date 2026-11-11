@@ -20,6 +20,7 @@ mod notes_export;
 mod notes_index;
 mod notes_versions;
 mod paths;
+mod porog_status;
 mod reader_host;
 mod review_store;
 mod sample;
@@ -403,7 +404,10 @@ fn main() -> glib::ExitCode {
         });
     }
 
-    app.connect_shutdown(|_| fond_read_gtk::notebook_ui::flush());
+    app.connect_shutdown(|_| {
+        fond_read_gtk::notebook_ui::flush();
+        porog_status::flush();
+    });
     app.run()
 }
 

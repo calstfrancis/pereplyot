@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+- **Porog can resume your reading.** Pereplyot now keeps a small status file,
+  `~/.local/share/fond/status/pereplyot.json`, listing the last three documents read and where each was left
+  ("p. 47 of 312", "chapter 3 of 12"). Porog, the Fond suite launcher, reads it to offer *Resume*. A document
+  opened from Kartoteka or Sputnik resumes into that app's notes, as it was opened. Nothing else reads the
+  file, and deleting it is harmless.
+
 ## [0.23.1] "Clear Glass" — 2026-11-06 — Hover previews on GTK 4.14
 
 - **Fixed: hover previews on GTK 4.14.** The reference preview card is now drawn over the page instead of in a

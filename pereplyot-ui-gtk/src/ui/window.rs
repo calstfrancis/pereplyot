@@ -1083,6 +1083,9 @@ fn open_with_hash(
         crate::paths::record(&path, &hash);
         record_identity(&path, kind, &hash);
     }
+    // Worked out before the override and the title are handed on below.
+    let resume_args =
+        crate::porog_status::resume_args(&path, override_.as_ref(), title_override.as_deref());
     let title = title_override
         .filter(|t| !t.trim().is_empty())
         .or_else(|| sniff_title(kind, &path))
@@ -1177,6 +1180,9 @@ fn open_with_hash(
     // Kartoteka and Sputnik open documents by launching Pereplyot, so recording here covers
     // what was read from those apps too.
     history::record_open(kind, &hash, &path, &title);
+    if let Some(args) = resume_args {
+        crate::porog_status::opened(kind, &hash, &title, args, saved_progress);
+    }
     rebuild_history(widgets);
     None
 }

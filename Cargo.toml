@@ -16,6 +16,10 @@ repository = "https://github.com/calstfrancis/pereplyot"
 fond-bib = { git = "https://github.com/calstfrancis/kartoteka", rev = "d4e32dddcb83d2594563625240d85a1766f1eae2", features = ["acquire"] }
 fond-annot = { git = "https://github.com/calstfrancis/fond-core", rev = "b1adce104" }
 fond-doc = { git = "https://github.com/calstfrancis/fond-core", rev = "b1adce104" }
+# The Porog status file. A sibling checkout for now: fond-status is not on GitHub yet. Switch
+# to the same `git`/`rev` form as the two above once it is pushed (and bump all three to that
+# rev together); the flatpak and CI builds cannot see a sibling directory.
+fond-status = { path = "../fond-core/crates/fond-status" }
 # Same version/features fond-doc builds it with, so the two unify into one crate — only
 # needed directly for page geometry (crop-box origin, /Rotate) that fond-doc doesn't expose.
 pdfium-render = { version = "0.8", default-features = false, features = ["pdfium_latest", "thread_safe", "sync"] }
