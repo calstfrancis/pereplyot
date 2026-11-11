@@ -59,6 +59,13 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.23.2" date="2026-11-11">
+      <description>
+        <p>0.23.2 "Kept Place" — Pereplyot now keeps a small note of the last three documents you read
+        and where you left each, so Porog, the new Fond suite launcher, can reopen them. Nothing changes
+        in the reader itself.</p>
+      </description>
+    </release>
     <release version="0.23.1" date="2026-11-06">
       <description>
         <p>0.23.1 "Clear Glass" — the reference preview card shown when you hover a citation now appears on

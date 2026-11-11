@@ -1,4 +1,4 @@
-# Pereplyot v0.23.1 "Clear Glass"
+# Pereplyot v0.23.2 "Kept Place"
 
 Install via Flatpak:
 
@@ -18,8 +18,9 @@ flatpak update io.github.calstfrancis.Pereplyot
 
 ### What's new
 
-A small fix. Hovering a citation shows a preview card of the page it points to. On systems with GTK 4.14
-(Ubuntu 24.04 and similar) that card never appeared; it is now drawn over the page and shows everywhere.
+Pereplyot now keeps a small note of the last three documents you read and where you left each ("p. 47 of 312").
+Porog, the new Fond suite launcher, reads it to offer *Resume*. Nothing else reads it, and the reader itself is
+unchanged.
 
 ---
 

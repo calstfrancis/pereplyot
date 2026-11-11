@@ -10,7 +10,7 @@ use crate::ui::Widgets;
 use std::rc::Rc;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub(crate) const RELEASE_NAME: &str = "Clear Glass";
+pub(crate) const RELEASE_NAME: &str = "Kept Place";
 
 /// Show the window if this version has not been seen: the welcome the first time ever, What's
 /// New after an update. Called when the launcher is actually shown.
@@ -115,40 +115,10 @@ pub fn show(parent: &impl IsA<gtk4::Window>, first_run: bool) {
 }
 
 /// Updated at release time, with `RELEASE_NAME`.
-const NEW: &[(&str, &str)] = &[
-    (
-        "Reference previews on every system",
-        "Hovering a citation now shows its preview card on GTK 4.14, where it never appeared before.",
-    ),
-    (
-        "What this cites, and whether you own it",
-        "The sidebar's More tab lists a document's references with where each is cited, marks the ones in your library, and opens your copy at the page the citation names.",
-    ),
-    (
-        "A record for every document",
-        "Document details (Ctrl+K) holds title, authors, year and more, filled from the file, with an optional look-up that you press yourself. Copy a selection as a footnote or reference in SBL, Chicago, APA, MLA and more.",
-    ),
-    (
-        "Marks that follow the document",
-        "Open another edition, a preprint or an OCR'd copy and your notes are found again by their words, with any that are uncertain flagged, never deleted.",
-    ),
-    (
-        "Matrix and annotated bibliography",
-        "Lay sources against your questions, see what each says nothing about, and export a table or an annotated bibliography that compiles.",
-    ),
-    (
-        "Index, figures and tables",
-        "The back-of-book index becomes links, and figures and tables are listed; a table can be copied as cells.",
-    ),
-    (
-        "Review, sync and layers",
-        "Opt in to spaced review of what you tag #remember; keep your notes in a Syncthing, Nextcloud or Dropbox folder; read a supervisor's notes as a layer beside yours.",
-    ),
-    (
-        "Look up, and a sample",
-        "Look up… on a selection opens a web search you set up. First-run now offers a sample document, already marked, to try everything on.",
-    ),
-];
+const NEW: &[(&str, &str)] = &[(
+    "Resume from Porog",
+    "Pereplyot keeps a note of the last three documents you read and where you left each, so Porog, the Fond suite launcher, can reopen them. Nothing else reads it.",
+)];
 
 const TRY: &[(&str, &str)] = &[
     (

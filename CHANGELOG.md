@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.23.2] "Kept Place" — 2026-11-11 — Porog can resume your reading
 
 - **Porog can resume your reading.** Pereplyot now keeps a small status file,
   `~/.local/share/fond/status/pereplyot.json`, listing the last three documents read and where each was left
