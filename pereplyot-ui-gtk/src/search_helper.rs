@@ -112,7 +112,10 @@ mod tests {
     #[test]
     fn an_annotation_hit_reopens_the_file_at_the_annotation() {
         let h = hit("A quote", "Doc · p. 3", Path::new("/a/b.pdf"), Some("hl-1"));
-        assert_eq!(h["args"], serde_json::json!(["/a/b.pdf", "--annotation=hl-1"]));
+        assert_eq!(
+            h["args"],
+            serde_json::json!(["/a/b.pdf", "--annotation=hl-1"])
+        );
         let d = hit("Doc", "Document", Path::new("/a/b.pdf"), None);
         assert_eq!(d["args"], serde_json::json!(["/a/b.pdf"]));
     }
