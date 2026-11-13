@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Search from Porog.** `pereplyot --search-json WORDS` (flatpak command `pereplyot-search`) prints the documents and annotations that match as one line of JSON for the Porog launcher; each hit reopens the file, at the annotation for a highlight or note.
+
 ## [0.23.2] "Kept Place" — 2026-11-11 — Porog can resume your reading
 
 - **Porog can resume your reading.** Pereplyot now keeps a small status file,

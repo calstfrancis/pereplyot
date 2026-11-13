@@ -118,6 +118,8 @@ modules:
       # of opening the file in a reader window.
       - printf '#!/bin/sh\nexec /app/bin/pereplyot --extract-text "$@"\n' > pereplyot-extract-text
       - install -Dm755 pereplyot-extract-text /app/bin/pereplyot-extract-text
+      - printf '#!/bin/sh\nexec /app/bin/pereplyot --search-json "$@"\n' > pereplyot-search
+      - install -Dm755 pereplyot-search /app/bin/pereplyot-search
       # Bundle PDFium (BSD-3).
       - install -Dm755 pdfium/lib/libpdfium.so /app/lib/libpdfium.so
       # Desktop entry, icon, AppStream metainfo.

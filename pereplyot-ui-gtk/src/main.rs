@@ -24,6 +24,7 @@ mod porog_status;
 mod reader_host;
 mod review_store;
 mod sample;
+mod search_helper;
 mod search_index;
 mod sync_folder;
 mod thumbnail;
@@ -269,6 +270,15 @@ fn main() -> glib::ExitCode {
     let argv: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
     if let Some(code) = extract_text_mode(&argv) {
         return code;
+    }
+    // `--search-json` is a command-line helper, not the app: answer and leave before GTK starts.
+    if argv.first().is_some_and(|a| a == "--search-json") {
+        let words: Vec<String> = argv[1..]
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        search_helper::run(&words);
+        return glib::ExitCode::SUCCESS;
     }
     fond_read_gtk::perf::init();
     let app = adw::Application::builder()
