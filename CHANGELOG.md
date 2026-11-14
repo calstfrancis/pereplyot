@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.24.0] "Marked Margin" — 2026-11-14 — Search from Porog
 
 ### Added
 

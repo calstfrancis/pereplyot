@@ -59,6 +59,13 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.24.0" date="2026-11-14">
+      <description>
+        <p>0.24.0 "Marked Margin" — Porog's search now reaches Pereplyot: documents and the highlights and
+        notes in them show up in Ctrl+K, and a hit reopens the file at that annotation. Nothing changes in
+        Pereplyot itself unless you use Porog.</p>
+      </description>
+    </release>
     <release version="0.23.2" date="2026-11-11">
       <description>
         <p>0.23.2 "Kept Place" — Pereplyot now keeps a small note of the last three documents you read

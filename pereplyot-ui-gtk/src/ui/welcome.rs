@@ -10,7 +10,7 @@ use crate::ui::Widgets;
 use std::rc::Rc;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub(crate) const RELEASE_NAME: &str = "Kept Place";
+pub(crate) const RELEASE_NAME: &str = "Marked Margin";
 
 /// Show the window if this version has not been seen: the welcome the first time ever, What's
 /// New after an update. Called when the launcher is actually shown.
@@ -116,8 +116,8 @@ pub fn show(parent: &impl IsA<gtk4::Window>, first_run: bool) {
 
 /// Updated at release time, with `RELEASE_NAME`.
 const NEW: &[(&str, &str)] = &[(
-    "Resume from Porog",
-    "Pereplyot keeps a note of the last three documents you read and where you left each, so Porog, the Fond suite launcher, can reopen them. Nothing else reads it.",
+    "Search from Porog",
+    "Porog's Ctrl+K search now finds your documents and the highlights and notes in them, and a hit reopens the file at that annotation. Nothing changes unless you use Porog.",
 )];
 
 const TRY: &[(&str, &str)] = &[
