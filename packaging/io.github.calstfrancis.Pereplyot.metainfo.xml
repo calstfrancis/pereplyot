@@ -59,6 +59,12 @@
 
   <!-- Release entries are added at actual release time, never for dev builds. -->
   <releases>
+    <release version="0.25.0" date="2026-11-17">
+      <description>
+        <p>0.25.0 "Held Margin" — Porog, the Fond suite launcher, now shows your newest highlight under the document it
+        offers to resume, and can show what is new in Pereplyot. Nothing changes in the reader itself.</p>
+      </description>
+    </release>
     <release version="0.24.0" date="2026-11-14">
       <description>
         <p>0.24.0 "Marked Margin" — Porog's search now reaches Pereplyot: documents and the highlights and

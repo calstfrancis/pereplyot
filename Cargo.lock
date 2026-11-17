@@ -387,7 +387,7 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 [[package]]
 name = "fond-annot"
 version = "0.1.0"
-source = "git+https://github.com/calstfrancis/fond-core?rev=28d95c1491bdda6e708c04ce2768f89374e62338#28d95c1491bdda6e708c04ce2768f89374e62338"
+source = "git+https://github.com/calstfrancis/fond-core?rev=3364c34cb1f0bec978596270a753abb0e91ea398#3364c34cb1f0bec978596270a753abb0e91ea398"
 dependencies = [
  "blake3",
  "serde",
@@ -398,7 +398,7 @@ dependencies = [
 [[package]]
 name = "fond-bib"
 version = "0.1.0"
-source = "git+https://github.com/calstfrancis/kartoteka?rev=51a4d0d712283bc7c64b9cfcb934865b07b3b74c#51a4d0d712283bc7c64b9cfcb934865b07b3b74c"
+source = "git+https://github.com/calstfrancis/kartoteka?rev=153708ff8495af58140cd717d4d566f32de62327#153708ff8495af58140cd717d4d566f32de62327"
 dependencies = [
  "biblatex 0.11.0",
  "blake3",
@@ -416,7 +416,7 @@ dependencies = [
 [[package]]
 name = "fond-doc"
 version = "0.1.0"
-source = "git+https://github.com/calstfrancis/fond-core?rev=28d95c1491bdda6e708c04ce2768f89374e62338#28d95c1491bdda6e708c04ce2768f89374e62338"
+source = "git+https://github.com/calstfrancis/fond-core?rev=3364c34cb1f0bec978596270a753abb0e91ea398#3364c34cb1f0bec978596270a753abb0e91ea398"
 dependencies = [
  "pdfium-render",
  "quick-xml 0.41.0",
@@ -445,7 +445,7 @@ dependencies = [
 [[package]]
 name = "fond-status"
 version = "0.1.0"
-source = "git+https://github.com/calstfrancis/fond-core?rev=28d95c1491bdda6e708c04ce2768f89374e62338#28d95c1491bdda6e708c04ce2768f89374e62338"
+source = "git+https://github.com/calstfrancis/fond-core?rev=3364c34cb1f0bec978596270a753abb0e91ea398#3364c34cb1f0bec978596270a753abb0e91ea398"
 dependencies = [
  "serde",
  "serde_json",
@@ -1465,7 +1465,7 @@ dependencies = [
 
 [[package]]
 name = "pereplyot-ui-gtk"
-version = "0.24.0"
+version = "0.25.0"
 dependencies = [
  "blake3",
  "chrono",

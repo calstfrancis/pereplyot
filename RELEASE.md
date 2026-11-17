@@ -1,4 +1,4 @@
-# Pereplyot v0.24.0 "Marked Margin"
+# Pereplyot v0.25.0 "Held Margin"
 
 Install via Flatpak:
 
@@ -18,9 +18,9 @@ flatpak update io.github.calstfrancis.Pereplyot
 
 ### What's new
 
-Porog's Ctrl+K search now asks Pereplyot too. It finds your documents and the highlights and notes in them, and a
-hit reopens the file, at the annotation for a highlight or note. Pereplyot answers with a new `pereplyot-search`
-command that only reads what it has already stored: no window, nothing written. The reader itself is unchanged.
+Pereplyot helps Porog get you back to where you were.
+
+**Where you were.** The status file Pereplyot keeps for Porog now also holds your newest highlight in each document, and Porog shows it under the document it offers to resume. **What's new.** Porog can show this list from the icon on Pereplyot's row. The reader itself is unchanged.
 
 ---
 

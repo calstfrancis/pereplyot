@@ -10,7 +10,7 @@ use crate::ui::Widgets;
 use std::rc::Rc;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub(crate) const RELEASE_NAME: &str = "Marked Margin";
+pub(crate) const RELEASE_NAME: &str = "Held Margin";
 
 /// Show the window if this version has not been seen: the welcome the first time ever, What's
 /// New after an update. Called when the launcher is actually shown.
@@ -115,10 +115,16 @@ pub fn show(parent: &impl IsA<gtk4::Window>, first_run: bool) {
 }
 
 /// Updated at release time, with `RELEASE_NAME`.
-pub(crate) const NEW: &[(&str, &str)] = &[(
-    "Search from Porog",
-    "Porog's Ctrl+K search now finds your documents and the highlights and notes in them, and a hit reopens the file at that annotation. Nothing changes unless you use Porog.",
-)];
+pub(crate) const NEW: &[(&str, &str)] = &[
+    (
+        "Where you were, for Porog",
+        "Porog now shows your newest highlight under the document it offers to resume, so a file name is not all you have to go on. Nothing changes unless you use Porog.",
+    ),
+    (
+        "What's new, for Porog",
+        "Porog can show this list from the icon on Pereplyot's row.",
+    ),
+];
 
 const TRY: &[(&str, &str)] = &[
     (

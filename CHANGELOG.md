@@ -1,12 +1,12 @@
 # Changelog
 
-## [Unreleased]
+## [0.25.0] "Held Margin" — 2026-11-17 — Where you were, for Porog
 
 ### Added
 
-- **What's new, for Porog.** `pereplyot --whats-new-json` (flatpak command `pereplyot-whats-new`) prints the newest release's name and what changed as one line of JSON; Porog shows it from the icon on this app's row. Needs the next `fond-status`.
+- **What's new, for Porog.** `pereplyot --whats-new-json` (flatpak command `pereplyot-whats-new`) prints the newest release's name and what changed as one line of JSON; Porog shows it from the icon on this app's row.
 - **Where you were, for Porog.** The status file now also keeps your newest highlight in each document as a
-  one-line `context`, which Porog shows under the document's row. Needs the next `fond-status` (its `context` field).
+  one-line `context`, which Porog shows under the document's row.
 
 ## [0.24.0] "Marked Margin" — 2026-11-14 — Search from Porog
 
