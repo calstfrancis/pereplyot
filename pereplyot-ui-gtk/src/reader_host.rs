@@ -145,6 +145,10 @@ impl ReaderHost for LocalReaderHost {
             self.notify(&merged_notice(saved.outside));
         }
         queue_markdown(&self.hash, saved.merged.as_ref().unwrap_or(sidecar));
+        crate::porog_status::context(
+            &self.hash,
+            crate::porog_status::newest_highlight(saved.merged.as_ref().unwrap_or(sidecar)),
+        );
         Ok(saved.merged)
     }
 

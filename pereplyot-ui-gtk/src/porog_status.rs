@@ -35,6 +35,10 @@ enum Msg {
         hash: String,
         progress: Progress,
     },
+    Context {
+        hash: String,
+        context: Option<String>,
+    },
     Flush(Sender<()>),
 }
 
@@ -84,6 +88,29 @@ pub fn progress(hash: &str, progress: Progress) {
     }
 }
 
+/// The line that says where in an open document the reader was: its newest highlight.
+pub fn context(hash: &str, context: Option<String>) {
+    if let Some(tx) = worker() {
+        let _ = tx.send(Msg::Context {
+            hash: hash.to_string(),
+            context,
+        });
+    }
+}
+
+/// The text of the newest highlight in `sidecar` as a context line, or `None` when nothing is
+/// highlighted. "Newest" is the latest `created` time; annotations with none count as older
+/// than any with one, and among equals the one saved last wins.
+pub fn newest_highlight(sidecar: &fond_annot::AnnotationSidecar) -> Option<String> {
+    sidecar
+        .annotations
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| a.snippet.as_deref().is_some_and(|s| !s.trim().is_empty()))
+        .max_by(|(i, a), (j, b)| (&a.created, i).cmp(&(&b.created, j)))
+        .and_then(|(_, a)| fond_status::context_line(a.snippet.as_deref()?))
+}
+
 /// Wait, briefly, for everything reported so far to reach the disk. Called at shutdown, so
 /// the page a reader was closed on is not lost with the process.
 pub fn flush() {
@@ -114,10 +141,18 @@ fn run(dir: &Path, rx: mpsc::Receiver<Msg>) {
                 args,
                 progress,
             } => {
+                // Reopening keeps the line saved last time: it is replaced when the reader marks
+                // something new, not lost because the document was closed and opened.
+                let context = status
+                    .resume
+                    .iter()
+                    .find(|e| e.args == args)
+                    .and_then(|e| e.context.clone());
                 let entry = ResumeEntry {
                     title,
                     detail: progress.map(|p| position_text(kind, p)),
                     at: None,
+                    context,
                     args,
                 };
                 open.insert(hash, (kind, entry.clone()));
@@ -132,6 +167,16 @@ fn run(dir: &Path, rx: mpsc::Receiver<Msg>) {
                     continue;
                 }
                 entry.detail = detail;
+                entry.clone()
+            }
+            Msg::Context { hash, context } => {
+                let Some((_, entry)) = open.get_mut(&hash) else {
+                    continue;
+                };
+                if entry.context == context {
+                    continue;
+                }
+                entry.context = context;
                 entry.clone()
             }
             Msg::Flush(done) => {
@@ -201,6 +246,30 @@ pub fn resume_args(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn sidecar(annotations: &str) -> fond_annot::AnnotationSidecar {
+        serde_json::from_str(&format!(
+            r#"{{"schema":1,"key":"k","annotations":[{annotations}]}}"#
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn the_context_is_the_newest_highlights_text() {
+        let one = |id: &str, snippet: &str, created: &str| {
+            format!(
+                r#"{{"id":"{id}","kind":"highlight","page":1,"quadpoints":[],"snippet":"{snippet}","created":"{created}"}}"#
+            )
+        };
+        let sc = sidecar(&format!(
+            "{},{},{}",
+            one("a", "older passage", "2026-11-01T10:00:00Z"),
+            one("b", "the newest   passage", "2026-11-09T10:00:00Z"),
+            one("c", "   ", "2026-11-10T10:00:00Z"),
+        ));
+        assert_eq!(newest_highlight(&sc).as_deref(), Some("the newest passage"));
+        assert_eq!(newest_highlight(&sidecar("")), None);
+    }
 
     #[test]
     fn a_standalone_open_resumes_with_the_bare_file() {

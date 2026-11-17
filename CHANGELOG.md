@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Where you were, for Porog.** The status file now also keeps your newest highlight in each document as a
+  one-line `context`, which Porog shows under the document's row. Needs the next `fond-status` (its `context` field).
+
 ## [0.24.0] "Marked Margin" — 2026-11-14 — Search from Porog
 
 ### Added
