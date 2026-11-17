@@ -4,6 +4,7 @@
 
 ### Added
 
+- **What's new, for Porog.** `pereplyot --whats-new-json` (flatpak command `pereplyot-whats-new`) prints the newest release's name and what changed as one line of JSON; Porog shows it from the icon on this app's row. Needs the next `fond-status`.
 - **Where you were, for Porog.** The status file now also keeps your newest highlight in each document as a
   one-line `context`, which Porog shows under the document's row. Needs the next `fond-status` (its `context` field).
 

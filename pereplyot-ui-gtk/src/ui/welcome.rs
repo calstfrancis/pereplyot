@@ -115,7 +115,7 @@ pub fn show(parent: &impl IsA<gtk4::Window>, first_run: bool) {
 }
 
 /// Updated at release time, with `RELEASE_NAME`.
-const NEW: &[(&str, &str)] = &[(
+pub(crate) const NEW: &[(&str, &str)] = &[(
     "Search from Porog",
     "Porog's Ctrl+K search now finds your documents and the highlights and notes in them, and a hit reopens the file at that annotation. Nothing changes unless you use Porog.",
 )];

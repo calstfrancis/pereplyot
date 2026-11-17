@@ -122,6 +122,8 @@ A fourth shape opens no window at all:
 pereplyot --extract-text <file>      # print a PDF's or EPUB's text to stdout, then exit
 pereplyot --extract-text - < file    # the same, reading the document from stdin
 pereplyot --search-json WORDS         # documents and annotations that match, one line of JSON (for Porog)
+
+`pereplyot --whats-new-json` (flatpak command `pereplyot-whats-new`) prints the newest release's name and changes as one line of JSON, for the What's New icon on this app's row in Porog.
 ```
 
 Sputnik's syllabus import uses it. The flatpak also installs it as its own command,

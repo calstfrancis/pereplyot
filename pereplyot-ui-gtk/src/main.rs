@@ -271,6 +271,19 @@ fn main() -> glib::ExitCode {
     if let Some(code) = extract_text_mode(&argv) {
         return code;
     }
+    // `--whats-new-json` prints the What's New window's own list and leaves, for Porog.
+    if argv.first().is_some_and(|a| a == "--whats-new-json") {
+        println!(
+            "{}",
+            fond_status::whats_new::WhatsNew::new(
+                env!("CARGO_PKG_VERSION"),
+                ui::welcome::RELEASE_NAME,
+                ui::welcome::NEW,
+            )
+            .to_json()
+        );
+        return glib::ExitCode::SUCCESS;
+    }
     // `--search-json` is a command-line helper, not the app: answer and leave before GTK starts.
     if argv.first().is_some_and(|a| a == "--search-json") {
         let words: Vec<String> = argv[1..]

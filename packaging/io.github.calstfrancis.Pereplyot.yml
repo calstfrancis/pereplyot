@@ -120,6 +120,8 @@ modules:
       - install -Dm755 pereplyot-extract-text /app/bin/pereplyot-extract-text
       - printf '#!/bin/sh\nexec /app/bin/pereplyot --search-json "$@"\n' > pereplyot-search
       - install -Dm755 pereplyot-search /app/bin/pereplyot-search
+      - printf '#!/bin/sh\nexec /app/bin/pereplyot --whats-new-json "$@"\n' > pereplyot-whats-new
+      - install -Dm755 pereplyot-whats-new /app/bin/pereplyot-whats-new
       # Bundle PDFium (BSD-3).
       - install -Dm755 pdfium/lib/libpdfium.so /app/lib/libpdfium.so
       # Desktop entry, icon, AppStream metainfo.
